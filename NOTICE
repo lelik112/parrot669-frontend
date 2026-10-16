@@ -1,0 +1,32 @@
+PARROT 669 frontend
+Copyright 2026 PARROT 669 contributors
+
+This product includes open-source development dependencies listed in
+THIRD_PARTY_LICENSES.tsv. The inventory is derived from the package-lock.json
+included in this candidate and records declared SPDX-style license expressions;
+it is not a substitute for the packages' complete license texts.
+
+Remote resources referenced by the frontend (not vendored in this export):
+
+- Google Fonts: Inter and Space Grotesk. Their upstream projects declare the SIL
+  Open Font License; the application currently loads them from Google-hosted
+  endpoints.
+- Unsplash image IDs 1758471206484-0eaa2568320c and
+  1745516266298-85d1d00aa604 are loaded remotely from images.unsplash.com.
+  The first visible credit links to Salma Abdelnaby's Unsplash photo page. The
+  second image, "Tall buildings and palm trees line a sunny street," is by
+  Maksim Zhashkevych (@zhashkevych), published April 24, 2025:
+  https://unsplash.com/photos/tall-buildings-and-palm-trees-line-a-sunny-street-D8HKY4rSetw
+  Both remote references remain subject to the Unsplash License and the release
+  review of current usage terms: https://unsplash.com/license
+- LocationIQ is linked as the address-search data provider. Use of the service
+  remains subject to the provider's terms and deployment credentials.
+- Airbnb names and outbound listing links appear as interoperability/provider
+  references. No Airbnb code or media is bundled.
+
+The unused standalone file public/assets/parrot669-emblem.svg from the prior
+candidate was corrupt and had no runtime reference, so it is intentionally
+excluded from this export. The About section retains its distinct inline WebP
+payload unchanged. The owner attests that Alex created that exact inline image.
+No verified generator/tool attribution or broader trademark, product-name, or
+publication approval is inferred from that attestation.

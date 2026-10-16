@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#050c0e" />
+  <meta name="robots" content="noindex,nofollow" />
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <title>PARROT 669 — Messages</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/styles.css" />
+  <link rel="stylesheet" href="/assets/messaging.css" />
+</head>
+<body class="messages-page" data-messaging-version="1">
+  <header class="host-topbar">
+    <a class="brand" href="/" aria-label="PARROT 669 home"><span class="brand-copy"><strong>PARROT 669</strong><small data-msg-i18n="messages">Messages</small></span></a>
+    <div class="host-topbar-actions">
+      <div class="lang-switcher host-lang-switcher" aria-label="Language">
+        <button type="button" data-msg-lang="en">EN</button><button type="button" data-msg-lang="es">ES</button>
+        <button type="button" data-msg-lang="ca">CA</button><button type="button" data-msg-lang="ru">RU</button>
+      </div>
+      <div class="host-account-actions">
+        <a class="host-auth-link" id="msg-login-link" href="#msg-auth" data-msg-i18n="login" hidden>Log in</a>
+        <a class="host-auth-link" id="msg-register-link" href="#msg-auth" data-msg-i18n="register" hidden>Create account</a>
+        <div class="host-account-session" id="msg-account" hidden><span id="msg-account-name"></span><button type="button" class="host-auth-link" id="msg-logout" data-msg-i18n="logout">Log out</button></div>
+      </div>
+      <a class="button button-ghost button-small" href="/search.html" data-msg-i18n="backToSite">← Back to site</a>
+    </div>
+  </header>
+  <nav class="housing-tabs" aria-label="Housing">
+    <a href="/search.html" id="msg-search-link">Find availability</a>
+    <a href="/host.html" class="housing-host-link" id="msg-host-link">For hosts</a>
+    <a href="/messages.html" class="active messaging-nav-link" aria-current="page"><span data-msg-i18n="messages">Messages</span><span class="messaging-badge" data-msg-unread hidden></span></a>
+  </nav>
+  <main class="messages-shell">
+    <div class="messages-intro">
+      <p class="eyebrow" data-msg-i18n="messagesEyebrow">PRIVATE CONVERSATIONS</p>
+      <h1><span data-msg-i18n="messagesTitleFirst">Plan the stay.</span> <span class="messages-title-accent" data-msg-i18n="messagesTitleAccent">Keep the conversation together.</span></h1>
+      <p data-msg-i18n="messagesLead">Your conversations with hosts and guests live here.</p>
+    </div>
+    <p id="msg-status" class="messaging-status" role="status" aria-live="polite"></p>
+    <button id="msg-session-retry" type="button" class="button button-small button-ghost" data-msg-i18n="retry" hidden>Try again</button>
+
+    <details id="msg-email-settings" class="messaging-email-settings" hidden>
+      <summary data-msg-i18n="emailSettings">Email notifications</summary>
+      <div class="messaging-email-controls">
+        <label class="messaging-toggle"><input id="msg-email-enabled" type="checkbox" disabled /><span data-msg-i18n="emailEnabled">Email me about unread messages</span></label>
+        <label class="messaging-email-language"><span data-msg-i18n="emailLanguage">Email language</span><select id="msg-email-language" disabled>
+          <option value="en">English</option><option value="es">Español</option><option value="ca">Català</option><option value="ru">Русский</option>
+        </select></label>
+      </div>
+      <p id="msg-email-status" class="messaging-status" role="status" aria-live="polite"></p>
+      <button id="msg-email-retry" type="button" class="text-button" data-msg-i18n="retry" hidden>Try again</button>
+    </details>
+
+    <section id="msg-auth" class="messaging-auth" hidden>
+      <p id="msg-auth-lead" data-msg-i18n="authLead">Log in to see your private conversations. To contact a host, start from a property in search.</p>
+      <a id="msg-find-housing" href="/search.html" class="text-button" data-msg-i18n="findHousing">Find housing</a>
+      <div class="host-auth-tabs">
+        <button type="button" data-msg-auth="login" aria-pressed="true" aria-controls="msg-login-form" data-msg-i18n="login">Log in</button>
+        <button type="button" data-msg-auth="register" aria-pressed="false" aria-controls="msg-register-form" data-msg-i18n="register">Create account</button>
+      </div>
+      <form id="msg-login-form" class="host-form">
+        <label><span data-msg-i18n="loginLabel">Email or username</span><input name="login" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="254" required /></label>
+        <label><span data-msg-i18n="password">Password</span><input name="password" type="password" autocomplete="current-password" minlength="10" maxlength="256" required /></label>
+        <button class="button" type="submit" data-msg-i18n="login">Log in</button>
+        <a class="text-button" href="/recover.html" data-msg-i18n="forgotPassword">Forgot password?</a>
+      </form>
+      <form id="msg-register-form" class="host-form" hidden>
+        <label><span data-msg-i18n="username">Username</span><input name="username" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="120" pattern="[^@]+" aria-describedby="msg-username-help" required /></label>
+        <p class="messaging-hint" id="msg-username-help" data-msg-i18n="usernameHelp">Unique, case-insensitive. No @ symbol.</p>
+        <label><span data-msg-i18n="displayName">Display name</span><input name="displayName" autocomplete="name" maxlength="120" required /></label>
+        <label><span data-msg-i18n="email">Email</span><input name="email" type="email" autocomplete="email" maxlength="254" required /></label>
+        <label><span data-msg-i18n="password">Password</span><input name="password" type="password" autocomplete="new-password" minlength="10" maxlength="256" aria-describedby="msg-password-help" required /></label>
+        <p class="messaging-hint" id="msg-password-help" data-msg-i18n="passwordHelp">At least 10 characters.</p>
+        <button class="button" type="submit" data-msg-i18n="register">Create account</button>
+      </form>
+    </section>
+
+    <div class="messages-layout" id="messages-app" hidden>
+      <aside id="msg-inbox" class="messages-inbox" aria-labelledby="msg-inbox-title">
+        <div class="messages-inbox-heading"><h2 id="msg-inbox-title" data-msg-i18n="conversations">Conversations</h2></div>
+        <p id="msg-inbox-status" class="messaging-hint" role="status"></p>
+        <div id="msg-list" class="messages-conversation-list"></div>
+        <button type="button" id="msg-more" class="button button-small button-ghost" data-msg-i18n="loadMore" hidden>More conversations</button>
+      </aside>
+      <section class="messages-detail">
+        <p id="msg-empty" class="messages-empty" data-msg-i18n="chooseConversation">Choose a conversation</p>
+        <div id="msg-thread" class="messages-thread" hidden>
+          <header class="messages-thread-heading">
+            <button type="button" id="msg-back" class="text-button messages-back" data-msg-i18n="backList">All conversations</button>
+            <div class="messages-thread-context"><h2 id="msg-property"></h2><p id="msg-other"></p><a id="msg-open-property" class="text-button messages-property-action" data-msg-i18n="openProperty" hidden>Open property ↗</a></div>
+            <a id="msg-own-profile" class="text-button messages-profile-link" href="/host.html?fromMessages=1#host-profile" data-msg-i18n="ownProfile" hidden>My host profile</a>
+            <button type="button" id="msg-block" class="text-button" hidden></button>
+          </header>
+          <button type="button" id="msg-earlier" class="text-button messages-earlier" data-msg-i18n="earlier" hidden>Earlier messages</button>
+          <div id="msg-history" class="messages-history" role="log" aria-live="polite" aria-relevant="additions text" tabindex="0"></div>
+          <button type="button" id="msg-jump" class="messages-jump" data-msg-i18n="newMessages" hidden>New messages ↓</button>
+          <p id="msg-thread-notice" class="messaging-status" role="status"></p>
+          <form id="msg-compose" class="messages-compose" hidden>
+            <p id="msg-guest-hint" class="messaging-hint" data-msg-i18n="guestComposerHelp" hidden>Write your message now. Log in or create an account to send it and keep the conversation private.</p>
+            <details id="msg-dates"><summary data-msg-i18n="datesOptional">Stay dates (optional)</summary><div class="messages-dates">
+              <label><span data-msg-i18n="from">Check-in</span><input type="date" name="from" /></label>
+              <label><span data-msg-i18n="to">Check-out</span><input type="date" name="to" /></label>
+            </div></details>
+            <label class="messages-body-label"><span data-msg-i18n="messageLabel">Your message</span><textarea name="body" rows="3" maxlength="8000" required data-msg-placeholder="placeholder" placeholder="Ask about the property or the stay…"></textarea></label>
+            <div class="messages-compose-footer"><p class="messaging-hint" data-msg-i18n="notBooking">A message does not reserve the property.</p><button class="button button-small" id="msg-send" type="submit" data-msg-i18n="send">Send message</button></div>
+          </form>
+        </div>
+      </section>
+    </div>
+  </main>
+  <script src="/assets/messaging-common.js"></script>
+  <script src="/assets/messaging-email-settings.js"></script>
+  <script src="/assets/messages.js"></script>
+</body>
+</html>

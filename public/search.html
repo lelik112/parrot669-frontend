@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#050c0e" />
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <meta name="description" content="Search host-reported property availability by country and city with PARROT 669." />
+  <title>PARROT 669 — Availability search</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/styles.css" />
+  <link rel="stylesheet" href="/assets/messaging.css" />
+</head>
+<body class="search-page">
+  <header class="host-topbar">
+    <a class="brand" href="/" aria-label="PARROT 669 home">
+      <span class="brand-copy"><strong>PARROT 669</strong><small data-search-i18n="label">AVAILABILITY</small></span>
+    </a>
+    <div class="host-topbar-actions">
+      <div class="lang-switcher host-lang-switcher" aria-label="Language">
+        <button type="button" data-search-lang="en">EN</button>
+        <button type="button" data-search-lang="es">ES</button>
+        <button type="button" data-search-lang="ca">CA</button>
+        <button type="button" data-search-lang="ru">RU</button>
+      </div>
+      <div class="host-account-actions" aria-live="polite">
+        <a id="search-login" class="host-auth-link" href="/host.html?login=1" data-search-i18n="login" hidden>Log in</a>
+        <a id="search-register" class="host-auth-link" href="/host.html?register=1" data-search-i18n="register" hidden>Create account</a>
+        <div class="host-account-session" id="search-account" hidden>
+          <span id="search-account-indicator"></span>
+          <button class="host-auth-link" id="search-logout" type="button" data-search-i18n="logout">Log out</button>
+        </div>
+        <span class="host-account-feedback" id="search-account-feedback" role="status"></span>
+      </div>
+      <a class="button button-ghost button-small" href="/" data-search-i18n="back">← Back to site</a>
+    </div>
+  </header>
+
+  <nav class="housing-tabs" aria-label="Housing">
+    <a href="/search.html" class="active" aria-current="page" data-search-i18n="tabSearch">Find availability</a>
+    <a href="/host.html" class="housing-host-link" data-search-i18n="tabHost">For hosts</a>
+    <a href="/messages.html" class="messaging-nav-link"><span data-msg-i18n="messages">Messages</span><span class="messaging-badge" data-msg-unread hidden></span></a>
+  </nav>
+
+  <main class="search-shell">
+    <section class="availability-search standalone-search">
+      <div class="availability-intro">
+        <p class="eyebrow" data-search-i18n="eyebrow">LIVE AVAILABILITY</p>
+        <h1 data-search-i18n-html="title">Find a property that is<br><span>actually free.</span></h1>
+        <p data-search-i18n="lead">Find a place that's available for your dates.</p>
+      </div>
+
+      <form class="availability-form search-form" id="availability-form">
+        <label>
+          <span data-search-i18n="country">Country</span>
+          <select name="country" required>
+            <option value="" data-search-i18n="chooseCountry">Choose country</option>
+          </select>
+        </label>
+        <label>
+          <span data-search-i18n="city">City</span>
+          <select name="city" required disabled>
+            <option value="" data-search-i18n="chooseCity">Choose city</option>
+          </select>
+        </label>
+        <label><span data-search-i18n="from">From</span><input type="date" name="from" required /></label>
+        <label><span data-search-i18n="to">To</span><input type="date" name="to" required /></label>
+        <label>
+          <span data-search-i18n="bedrooms">Bedrooms</span>
+          <select name="bedrooms"><option value="1">1+</option><option value="2">2+</option><option value="3">3+</option><option value="4">4+</option></select>
+        </label>
+        <label>
+          <span data-search-i18n="sleeps">Sleeping places</span>
+          <select name="sleeps"><option value="1">1+</option><option value="2">2+</option><option value="3">3+</option><option value="4">4+</option><option value="5">5+</option><option value="6">6+</option></select>
+        </label>
+        <button class="button availability-submit" type="submit" disabled><span data-search-i18n="search">Search availability</span><span>→</span></button>
+      </form>
+
+      <div class="search-filters" aria-label="Search filters">
+        <span class="search-filters-label" data-search-i18n="filters">Filters</span>
+        <label class="search-select-filter">
+          <span data-search-i18n="accommodationType">Accommodation type</span>
+          <select id="filter-accommodation-type">
+            <option value="any" data-search-i18n="anyType">Any type</option>
+            <option value="entire_place" data-search-i18n="entirePlace">Entire place</option>
+            <option value="private_room" data-search-i18n="privateRoom">Private room</option>
+          </select>
+        </label>
+        <label class="price-filter">
+          <input type="checkbox" id="filter-priced-only" />
+          <span data-search-i18n="pricedOnly">Only with a price</span>
+        </label>
+        <label class="price-range-filter">
+          <span data-search-i18n="priceFrom">Stay total from, €</span>
+          <input type="number" id="filter-price-from" min="0" step="0.01" inputmode="decimal" />
+        </label>
+        <label class="price-range-filter">
+          <span data-search-i18n="priceTo">Stay total to, €</span>
+          <input type="number" id="filter-price-to" min="0" step="0.01" inputmode="decimal" />
+        </label>
+      </div>
+
+      <div class="availability-results" id="availability-results" aria-live="polite"></div>
+    </section>
+  </main>
+
+  <script src="/assets/messaging-common.js"></script>
+  <script src="/assets/search.js"></script>
+</body>
+</html>

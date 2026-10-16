@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="referrer" content="no-referrer" />
+  <meta name="robots" content="noindex,nofollow" />
+  <meta name="theme-color" content="#050c0e" />
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/assets/styles.css" />
+  <title>PARROT 669 — Password recovery</title>
+</head>
+<body class="host-page">
+  <header class="host-topbar">
+    <a class="brand" href="/" aria-label="PARROT 669 home"><span class="brand-copy"><strong>PARROT 669</strong></span></a>
+    <div class="lang-switcher" aria-label="Language">
+      <button type="button" data-recovery-lang="en">EN</button>
+      <button type="button" data-recovery-lang="es">ES</button>
+      <button type="button" data-recovery-lang="ca">CA</button>
+      <button type="button" data-recovery-lang="ru">RU</button>
+    </div>
+  </header>
+  <main class="recovery-shell">
+    <h1 data-recovery-i18n="title">Password recovery</h1>
+    <p id="recovery-lead"></p>
+    <form id="recovery-request" class="host-form">
+      <label><span data-recovery-i18n="email">Account email</span><input name="email" type="email" autocomplete="email" maxlength="254" required /></label>
+      <button class="button" type="submit" data-recovery-i18n="request">Send recovery link</button>
+    </form>
+    <form id="recovery-confirm" class="host-form" hidden>
+      <label><span data-recovery-i18n="password">New password</span><input name="password" type="password" autocomplete="new-password" minlength="10" maxlength="256" aria-describedby="recovery-password-help" required /></label>
+      <label><span data-recovery-i18n="repeat">Repeat new password</span><input name="repeat" type="password" autocomplete="new-password" minlength="10" maxlength="256" required /></label>
+      <p id="recovery-password-help" class="host-inline-muted" data-recovery-i18n="passwordHelp">10–256 characters. All previous sessions will be signed out.</p>
+      <button class="button" type="submit" data-recovery-i18n="save">Save new password</button>
+    </form>
+    <p id="recovery-status" role="status" aria-live="polite"></p>
+    <button type="button" id="recovery-again" class="text-button" data-recovery-i18n="again" hidden>Request another link</button>
+    <nav class="recovery-links">
+      <a href="/host.html?login=1" data-recovery-i18n="login">Back to log in</a>
+      <a href="/messages.html" data-recovery-i18n="messages">Messages</a>
+    </nav>
+  </main>
+  <script src="/assets/recover.js"></script>
+</body>
+</html>

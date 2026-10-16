@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#050c0e" />
+  <meta name="robots" content="noindex,nofollow" />
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <title>PARROT 669 — Host console</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/styles.css" />
+  <link rel="stylesheet" href="/assets/messaging.css" />
+</head>
+<body class="host-page">
+  <header class="host-topbar">
+    <a class="brand" href="/" aria-label="PARROT 669 home">
+      <span class="brand-copy">
+        <strong>PARROT 669</strong>
+        <small data-host-i18n="consoleLabel">HOST CONSOLE</small>
+      </span>
+    </a>
+
+    <div class="host-topbar-actions">
+      <div class="lang-switcher host-lang-switcher" aria-label="Language">
+        <button type="button" data-host-lang="en">EN</button>
+        <button type="button" data-host-lang="es">ES</button>
+        <button type="button" data-host-lang="ca">CA</button>
+        <button type="button" data-host-lang="ru">RU</button>
+      </div>
+      <div class="host-account-actions">
+        <div id="host-auth-links" hidden>
+          <button class="host-auth-link" id="open-login" type="button" data-host-i18n="loginTitle">Log in</button>
+          <button class="host-auth-link" id="open-register" type="button" data-host-i18n="registerTitle">Create account</button>
+        </div>
+        <div class="host-account-session" id="host-account-session" hidden>
+          <span id="host-account-email"></span>
+          <button class="host-auth-link" id="reset-host" type="button" data-host-i18n="logoutButton">Log out</button>
+        </div>
+      </div>
+      <a class="button button-ghost button-small" href="/" data-host-i18n="backToSite">← Back to site</a>
+    </div>
+  </header>
+
+  <nav class="housing-tabs" aria-label="Housing">
+    <a href="/search.html" data-host-i18n="tabSearch">Find availability</a>
+    <a href="/host.html" class="active housing-host-link" aria-current="page" data-host-i18n="tabHost">For hosts</a>
+    <a href="/messages.html" class="messaging-nav-link"><span data-msg-i18n="messages">Messages</span><span class="messaging-badge" data-msg-unread hidden></span></a>
+  </nav>
+
+  <main class="host-shell">
+    <section class="host-hero" id="host-hero">
+      <p class="eyebrow" data-host-i18n="toolsEyebrow">HOST TOOLS</p>
+      <h1 data-host-i18n-html="heroTitle">Publish availability.<br><span>Keep the deal elsewhere.</span></h1>
+      <p data-host-i18n="heroLead">Add a property and keep its physically available dates up to date. An Airbnb listing and calendar are optional.</p>
+    </section>
+
+    <div class="host-status" id="host-status" aria-live="polite"></div>
+
+    <section class="host-auth-dialog host-auth-inline" id="auth-dialog" aria-labelledby="auth-dialog-title" hidden>
+      <div class="host-auth-dialog-head">
+        <h2 id="auth-dialog-title" data-host-i18n="loginTitle">Log in</h2>
+      </div>
+
+      <div class="host-auth-tabs">
+        <button type="button" data-auth-mode="login" aria-pressed="true" aria-controls="login-form" data-host-i18n="loginTitle">Log in</button>
+        <button type="button" data-auth-mode="register" aria-pressed="false" aria-controls="register-form" data-host-i18n="registerTitle">Create account</button>
+      </div>
+
+      <form class="host-form host-auth-card" id="login-form">
+        <label>
+          <span data-host-i18n="loginLabel">Email or username</span>
+          <input name="login" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required maxlength="254" />
+        </label>
+        <label>
+          <span data-host-i18n="passwordLabel">Password</span>
+          <input name="password" type="password" autocomplete="current-password" required minlength="10" maxlength="256" />
+        </label>
+        <button class="button" type="submit" data-host-i18n="loginButton">Log in →</button>
+        <a class="text-button" href="/recover.html" data-host-i18n="forgotPassword">Forgot password?</a>
+      </form>
+
+      <form class="host-form host-auth-card" id="register-form" hidden>
+        <label>
+          <span data-host-i18n="usernameLabel">Username</span>
+          <input name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required maxlength="120" pattern="[^@]+" aria-describedby="username-help" />
+        </label>
+        <p class="host-inline-muted" id="username-help" data-host-i18n="usernameHelp">Unique, case-insensitive. No @ symbol.</p>
+        <label>
+          <span data-host-i18n="nameLabel">Name / host label</span>
+          <input name="displayName" autocomplete="name" required maxlength="120" />
+        </label>
+        <label>
+          <span data-host-i18n="emailLabel">Email</span>
+          <input name="email" type="email" autocomplete="email" required maxlength="254" />
+        </label>
+        <label>
+          <span data-host-i18n="passwordLabel">Password</span>
+          <input name="password" type="password" autocomplete="new-password" required minlength="10" maxlength="256" />
+        </label>
+        <p class="host-inline-muted" data-host-i18n="passwordHelp">At least 10 characters.</p>
+        <button class="button" type="submit" data-host-i18n="registerButton">Create account →</button>
+      </form>
+    </section>
+
+    <section class="host-panel host-profile-panel" id="host-profile" hidden>
+      <div class="host-panel-heading">
+        <div><h2 data-host-i18n="profileTitle">Host profile</h2></div>
+        <p data-host-i18n="profileHelp">Your host name is visible to guests. Your email and login stay private.</p>
+      </div>
+      <a id="host-profile-return" href="#host-profile" class="text-button host-profile-return" data-host-i18n="profileReturn" hidden>← Back to conversation</a>
+      <form class="host-form host-profile-form" id="host-profile-form">
+        <label><span data-host-i18n="profileName">Public host name</span><input name="displayName" required maxlength="120" autocomplete="name" /></label>
+        <button class="button button-small" type="submit" data-host-i18n="profileSave">Save name</button>
+      </form>
+      <div class="host-profile-account">
+        <h3 data-host-i18n="profileAccount">Account</h3>
+        <p><span data-host-i18n="usernameLabel">Username</span>: <span id="host-profile-username"></span></p>
+        <p><span data-host-i18n="emailLabel">Email</span>: <span id="host-profile-email"></span></p>
+      </div>
+    </section>
+
+    <section class="host-panel" id="property-panel" hidden>
+      <div class="host-panel-heading">
+        <div><h2 data-host-i18n="propertiesTitle">Properties</h2></div>
+        <p data-host-i18n="propertiesHelp">No photos, prices or copied descriptions. Only enough data to search availability.</p>
+      </div>
+
+      <div id="host-property-context" class="host-property-context" hidden>
+        <p id="host-property-context-status" role="status"></p>
+        <a id="host-property-return" class="text-button" hidden>← Back to conversation</a>
+      </div>
+
+      <form class="host-form host-property-form" id="property-form">
+        <label>
+          <span data-host-i18n="internalLabel">Internal label</span>
+          <input name="title" required maxlength="160" data-host-placeholder="propertyPlaceholder" placeholder="Poblenou apartment" />
+        </label>
+        <div id="property-address" class="host-address-slot"></div>
+        <label>
+          <span data-host-i18n="accommodationTypeLabel">Accommodation type</span>
+          <select name="accommodationType" required>
+            <option value="entire_place" data-host-i18n="entirePlace">Entire place</option>
+            <option value="private_room" data-host-i18n="privateRoom">Private room</option>
+          </select>
+        </label>
+        <label>
+          <span data-host-i18n="bedroomsLabel">Bedrooms</span>
+          <input name="bedrooms" type="number" min="1" max="20" value="1" required />
+        </label>
+        <label>
+          <span data-host-i18n="sleepsLabel">Sleeping places</span>
+          <input name="sleeps" type="number" min="1" max="40" value="2" required />
+        </label>
+        <button class="button" type="submit" data-host-i18n="addProperty">Add property →</button>
+      </form>
+
+      <div class="host-properties" id="host-properties"></div>
+    </section>
+  </main>
+
+  <script src="/assets/messaging-common.js"></script>
+  <script src="/assets/host-address.js"></script>
+  <script src="/assets/calendar-verification.js?v=20261002-camelcase-status"></script>
+  <script src="/assets/host.js?v=20261002-camelcase-status"></script>
+</body>
+</html>

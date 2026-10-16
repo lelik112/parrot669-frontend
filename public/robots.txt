@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://parrot669.com/sitemap.xml
