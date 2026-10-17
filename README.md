@@ -1,5 +1,7 @@
 # PARROT 669 frontend
 
+[Манифест PARROT 669](MANIFESTO.md)
+
 This repository contains the canonical static frontend and Cloudflare Worker gateway for PARROT 669. It preserves the product's search, host, authentication, messaging, recovery and contact behavior. The accepted public destination is `lelik112/parrot669-frontend`; this clean-history candidate contains no operational Git history or internal coordination records.
 
 ## Prerequisites
