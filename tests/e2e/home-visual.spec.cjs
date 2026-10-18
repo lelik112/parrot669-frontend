@@ -20,6 +20,7 @@ for(const width of [1440,390,320])for(const locale of ['ru','en','es','ca']){
       const groups=[...document.querySelectorAll('.trust-guarantee')];
       return {
         width:document.documentElement.clientWidth,scroll:document.documentElement.scrollWidth,
+        overflow:[...document.querySelectorAll('body *')].map(node=>({tag:node.tagName,selector:node.id||node.className?.baseVal||node.className,left:node.getBoundingClientRect().left,right:node.getBoundingClientRect().right})).filter(box=>box.left< -1||box.right>innerWidth+1).slice(0,40),
         groups:groups.map(node=>{
           const box=node.getBoundingClientRect();
           return {left:box.left,right:box.right,height:box.height,client:node.clientWidth,scroll:node.scrollWidth,
@@ -32,7 +33,7 @@ for(const width of [1440,390,320])for(const locale of ['ru','en','es','ca']){
     await testInfo.attach('layout-geometry',{body:Buffer.from(JSON.stringify(report)),contentType:'application/json'});
     await page.evaluate(()=>window.scrollTo({top:0,behavior:'instant'}));
     await captureEvidence(page,testInfo,{screen:'home',state:'localized-layout',locale,cssViewportWidth:width});
-    expect(report.scroll).toBeLessThanOrEqual(report.width+1);
+    expect(report.scroll,JSON.stringify(report.overflow)).toBeLessThanOrEqual(report.width+1);
     expect(report.groups).toHaveLength(2);
     expect(report.groups[0].content).toEqual(report.groups[1].content);
     for(const group of report.groups){

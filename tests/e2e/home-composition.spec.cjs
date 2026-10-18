@@ -163,7 +163,11 @@ for(const activation of ['pointer','keyboard']){
 
     for(const hash of ['#services','#about','#contact']){
       await page.goto('/');
-      const historyBefore=await page.evaluate(()=>history.length);
+      await page.evaluate(()=>{
+        window.__homeMenuPushes=[];
+        const push=history.pushState.bind(history);
+        history.pushState=(state,title,url)=>{window.__homeMenuPushes.push(String(url));return push(state,title,url);};
+      });
       await toggle.click();
       const link=menu.locator(`a[href="${hash}"]`);
       await link.focus();
@@ -178,7 +182,7 @@ for(const activation of ['pointer','keyboard']){
         const active=document.activeElement;
         return Boolean(target && active && active.matches('h1,h2,h3') && target.contains(active) && active.tabIndex===-1);
       },hash)).toBe(true);
-      expect(await page.evaluate(()=>history.length)).toBe(historyBefore+1);
+      expect(await page.evaluate(()=>window.__homeMenuPushes)).toEqual([hash]);
       const targetTop=await page.locator(hash).evaluate(node=>node.getBoundingClientRect().top);
       expect(targetTop).toBeGreaterThanOrEqual(0);
       expect(targetTop).toBeLessThanOrEqual(80);
