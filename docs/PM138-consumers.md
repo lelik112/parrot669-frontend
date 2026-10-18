@@ -11,7 +11,7 @@ Selected unmerged Home input: `119b3fa462d59c580cca5f123629bddf15613cd8` (PR1).
 | shared/session.js | account/profile, identity epoch, current-user validation, coalesced refresh, stale-response fencing; no Messaging/DOM imports |
 | shared/storage.js | optional persistence with in-memory fallback and deletion tombstones; account-scoped draft cleanup |
 | shared/auth.js | existing `/api/host/auth` actions, validated login/verification identity, explicit logout/confirm-204; no new endpoint |
-| shared/core.js + entry.js | one per-window instance; BFCache invalidation before refresh; ordered ES-module loading of existing controllers |
+| shared/core.js + entry.js + entry-*.js | one per-window instance; BFCache invalidation before refresh; static per-page module graphs initialize controllers before document load completes |
 | Host | shared session/request/auth/storage; identity notifications close private DOM; uppercase error mapping; profile PATCH updates shared profile |
 | Search | shared public transport/session/auth/storage; Messaging is optional for contact UI/language, not session or HTTP |
 | Messages | Messaging feature delegates shared request/auth/session; profile updates preserve composer; account changes reset private UI; Back/Forward restores selection |

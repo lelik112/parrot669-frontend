@@ -1,6 +1,25 @@
 const {test,expect}=require('./isolated-fixture.cjs');
 const {installPublicFixture,installHostFixture}=require('./public-fixture.cjs');
 
+test('document load includes page handlers even when controller downloads are delayed',async({page})=>{
+  await page.setViewportSize({width:390,height:844});
+  for(const asset of ['script.js','messages.js']) await page.route(`**/assets/${asset}`,async route=>{
+    await new Promise(resolve=>setTimeout(resolve,200));
+    await route.continue();
+  });
+  await installHostFixture(page);
+  await page.goto('/',{waitUntil:'load'});
+  expect(await page.evaluate(()=>{
+    document.querySelector('.menu-toggle').click();
+    return document.querySelector('#mobile-menu').getAttribute('aria-hidden');
+  })).toBe('false');
+  await page.goto('/messages.html',{waitUntil:'load'});
+  expect(await page.evaluate(()=>{
+    document.querySelector('[data-msg-lang="en"]').click();
+    return document.querySelector('#msg-host-link').textContent;
+  })).toBe('For hosts');
+});
+
 async function selectFixtureCity(page) {
   const country=page.locator('#availability-form select[name=country]');
   const city=page.locator('#availability-form select[name=city]');

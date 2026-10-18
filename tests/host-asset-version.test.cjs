@@ -9,7 +9,7 @@ const hostHtml = fs.readFileSync(
 );
 
 test('host page loads one module entrypoint with address and calendar dependencies', () => {
-  assert.match(hostHtml, /type="module" src="\/assets\/entry\.js" data-parrot-page="host"/);
-  const entry=fs.readFileSync(path.join(__dirname,'../public/assets/entry.js'),'utf8');
-  assert.match(entry,/host: \["messaging-common.js", "host-address.js", "calendar-verification.js", "host.js"\]/);
+  assert.match(hostHtml, /type="module" src="\/assets\/entry-host\.js"/);
+  const entry=fs.readFileSync(path.join(__dirname,'../public/assets/entry-host.js'),'utf8');
+  assert.equal(entry, 'import "./entry.js";\nimport "./messaging-common.js";\nimport "./host-address.js";\nimport "./calendar-verification.js";\nimport "./host.js";\n');
 });

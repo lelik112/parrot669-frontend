@@ -19,7 +19,7 @@ test('accepted Home composition makes the three-item preview explicitly lead to 
   assert.match(html,/class="housing-callout"/);
   assert.match(html,/class="housing-cta" href="\/search\.html"/);
   assert.match(html,/assets\/styles\.css\?v=20261018-home-trust/);
-  assert.match(html,/type="module" src="\/assets\/entry\.js" data-parrot-page="home"/);
+  assert.match(html,/type="module" src="\/assets\/entry-home\.js"/);
 });
 
 test('Home trust copy renders the exact localized hero copy and two identical visible guarantee groups',()=>{
@@ -256,7 +256,7 @@ test('Existing lead state machine remains wired to the Home form',()=>{
   const script=read('public/assets/lead-form.js');
   assert.match(html,/id="lead-form" aria-describedby="form-status"/);
   assert.match(html,/id="form-status" role="status" aria-live="polite" aria-atomic="true"/);
-  assert.match(read('public/assets/entry.js'),/home: \["lead-form.js", "script.js"\]/);
+  assert.equal(read('public/assets/entry-home.js'),'import "./entry.js";\nimport "./lead-form.js";\nimport "./script.js";\n');
   assert.match(script,/requestSubmit|addEventListener\(['"]submit['"]/);
   assert.match(script,/uncertain/);
 });
