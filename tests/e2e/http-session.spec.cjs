@@ -4,7 +4,7 @@ const {installPublicFixture,installHostFixture}=require('./public-fixture.cjs');
 test('Host calendar connect retains invalid-ACK draft then saves through existing PUT/204 contract',async({page})=>{
   await installHostFixture(page);
   const propertyId='11111111-1111-4111-8111-111111111111';
-  const icalUrl='https://www.airbnb.com/calendar/ical/123.ics?t=synthetic-only';
+  const icalUrl='https://www.airbnb.com/calendar/ical/123.ics?s=SyntheticOnly123';
   const commands=[];let dashboards=0,accept=false;
   await page.route('**/api/host/dashboard',route=>{
     dashboards++;

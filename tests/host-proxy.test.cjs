@@ -150,7 +150,7 @@ test('calendar connect forwards exact PUT with session-only headers on productio
     return new Response(null,{status:204,headers:{'X-Request-ID':'connect-request'}});
   }};
   vm.createContext(sandbox);vm.runInContext(source,sandbox);
-  const body={provider:'Airbnb',icalUrl:'https://www.airbnb.com/calendar/ical/123.ics?t=synthetic'};
+  const body={provider:'Airbnb',icalUrl:'https://www.airbnb.com/calendar/ical/123.ics?s=SyntheticOnly123'};
   for(const host of ['parrot669.com','preview.example.test']) {
     const response=await sandbox.worker.fetch(new Request(`https://${host}/api/host/properties/${id}/public-links`,{
       method:'PUT',headers:{Origin:`https://${host}`,Cookie:'other=private; parrot_session=synthetic',

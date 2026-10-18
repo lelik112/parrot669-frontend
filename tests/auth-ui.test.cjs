@@ -1311,7 +1311,7 @@ test('calendar request and dashboard use the canonical Airbnb provider', async (
 const connectWorkerSource = fs.readFileSync(path.join(root,'src/index.js'),'utf8')
   .replace('export default {','globalThis.worker = {');
 const connectPath = `/properties/${calendarProperty}/public-links`;
-const connectUrl = 'https://www.airbnb.com/calendar/ical/123.ics?t=synthetic-only';
+const connectUrl = 'https://www.airbnb.com/calendar/ical/123.ics?s=SyntheticOnly123';
 function connectSetup(producer) {
   const upstream=[];
   const worker={URL,Headers,Response,console,fetch:async(url,init)=>{
@@ -1321,6 +1321,8 @@ function connectSetup(producer) {
     assert.equal(url,'https://api.example.test/api'+connectPath);
     assert.equal(init.method,'PUT');
     assert.deepEqual(body,{provider:'Airbnb',icalUrl:connectUrl});
+    // Existing CalendarSource.parseAirbnb shape: ?s=, alphanumeric token.
+    assert.match(body.icalUrl,/^https:\/\/www\.airbnb\.com\/calendar\/ical\/[0-9]{1,32}\.ics\?s=[A-Za-z0-9]+$/);
     assert.equal(init.headers.get('Cookie'),'parrot_session=synthetic');
     assert.equal(init.headers.get('Authorization'),null);
     return producer();
