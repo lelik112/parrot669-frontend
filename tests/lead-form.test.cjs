@@ -42,7 +42,7 @@ async function harness(t,{url='https://parrot669.com/',lang='en',fetch=async()=>
   w.document.documentElement.lang=lang;
   w.fetch=fetch;
   const scrolls=[];
-  w.scrollBy=options=>{scrolls.push(options);};
+  w.scrollTo=options=>{scrolls.push(options);};
   w.HTMLElement.prototype.scrollIntoView=()=>{};
   w.eval(source);
   t.after(()=>dom.window.close());
@@ -183,6 +183,7 @@ test('manual retry aligns the focused receipt title below the sticky header with
   assert.equal(requests.length,1);
 
   h.w.document.querySelector('.topbar').getBoundingClientRect=()=>({bottom:103.5});
+  h.w.scrollY=300;
   h.receipt().querySelector('h3').getBoundingClientRect=()=>({top:26.859,bottom:55.859});
   h.scrolls.length=0;
   outcome={ok:true,status:200};
@@ -193,8 +194,8 @@ test('manual retry aligns the focused receipt title below the sticky header with
   assert.equal(h.w.document.activeElement,h.receipt());
   assert.equal(h.scrolls.length,1);
   assert.equal(h.scrolls[0].left,0);
-  assert.equal(h.scrolls[0].behavior,'auto');
-  assert.ok(Math.abs(h.scrolls[0].top-(-92.641))<1e-9);
+  assert.equal(h.scrolls[0].behavior,'instant');
+  assert.ok(Math.abs(h.scrolls[0].top-207.359)<1e-9);
 });
 
 test('confirmed success shows a read-only localized summary and starts a new request explicitly',async t=>{
