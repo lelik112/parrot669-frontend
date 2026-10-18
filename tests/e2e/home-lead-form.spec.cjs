@@ -11,6 +11,34 @@ async function fill(page,{name='Alex',contact='alex@example.test',service='owner
   await page.locator('[name=message]').fill(message);
 }
 
+// Observe native events without preventing, redispatching, focusing or scrolling.
+// Only synthetic fixture pages use this bounded recorder; no field values/PII.
+async function recordRetryEvents(page){
+  await page.addInitScript(()=>{
+    const events=[];
+    const target=node=>node instanceof Element?{tag:node.tagName,id:node.id,name:node.getAttribute('name'),class:node.className}:null;
+    const sample=(event,phase)=>{
+      if(events.length>=600)return;
+      const button=document.querySelector('#lead-form button[type=submit]'),rect=button?.getBoundingClientRect();
+      events.push({type:event.type,phase,time:performance.now(),target:target(event.target),defaultPrevented:event.defaultPrevented,
+        trusted:event.isTrusted,active:target(document.activeElement),x:event.clientX,y:event.clientY,
+        hit:Number.isFinite(event.clientX)?target(document.elementFromPoint(event.clientX,event.clientY)):null,
+        button:rect?{x:rect.x,y:rect.y,width:rect.width,height:rect.height,disabled:button.disabled}:null,
+        scrollY,state:document.querySelector('#form-status')?.dataset.state,
+        path:event.composedPath().filter(node=>node instanceof Element).slice(0,5).map(target)});
+    };
+    for(const type of ['pointerdown','pointerup','mousedown','mouseup','click','submit','focusin','focusout']){
+      document.addEventListener(type,event=>sample(event,'capture'),true);
+      document.addEventListener(type,event=>{sample(event,'bubble');queueMicrotask(()=>sample(event,'after-default'));});
+    }
+    let scheduled=false;
+    document.addEventListener('scroll',event=>{
+      if(!scheduled){scheduled=true;requestAnimationFrame(()=>{scheduled=false;sample(event,'frame');});}
+    },true);
+    window.__homeRetryEvents=events;
+  });
+}
+
 test('lead form snapshots one request, localizes in flight and confirms with a read-only summary',async({page})=>{
   await quietNetwork(page);
   let requests=0,release;
@@ -39,16 +67,20 @@ test('lead form snapshots one request, localizes in flight and confirms with a r
   await expect(page.locator('[name=name]')).toHaveValue('');
 });
 
-test('validation rejection and ambiguous server or network outcomes preserve the draft',async({page})=>{
+test('validation rejection and ambiguous server or network outcomes preserve the draft',async({page},testInfo)=>{
   await quietNetwork(page);
+  await recordRetryEvents(page);
   let mode='validation',requests=0;
+  const outcomes=[];
   await page.route('**/api/contact',route=>{
     requests+=1;
+    outcomes.push({mode,method:route.request().method()});
     if(mode==='validation')return route.fulfill({status:400,json:{ok:false,error:'Missing or invalid fields'}});
     if(mode==='server-unknown')return route.fulfill({status:500,json:{ok:false,error:'Email delivery failed'}});
     if(mode==='network-unknown')return route.abort('failed');
     return route.fulfill({status:200,json:{ok:true}});
   });
+  try{
   await page.goto('/');
   await fill(page,{message:'Keep this exact draft'});
   await page.locator('#lead-form').evaluate(form=>form.requestSubmit());
@@ -76,6 +108,35 @@ test('validation rejection and ambiguous server or network outcomes preserve the
   await page.locator('#lead-form button[type=submit]').click();
   await expect(page.locator('#form-status')).toHaveAttribute('data-state','success');
   expect(requests).toBe(4);
+  }finally{
+    const events=await page.evaluate(()=>window.__homeRetryEvents||[]);
+    console.log('HOME_RETRY_EVENTS '+JSON.stringify({project:testInfo.project.name,outcomes,events}));
+    await testInfo.attach('home-retry-events',{body:Buffer.from(JSON.stringify({outcomes,events})),contentType:'application/json'});
+  }
+});
+
+for(const position of ['top','bottom'])test(`physical retry after validation focus from ${position} preserves uncertain draft`,async({page},testInfo)=>{
+  await quietNetwork(page);await recordRetryEvents(page);
+  let requests=0;
+  const outcomes=[];
+  await page.route('**/api/contact',route=>{
+    requests++;outcomes.push(requests===1?400:500);
+    return route.fulfill({status:requests===1?400:500,json:{ok:false,error:'Synthetic rejection'}});
+  });
+  try{
+    await page.goto('/');await fill(page,{message:'Position-specific retry draft'});
+    await page.evaluate(position=>window.scrollTo({top:position==='top'?0:document.documentElement.scrollHeight,behavior:'instant'}),position);
+    await page.locator('#lead-form').evaluate(form=>form.requestSubmit());
+    await expect(page.locator('#form-status')).toHaveAttribute('data-state','error');
+    await page.locator('#lead-form button[type=submit]').click();
+    await expect(page.locator('#form-status')).toHaveAttribute('data-state','uncertain');
+    await expect(page.locator('[name=message]')).toHaveValue('Position-specific retry draft');
+    expect(requests).toBe(2);
+  }finally{
+    const events=await page.evaluate(()=>window.__homeRetryEvents||[]);
+    console.log('HOME_RETRY_POSITION_EVENTS '+JSON.stringify({project:testInfo.project.name,position,outcomes,events}));
+    await testInfo.attach('home-retry-events',{body:Buffer.from(JSON.stringify({position,outcomes,events})),contentType:'application/json'});
+  }
 });
 
 test('manual retry keeps the receipt title below the compact sticky header in every locale',async({page})=>{
