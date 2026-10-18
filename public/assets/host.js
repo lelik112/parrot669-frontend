@@ -336,6 +336,7 @@ async function api(path, options = {}){
     const method = options.method || "GET";
     const empty = method === "DELETE" && /^\/(properties|listings|calendars|availability|unavailability)\/[^/]+$/.test(path)
       || method === "PUT" && /^\/(availability|calendars)\/[^/]+$/.test(path)
+      || method === "PUT" && /^\/properties\/[^/]+\/public-links$/.test(path)
       || method === "POST" && /^\/calendars\/[^/]+\/(sync|activate)$/.test(path);
     return await hostCore.session.request(`/api/host${path}`, {...options, authenticated:true,
       ...(empty ? {expected:"empty"} : {}),
@@ -1053,18 +1054,23 @@ async function deleteListing(property){
 }
 
 async function connectCalendar(property, form){
+  const epoch = hostCore.session.epoch;
+  const current = () => epoch === hostCore.session.epoch && state.authenticated && state.properties.includes(property);
+  if (!current()) return;
   const data=new FormData(form);
   setFormError(form);
   setBusy(form,true);
   message(tr("loading"));
   try{
-    await api(`/properties/${property.id}/calendars`,{
-      method:"POST",
+    await api(`/properties/${property.id}/public-links`,{
+      method:"PUT",
       body:JSON.stringify({provider:"Airbnb",icalUrl:String(data.get("icalUrl")||"").trim()})
     });
+    if (!current()) return;
     message(tr("calendarConnected"),"success");
     await syncDashboard();
   }catch(error){
+    if (!current() || error.kind === "stale") return;
     setFormError(form,error.message);
     message(error.message,"error");
   }

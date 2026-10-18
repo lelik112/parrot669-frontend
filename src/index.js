@@ -225,7 +225,7 @@ export default {
         (/^\/availability\/[0-9a-f-]+$/i.test(path) && ["PUT", "DELETE"].includes(request.method)) ||
         (/^\/properties\/[0-9a-f-]+\/unavailability$/i.test(path) && ["GET", "POST"].includes(request.method)) ||
         (/^\/unavailability\/[0-9a-f-]+$/i.test(path) && ["PUT", "DELETE"].includes(request.method)) ||
-        (/^\/properties\/[0-9a-f-]+\/calendars$/i.test(path) && request.method === "POST") ||
+        (/^\/properties\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/public-links$/i.test(path) && request.method === "PUT") ||
         (/^\/properties\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/calendars$/i.test(path) && request.method === "GET") ||
         (/^\/calendars\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/activate$/i.test(path) && request.method === "POST") ||
         (/^\/calendars\/[0-9a-f-]+\/sync$/i.test(path) && request.method === "POST") ||
