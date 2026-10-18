@@ -2752,3 +2752,6 @@ footer{
 
 /* Keep long localized Contact headings inside the compact grid track. */
 .home-page .contact-copy>h2{overflow-wrap:anywhere}
+
+.home-page :is(#services,#about,#contact){scroll-margin-top:82px}
+@media(max-width:640px){.home-page :is(#services,#about,#contact){scroll-margin-top:76px}}
