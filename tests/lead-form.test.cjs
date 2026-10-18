@@ -199,6 +199,32 @@ test('manual retry aligns the focused receipt title below the sticky header with
   assert.ok(Math.abs(h.scrolls[0].top-207.359)<1e-9);
 });
 
+for(const status of [400,500])for(const [position,rect,expectedTop] of [
+  ['behind header',{top:24,bottom:74},228],
+  ['below viewport',{top:900,bottom:950},1104],
+  ['already visible',{top:200,bottom:250},null]
+])test(`Home ${status} status focus ${position} avoids implicit smooth scroll and keeps the draft`,async t=>{
+  for(const lang of ['en','es','ca','ru']){
+    let requests=0;
+    const h=await harness(t,{lang,fetch:async()=>{requests++;return new Response('{"error":"Synthetic rejection"}',{status});}});
+    fill(h,{message:'Keep exact focus draft'});
+    h.w.scrollY=300;h.w.innerHeight=800;
+    h.w.document.querySelector('.topbar').getBoundingClientRect=()=>({bottom:80});
+    h.status().getBoundingClientRect=()=>rect;
+    const calls=[],focus=h.status().focus.bind(h.status());
+    h.status().focus=options=>{calls.push(options);focus(options);};
+    await h.submit();
+    assert.equal(h.status().dataset.state,status===400?'error':'uncertain');
+    assert.equal(h.w.document.activeElement,h.status());
+    assert.equal(calls.length,1);assert.equal(calls[0]?.preventScroll,true);
+    assert.equal(h.w.document.documentElement.scrollTop,300);
+    assert.equal(h.form.elements.message.value,'Keep exact focus draft');
+    assert.equal(requests,1);
+    assert.equal(h.scrolls.length,expectedTop===null?0:1);
+    if(expectedTop!==null){assert.equal(h.scrolls[0].top,expectedTop);assert.equal(h.scrolls[0].behavior,'instant');}
+  }
+});
+
 test('confirmed success shows a read-only localized summary and starts a new request explicitly',async t=>{
   const h=await harness(t);
   fill(h,{name:'Alicia',contact:'+34 600',service:'visit',message:'Please visit'});

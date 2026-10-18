@@ -47,6 +47,20 @@
     }
   }
 
+  function focusStatus(){
+    // Cancel in-flight focus scrolling before enabling a physical retry. With
+    // root smooth scrolling, a moving button can lose pointerup/click to a
+    // different element, so no native submit occurs at all.
+    document.documentElement.scrollTop=window.scrollY;
+    status.focus({preventScroll:true});
+    const headerBottom=document.querySelector(".topbar")?.getBoundingClientRect().bottom||0;
+    const safeTop=Math.max(0,headerBottom)+16;
+    const rect=status.getBoundingClientRect();
+    if(rect.top<safeTop||rect.bottom>window.innerHeight-16){
+      window.scrollTo({top:Math.max(0,window.scrollY+rect.top-safeTop),left:0,behavior:"instant"});
+    }
+  }
+
   function render({focus=false}={}){
     const text=copy();
     const busy=state.kind==="submitting";
@@ -79,7 +93,7 @@
     }
     if(focus){
       if(state.kind==="success") focusReceipt();
-      else status.focus();
+      else focusStatus();
     }
   }
 

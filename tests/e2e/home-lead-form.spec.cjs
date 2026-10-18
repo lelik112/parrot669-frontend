@@ -131,10 +131,23 @@ for(const position of ['top','bottom'])for(const pressMs of [0,75])test(`physica
     await page.evaluate(position=>window.scrollTo({top:position==='top'?0:document.documentElement.scrollHeight,behavior:'instant'}),position);
     await page.locator('#lead-form').evaluate(form=>form.requestSubmit());
     await expect(page.locator('#form-status')).toHaveAttribute('data-state','error');
+    await expect(page.locator('#form-status')).toBeFocused();
+    const statusRect=await page.locator('#form-status').evaluate(node=>{
+      const rect=node.getBoundingClientRect(),header=document.querySelector('.topbar').getBoundingClientRect();
+      return {top:rect.top,bottom:rect.bottom,safeTop:header.bottom+16,height:innerHeight};
+    });
+    expect(statusRect.top).toBeGreaterThanOrEqual(statusRect.safeTop-1);
+    expect(statusRect.bottom).toBeLessThanOrEqual(statusRect.height-15);
     await page.locator('#lead-form button[type=submit]').click({delay:pressMs});
     await expect(page.locator('#form-status')).toHaveAttribute('data-state','uncertain');
     await expect(page.locator('[name=message]')).toHaveValue('Position-specific retry draft');
     expect(requests).toBe(2);
+    const events=await page.evaluate(()=>window.__homeRetryEvents);
+    const gesture=events.filter(event=>event.phase==='capture'&&['pointerdown','pointerup','click'].includes(event.type));
+    expect(gesture.map(event=>event.target.tag)).toEqual(['BUTTON','BUTTON','BUTTON']);
+    expect(gesture.map(event=>event.hit.tag)).toEqual(['BUTTON','BUTTON','BUTTON']);
+    expect(events.filter(event=>event.type==='click'&&event.phase==='window-bubble').every(event=>!event.defaultPrevented)).toBe(true);
+    expect(events.filter(event=>event.type==='submit'&&event.phase==='capture')).toHaveLength(2);
   }finally{
     const events=await page.evaluate(()=>window.__homeRetryEvents||[]);
     console.log('HOME_RETRY_POSITION_EVENTS '+JSON.stringify({project:testInfo.project.name,position,pressMs,outcomes,events}));
