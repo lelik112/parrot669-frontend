@@ -1,4 +1,4 @@
-const {test, expect} = require('@playwright/test');
+const {test, expect, installNetworkGuards} = require('./isolated-fixture.cjs');
 const {createAuthMessagingFixture} = require('./auth-messaging-fixture.cjs');
 
 async function login(page, username) {
@@ -9,10 +9,12 @@ async function login(page, username) {
   await expect(page.locator('#msg-account-name')).toHaveText(username);
 }
 
-test('PM-003/BUG-020/PM-036: isolated A/B auth contexts exchange, read and survive independent logout', async ({browser}) => {
+test('isolated A/B auth contexts exchange, read and survive independent logout', async ({browser,baseURL}) => {
   const fixture = createAuthMessagingFixture();
-  const contextA = await browser.newContext();
-  const contextB = await browser.newContext();
+  const contextA = await browser.newContext({baseURL,serviceWorkers: 'block'});
+  const contextB = await browser.newContext({baseURL,serviceWorkers: 'block'});
+  const networkA = await installNetworkGuards(contextA,baseURL);
+  const networkB = await installNetworkGuards(contextB,baseURL);
   const pageA = await contextA.newPage();
   const pageB = await contextB.newPage();
   await fixture.install(pageA, 'a');
@@ -65,5 +67,6 @@ test('PM-003/BUG-020/PM-036: isolated A/B auth contexts exchange, read and survi
     await contextB.close();
     fixture.cleanup();
   }
+  expect([...networkA.unexpected,...networkB.unexpected]).toEqual([]);
   expect(fixture.snapshot()).toMatchObject({sessions: {}, messages: [], conversationExists: false});
 });

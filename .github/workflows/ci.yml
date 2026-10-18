@@ -25,11 +25,14 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - run: npm test
 
   browser-smoke:
@@ -37,19 +40,36 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
-      - run: npm ci
-      - run: npx playwright install --with-deps chromium webkit
+      - run: npm ci --ignore-scripts
+      - run: npx --no-install playwright install --with-deps chromium webkit
       - run: npm run test:e2e
+      - name: Bound evidence size
+        if: always()
+        run: |
+          python3 - <<'PYTHON'
+          import os
+          from pathlib import Path
+          size=sum(p.stat().st_size for root in ('test-results','playwright-report') for p in Path(root).rglob('*') if p.is_file())
+          allowed=size <= 64 * 1024 * 1024
+          with open(os.environ['GITHUB_ENV'],'a') as output:
+              output.write('HOME_EVIDENCE_ALLOWED='+str(allowed).lower()+'\n')
+          print('Evidence bytes:',size,'; limit:',64*1024*1024)
+          if not allowed: raise SystemExit('Evidence exceeds the bounded upload budget')
+          PYTHON
       - uses: actions/upload-artifact@v4
-        if: failure()
+        if: always() && env.HOME_EVIDENCE_ALLOWED == 'true'
         with:
-          name: playwright-public-smoke-${{ github.run_id }}
+          name: home-qa-${{ github.run_id }}
           path: |
             test-results/
             playwright-report/
-          if-no-files-found: ignore
+          if-no-files-found: error
           retention-days: 3
+          compression-level: 9

@@ -208,9 +208,85 @@ Object.assign(translations.es, { navHousing:"Vivienda" });
 Object.assign(translations.ca, { navHousing:"Habitatge" });
 Object.assign(translations.ru, { navHousing:"Жильё" });
 
+Object.assign(translations.en, {
+  menuLabel:"Menu", menuOpen:"Open menu", menuClose:"Close menu",
+  presenceLabel:"3 EXAMPLES FROM OUR 6 SERVICES", presenceTitle:"Practical help.<br>Clearer decisions.",
+  presenceVisit:"Property visits", presenceRental:"Rental verification", presenceDocs:"Document checks",
+  viewAllServices:"View all 6 services", servicesRelation:"All 6 services — including the 3 examples above.",
+  aboutTitle:"About PARROT 669",
+  presenceNote:"We agree the scope and price before paid work begins.",
+  housingLabel:"HOUSING ON PARROT", housingTitle:"Looking for a place?",
+  housingText:"Explore housing separately from our local services.", housingCta:"Explore housing"
+});
+Object.assign(translations.es, {
+  menuLabel:"Menú", menuOpen:"Abrir menú", menuClose:"Cerrar menú",
+  presenceLabel:"3 EJEMPLOS DE NUESTROS 6 SERVICIOS", presenceTitle:"Ayuda práctica.<br>Decisiones más claras.",
+  presenceVisit:"Visitas a propiedades", presenceRental:"Verificación de alquiler", presenceDocs:"Revisión de documentos",
+  viewAllServices:"Ver los 6 servicios", servicesRelation:"Los 6 servicios, incluidos los 3 ejemplos anteriores.",
+  aboutTitle:"Sobre PARROT 669",
+  presenceNote:"Acordamos el alcance y el precio antes de empezar cualquier trabajo de pago.",
+  housingLabel:"VIVIENDA EN PARROT", housingTitle:"¿Buscas un lugar?",
+  housingText:"Explora la vivienda por separado de nuestros servicios locales.", housingCta:"Explorar vivienda"
+});
+Object.assign(translations.ca, {
+  menuLabel:"Menú", menuOpen:"Obre el menú", menuClose:"Tanca el menú",
+  presenceLabel:"3 EXEMPLES DELS NOSTRES 6 SERVEIS", presenceTitle:"Ajuda pràctica.<br>Decisions més clares.",
+  presenceVisit:"Visites a propietats", presenceRental:"Verificació del lloguer", presenceDocs:"Revisió de documents",
+  viewAllServices:"Veure els 6 serveis", servicesRelation:"Els 6 serveis, inclosos els 3 exemples anteriors.",
+  aboutTitle:"Sobre PARROT 669",
+  presenceNote:"Acordem l'abast i el preu abans de començar qualsevol feina de pagament.",
+  housingLabel:"HABITATGE A PARROT", housingTitle:"Busques un lloc?",
+  housingText:"Explora l'habitatge per separat dels nostres serveis locals.", housingCta:"Explora habitatge"
+});
+Object.assign(translations.ru, {
+  menuLabel:"Меню", menuOpen:"Открыть меню", menuClose:"Закрыть меню",
+  presenceLabel:"3 ПРИМЕРА ИЗ 6 НАШИХ УСЛУГ", presenceTitle:"Практическая помощь.<br>Понятные решения.",
+  presenceVisit:"Осмотр объектов", presenceRental:"Проверка аренды", presenceDocs:"Проверка документов",
+  viewAllServices:"Посмотреть все 6 услуг", servicesRelation:"Все 6 услуг, включая 3 примера выше.",
+  aboutTitle:"О PARROT 669",
+  presenceNote:"До начала платной работы согласуем объём и цену.",
+  housingLabel:"ЖИЛЬЁ НА PARROT", housingTitle:"Ищете жильё?",
+  housingText:"Поиск жилья — отдельно от наших локальных услуг.", housingCta:"Искать жильё"
+});
+
+/* Home hero and Contact copy. */
+Object.assign(translations.en, {
+  heroSubject:"Local help with property in Barcelona",
+  heroTitle:"Local help we stand behind.",
+  heroLead:"We agree the work and price up front, show you the result and take responsibility for our mistakes.",
+  guaranteeTitle:"Our work guarantee",
+  guaranteePromise:"If we make a mistake in our work, we’ll refund you and take the next step free of charge.",
+  guaranteeAgreement:"We agree the scope of work, expected result, price and guarantee terms with you before work begins."
+});
+Object.assign(translations.es, {
+  heroSubject:"Ayuda local con inmuebles en Barcelona",
+  heroTitle:"Ayuda de la que nos hacemos responsables.",
+  heroLead:"Acordamos el trabajo y el precio de antemano, mostramos el resultado y nos hacemos responsables de nuestros errores.",
+  guaranteeTitle:"La garantía de nuestro trabajo",
+  guaranteePromise:"Si cometemos un error en nuestro trabajo, te devolveremos el dinero y realizaremos gratis el siguiente paso.",
+  guaranteeAgreement:"Acordaremos contigo el alcance del trabajo, el resultado esperado, el precio y las condiciones de la garantía antes de empezar."
+});
+Object.assign(translations.ca, {
+  heroSubject:"Ajuda local amb immobles a Barcelona",
+  heroTitle:"Ajuda de la qual ens fem responsables.",
+  heroLead:"Acordem la feina i el preu per endavant, mostrem el resultat i assumim la responsabilitat dels nostres errors.",
+  guaranteeTitle:"La garantia de la nostra feina",
+  guaranteePromise:"Si ens equivoquem en la nostra feina, et retornarem els diners i farem el següent pas de franc.",
+  guaranteeAgreement:"Abans de començar, acordarem amb tu l'abast de la feina, el resultat esperat, el preu i les condicions de la garantia."
+});
+Object.assign(translations.ru, {
+  heroSubject:"Локальная помощь с недвижимостью в Барселоне",
+  heroTitle:"Помощь, за которую мы отвечаем.",
+  heroLead:"Согласуем работу и цену заранее, показываем результат и отвечаем за свои ошибки.",
+  guaranteeTitle:"Гарантия нашей работы",
+  guaranteePromise:"Если мы ошиблись в своей работе, вернём деньги и следующий шаг сделаем бесплатно.",
+  guaranteeAgreement:"Объём работы, ожидаемый результат, цену и условия гарантии согласуем с вами до начала работы."
+});
+
 const htmlNodes = document.querySelectorAll("[data-i18n-html]");
 const textNodes = document.querySelectorAll("[data-i18n]");
-const langButtons = document.querySelectorAll("[data-lang]");
+const langButtons = document.querySelectorAll("[data-lang],[data-menu-lang]");
+const languageForButton = button => button.dataset.lang || button.dataset.menuLang;
 
 function setLanguage(lang){
   const t = translations[lang] || translations.en;
@@ -223,12 +299,12 @@ function setLanguage(lang){
     const key = node.dataset.i18nHtml;
     if(t[key] !== undefined) node.innerHTML = t[key];
   });
-  langButtons.forEach(btn => btn.classList.toggle("active", btn.dataset.lang === lang));
+  langButtons.forEach(btn => btn.classList.toggle("active", languageForButton(btn) === lang));
   localStorage.setItem("parrot669-language", lang);
   document.dispatchEvent(new CustomEvent("parrot:language",{detail:{lang}}));
 }
 
-langButtons.forEach(btn => btn.addEventListener("click", () => setLanguage(btn.dataset.lang)));
+langButtons.forEach(btn => btn.addEventListener("click", () => setLanguage(languageForButton(btn))));
 
 const saved = localStorage.getItem("parrot669-language");
 const browser = (navigator.language || "en").slice(0,2);
@@ -346,26 +422,135 @@ if (availabilityForm) {
 
 const menuToggle = document.querySelector(".menu-toggle");
 const mobileMenu = document.getElementById("mobile-menu");
+let menuReturnFocus = null;
 
-function setMobileMenu(open){
+function updateMenuToggleLabel(){
+  if (!menuToggle) return;
+  const t = translations[document.documentElement.lang] || translations.en;
+  const open = menuToggle.getAttribute("aria-expanded") === "true";
+  menuToggle.setAttribute("aria-label", open ? t.menuClose : t.menuOpen);
+}
+
+function mobileMenuFocusables(){
+  if (!mobileMenu) return [];
+  return [...mobileMenu.querySelectorAll('a[href],button:not([disabled])')]
+    .filter(node => node.getClientRects().length > 0);
+}
+
+function setMobileMenu(open,{restoreFocus=false}={}){
   if (!menuToggle || !mobileMenu) return;
+  const wasOpen = menuToggle.getAttribute("aria-expanded") === "true";
+  if (open && !wasOpen) menuReturnFocus = document.activeElement;
   menuToggle.setAttribute("aria-expanded", String(open));
   mobileMenu.setAttribute("aria-hidden", String(!open));
   mobileMenu.classList.toggle("open", open);
+  document.body.classList.toggle("menu-open", open);
+  updateMenuToggleLabel();
+  if (open) {
+    requestAnimationFrame(() => mobileMenuFocusables()[0]?.focus());
+  } else if (restoreFocus && wasOpen) {
+    (menuReturnFocus instanceof HTMLElement ? menuReturnFocus : menuToggle).focus();
+  }
 }
 
 menuToggle?.addEventListener("click", () => {
-  setMobileMenu(menuToggle.getAttribute("aria-expanded") !== "true");
+  const open = menuToggle.getAttribute("aria-expanded") !== "true";
+  setMobileMenu(open,{restoreFocus:!open});
 });
 
 mobileMenu?.querySelectorAll("a").forEach(link => {
   link.addEventListener("click", () => setMobileMenu(false));
 });
 
+function focusAnchorHeading(target){
+  const heading = target.matches("h1,h2,h3") ? target : target.querySelector("h1,h2,h3");
+  const focusTarget = heading || target;
+  if (!focusTarget.hasAttribute("tabindex")) focusTarget.setAttribute("tabindex", "-1");
+  focusTarget.focus({preventScroll:true});
+}
+
+let homeAnchorReturnFocus = null;
+
+function leadServiceNavigationBlocked(){
+  const form = document.getElementById("lead-form");
+  const editor = document.getElementById("lead-editor");
+  return Boolean(form?.elements?.service?.disabled || editor?.hidden);
+}
+
+function rememberHomeAnchorActivator(source){
+  homeAnchorReturnFocus = mobileMenu?.contains(source) ? menuToggle : source;
+}
+
+function navigateHomeAnchor({source,target,hash,scroll=true}){
+  rememberHomeAnchorActivator(source);
+  history.pushState(null, "", hash);
+  if (scroll) target.scrollIntoView({block:"start", behavior:"auto"});
+  focusAnchorHeading(target);
+}
+
+document.addEventListener("click", event => {
+  if (!document.body.classList.contains("home-page")) return;
+  if (!(event.target instanceof Element)) return;
+  const link = event.target.closest('a[href^="#"]');
+  const serviceCard = event.target.closest("[data-service-card]");
+  const source = link || serviceCard;
+  if (!source || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  const hash = link?.getAttribute("href") || "#contact";
+  if (!hash || hash === "#") return;
+  const target = document.getElementById(decodeURIComponent(hash.slice(1)));
+  if (!target) return;
+
+  const serviceActivation = Boolean(source.closest("[data-service],[data-service-card]"));
+
+  event.preventDefault();
+  if (serviceActivation && leadServiceNavigationBlocked()) return;
+  navigateHomeAnchor({source,target,hash,scroll:!serviceActivation});
+});
+
 document.addEventListener("keydown", event => {
-  if (event.key === "Escape") setMobileMenu(false);
+  if (event.target instanceof Element && event.target.matches("[data-service-card]") && (event.key === "Enter" || event.key === " ")) {
+    event.preventDefault();
+    if (leadServiceNavigationBlocked()) return;
+    const target = document.getElementById("contact");
+    if (target) navigateHomeAnchor({source:event.target,target,hash:"#contact",scroll:false});
+    return;
+  }
+  const open = menuToggle?.getAttribute("aria-expanded") === "true";
+  if (!open) return;
+  if (event.key === "Escape") {
+    event.preventDefault();
+    setMobileMenu(false,{restoreFocus:true});
+    return;
+  }
+  if (event.key !== "Tab") return;
+  const items = mobileMenuFocusables();
+  if (!items.length) return;
+  const first = items[0];
+  const last = items[items.length-1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  } else if (!mobileMenu.contains(document.activeElement)) {
+    event.preventDefault();
+    first.focus();
+  }
+});
+
+window.addEventListener("popstate", () => {
+  const returnTarget = homeAnchorReturnFocus;
+  homeAnchorReturnFocus = null;
+  if (!(returnTarget instanceof HTMLElement)) return;
+  requestAnimationFrame(() => {
+    if (returnTarget.getClientRects().length) returnTarget.focus({preventScroll:true});
+  });
 });
 
 window.addEventListener("resize", () => {
   if (window.innerWidth > 980) setMobileMenu(false);
 });
+
+document.addEventListener("parrot:language", updateMenuToggleLabel);
+updateMenuToggleLabel();

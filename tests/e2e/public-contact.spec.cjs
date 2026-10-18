@@ -1,4 +1,4 @@
-const {test, expect} = require('@playwright/test');
+const {test, expect} = require('./isolated-fixture.cjs');
 const {installPublicFixture, assertNoHorizontalOverflow} = require('./public-fixture.cjs');
 
 test('PM-050/PM-053: anonymous auth modes and Messages accent stay correct', async ({page}) => {
