@@ -16,6 +16,12 @@ for(const width of [1440,390,320])for(const locale of ['ru','en','es','ca']){
     await expect(page.locator('.presence-services-link')).toHaveAttribute('href','#services');
     await expect(page.locator('.housing-callout a')).toHaveAttribute('href','/search.html');
     await expect(page.locator('#about .brand-feature-bird')).toBeVisible();
+    const quote=await page.locator('#about .vision-quote').evaluate(node=>{
+      const range=document.createRange();range.selectNodeContents(node);
+      return {right:node.getBoundingClientRect().right,textRight:range.getBoundingClientRect().right,client:node.clientWidth,scroll:node.scrollWidth};
+    });
+    expect(quote.scroll).toBeLessThanOrEqual(quote.client+1);
+    expect(quote.textRight).toBeLessThanOrEqual(quote.right+1);
     const report=await page.evaluate(()=>{
       const groups=[...document.querySelectorAll('.trust-guarantee')];
       return {

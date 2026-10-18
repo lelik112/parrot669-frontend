@@ -2443,6 +2443,7 @@ footer{
   margin:0;
   color:var(--lime);
   font-weight:800;
+  overflow-wrap:anywhere;
 }
 .home-page .brand-feature-cta{
   grid-row:6;
