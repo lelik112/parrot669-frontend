@@ -1,6 +1,36 @@
 const {test,expect}=require('./isolated-fixture.cjs');
 const {installPublicFixture,installHostFixture}=require('./public-fixture.cjs');
 
+test('Host calendar connect retains invalid-ACK draft then saves through existing PUT/204 contract',async({page})=>{
+  await installHostFixture(page);
+  const propertyId='11111111-1111-4111-8111-111111111111';
+  const icalUrl='https://www.airbnb.com/calendar/ical/123.ics?t=synthetic-only';
+  const commands=[];let dashboards=0,accept=false;
+  await page.route('**/api/host/dashboard',route=>{
+    dashboards++;
+    return route.fulfill({json:{properties:[{id:propertyId,title:'Synthetic connect property',city:'Barcelona',bedrooms:1,sleeps:2,
+      listings:[{id:'listing-1',url:'https://www.airbnb.com/rooms/123'}]}]}});
+  });
+  await page.route(`**/api/host/properties/${propertyId}/public-links`,route=>{
+    commands.push({method:route.request().method(),body:route.request().postDataJSON()});
+    return accept?route.fulfill({status:204}):route.fulfill({status:200,json:{}});
+  });
+  await page.goto('/host.html');
+  const card=page.locator(`[data-property-id="${propertyId}"]`);
+  await card.getByRole('button',{name:'Expand',exact:true}).click();
+  const form=card.locator('.host-calendar-form'),input=form.locator('[name=icalUrl]');
+  await input.fill(icalUrl);
+  await form.locator('button[type=submit]').click();
+  await expect(form.locator('.host-form-error')).toContainText('Invalid server response');
+  await expect(input).toHaveValue(icalUrl);await expect(input).toBeEnabled();
+  expect(commands).toEqual([{method:'PUT',body:{provider:'Airbnb',icalUrl}}]);expect(dashboards).toBe(1);
+  accept=true;
+  await form.locator('button[type=submit]').click();
+  await expect.poll(()=>dashboards).toBe(2);
+  await expect(form.locator('.host-form-error')).toHaveCount(0);
+  expect(commands).toEqual(Array(2).fill({method:'PUT',body:{provider:'Airbnb',icalUrl}}));
+});
+
 test('Host calendar uses snapshot revisions for sync, disable, activate and delete; stale is not retried',async({page})=>{
   await installHostFixture(page);
   const propertyId='11111111-1111-4111-8111-111111111111',id='22222222-2222-4222-8222-222222222222';

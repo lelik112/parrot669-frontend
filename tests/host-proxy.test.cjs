@@ -143,6 +143,67 @@ test('calendar transport retains exact methods, paths, origin and QA denials',as
   assert.equal(calls,0);
 });
 
+test('calendar connect forwards exact PUT with session-only headers on production and QA',async()=>{
+  const calls=[];
+  const sandbox={URL,Headers,Response,console,fetch:async(url,init)=>{
+    calls.push({url,...init,body:await new Response(init.body).json()});
+    return new Response(null,{status:204,headers:{'X-Request-ID':'connect-request'}});
+  }};
+  vm.createContext(sandbox);vm.runInContext(source,sandbox);
+  const body={provider:'Airbnb',icalUrl:'https://www.airbnb.com/calendar/ical/123.ics?t=synthetic'};
+  for(const host of ['parrot669.com','preview.example.test']) {
+    const response=await sandbox.worker.fetch(new Request(`https://${host}/api/host/properties/${id}/public-links`,{
+      method:'PUT',headers:{Origin:`https://${host}`,Cookie:'other=private; parrot_session=synthetic',
+        Authorization:'Bearer untrusted','X-Parrot-QA-Origin':'spoof','X-Parrot-QA-Worker':'spoof','Content-Type':'application/json'},
+      body:JSON.stringify(body)
+    }),qaEnv);
+    assert.equal(response.status,204);assert.equal(await response.text(),'');
+    assert.equal(response.headers.get('Cache-Control'),'no-store');
+    assert.equal(response.headers.get('X-Request-ID'),'connect-request');
+  }
+  assert.equal(calls.length,2);
+  for(const call of calls){
+    assert.equal(call.url,`https://api.example.test/api/properties/${id}/public-links`);
+    assert.equal(call.method,'PUT');assert.deepEqual(call.body,body);
+    assert.equal(call.headers.get('Cookie'),'parrot_session=synthetic');
+    assert.equal(call.headers.get('Authorization'),null);
+  }
+  assert.equal(calls[0].headers.get('X-Parrot-QA-Worker'),null);
+  assert.equal(calls[0].headers.get('X-Parrot-QA-Origin'),null);
+  assert.equal(calls[1].headers.get('X-Parrot-QA-Worker'),qaEnv.QA_WORKER_SECRET);
+  assert.equal(calls[1].headers.get('X-Parrot-QA-Origin'),'qa');
+});
+
+test('calendar connect denies obsolete POST, wrong methods/paths and origins before upstream',async()=>{
+  let calls=0;
+  const sandbox={URL,Headers,Response,console,fetch:async()=>{calls++;throw Error('Unexpected upstream');}};
+  vm.createContext(sandbox);vm.runInContext(source,sandbox);
+  for(const [method,route] of [
+    ...['GET','POST','PATCH','DELETE','HEAD','OPTIONS'].map(method=>[method,`/properties/${id}/public-links`]),
+    ['POST',`/properties/${id}/calendars`],['PUT','/properties/not-an-id/public-links'],
+    ['PUT',`/properties/${id}/public-links/extra`],['PUT',`/properties/${id}/public-links/`],
+    ['PUT',`/properties/${id}/public-links-preview`],['PUT',`/properties/${id.replaceAll('-','')}/public-links`]
+  ])assert.equal((await sandbox.worker.fetch(new Request('https://parrot669.com/api/host'+route,{method}),qaEnv)).status,404);
+  const path=`/api/host/properties/${id}/public-links`;
+  assert.equal((await sandbox.worker.fetch(new Request('https://parrot669.com'+path,{method:'PUT',headers:{Origin:'https://evil.test'}}),qaEnv)).status,403);
+  assert.equal((await sandbox.worker.fetch(new Request('https://evil.test'+path,{method:'PUT'}),qaEnv)).status,403);
+  assert.equal((await sandbox.worker.fetch(new Request('https://preview.example.test'+path,{method:'PUT'}),{...qaEnv,QA_WORKER_SECRET:''})).status,503);
+  assert.equal(calls,0);
+});
+
+for(const status of [401,403,404,429])test(`calendar connect preserves backend ${status} without fabricated auth or retry`,async()=>{
+  let calls=0;
+  const sandbox={URL,Headers,Response,console,fetch:async(url,init)=>{
+    calls++;assert.equal(init.headers.get('Cookie'),null);
+    assert.equal(init.headers.get('Authorization'),null);
+    return new Response(JSON.stringify({code:'SYNTHETIC_REFUSAL',error:'Unavailable'}),{status,headers:{'Retry-After':'10'}});
+  }};
+  vm.createContext(sandbox);vm.runInContext(source,sandbox);
+  const response=await sandbox.worker.fetch(new Request(`https://parrot669.com/api/host/properties/${id}/public-links`,{method:'PUT',body:'{}'}),baseEnv);
+  assert.equal(response.status,status);assert.equal((await response.json()).code,'SYNTHETIC_REFUSAL');
+  assert.equal(response.headers.get('Retry-After'),'10');assert.equal(calls,1);
+});
+
 for(const [status,code] of [[401,'AUTHENTICATION_REQUIRED'],[404,'NOT_FOUND'],[409,'CALENDAR_INVALID_TRANSITION'],[412,'CALENDAR_STALE']])
 test(`calendar proxy preserves upstream ${status} ${code} without retry`,async()=>{
   let calls=0;

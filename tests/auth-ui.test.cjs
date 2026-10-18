@@ -54,7 +54,7 @@ function element(tag = 'div') {
   };
 }
 
-function setup(routes = {}, search = '', {hash = '', sessionData = {}, layout = {}} = {}) {
+function setup(routes = {}, search = '', {hash = '', sessionData = {}, layout = {}, transport} = {}) {
   routes['/auth/logout']??={status:204};
   routes['/geocode/countries']??={body:[{code:'ES',name:'Spain'},{code:'FR',name:'France'},{code:'BY',name:'Belarus'}]};
   const nodes = new Map([...html.matchAll(/id="([^"]+)"/g)].map(match => [match[1], element()]));
@@ -110,6 +110,10 @@ function setup(routes = {}, search = '', {hash = '', sessionData = {}, layout = 
       const route = url.replace('/api/host', '');
       calls.push(route);
       requests.push({url, route, method: options.method || 'GET', body: options.body ? JSON.parse(options.body) : null});
+      if (transport) {
+        const response = await transport(url, options);
+        if (response) return response;
+      }
       const result = typeof routes[route] === 'function' ? await routes[route](options) : routes[route]
         ?? ((options.method||'GET')==='GET' && /^\/properties\/[^/]+\/calendars$/.test(route) ? {body:{calendars:[]}} : undefined);
       const status = result?.status ?? (!result && route === '/auth/me' ? 401 : 200);
@@ -179,11 +183,11 @@ test('PM138 R1: delayed A dashboard cannot overwrite B dashboard or private DOM'
 
 test('PM138 R3: Host permits only producer-derived empty operations',async()=>{
   const routes={'/auth/me':{body:user},'/dashboard':{body:{properties:[]}}};
-  for(const route of ['/calendars/cal-1/sync','/calendars/cal-1/activate','/calendars/cal-1','/availability/av-1','/properties/p-1','/listings/l-1','/unavailability/u-1','/profile','/properties/p-1/calendars']) routes[route]={status:204};
+  for(const route of ['/calendars/cal-1/sync','/calendars/cal-1/activate','/calendars/cal-1','/availability/av-1','/properties/p-1','/listings/l-1','/unavailability/u-1','/profile','/properties/p-1/calendars','/properties/p-1/public-links']) routes[route]={status:204};
   const app=setup(routes);await flushHost();
-  for(const [method,route] of [['POST','/calendars/cal-1/sync'],['POST','/calendars/cal-1/activate'],['PUT','/calendars/cal-1'],['DELETE','/calendars/cal-1'],['PUT','/availability/av-1'],['DELETE','/availability/av-1'],['DELETE','/properties/p-1'],['DELETE','/listings/l-1'],['DELETE','/unavailability/u-1']])
+  for(const [method,route] of [['PUT','/properties/p-1/public-links'],['POST','/calendars/cal-1/sync'],['POST','/calendars/cal-1/activate'],['PUT','/calendars/cal-1'],['DELETE','/calendars/cal-1'],['PUT','/availability/av-1'],['DELETE','/availability/av-1'],['DELETE','/properties/p-1'],['DELETE','/listings/l-1'],['DELETE','/unavailability/u-1']])
     assert.equal(await app.run(`api(${JSON.stringify(route)},{method:${JSON.stringify(method)}})`),null,method+' '+route);
-  for(const [method,route] of [['GET','/calendars/cal-1'],['GET','/calendars/cal-1/activate'],['PUT','/calendars/cal-1/activate'],['PATCH','/profile'],['POST','/properties/p-1/calendars'],['DELETE','/profile'],['PUT','/unavailability/u-1'],['PUT','/properties/p-1']])
+  for(const [method,route] of [['GET','/properties/p-1/public-links'],['POST','/properties/p-1/public-links'],['DELETE','/properties/p-1/public-links'],['GET','/calendars/cal-1'],['GET','/calendars/cal-1/activate'],['PUT','/calendars/cal-1/activate'],['PATCH','/profile'],['POST','/properties/p-1/calendars'],['DELETE','/profile'],['PUT','/unavailability/u-1'],['PUT','/properties/p-1']])
     await assert.rejects(app.run(`api(${JSON.stringify(route)},{method:${JSON.stringify(method)}})`),{kind:'protocol',status:204});
   for(const command of ['syncCalendar({id:"cal-1"})','setCalendarEnabled({id:"cal-1"},false)']) {
     const count=app.calls.filter(x=>x==='/dashboard').length;
@@ -1290,8 +1294,8 @@ test('PM-071: saved listing without calendar shows Host trust copy only in the u
 
 
 test('calendar request and dashboard use the canonical Airbnb provider', async () => {
-  const route='/properties/property-1/calendars';
-  const app=setup({[route]:{body:{id:'calendar-1',provider:'Airbnb'}}});
+  const route='/properties/property-1/public-links';
+  const app=setup({[route]:{status:204}});
   await settle();
   propertyCard(app);
   await app.run(`connectCalendar(state.properties[0], {querySelector:()=>null,querySelectorAll:()=>[],elements:{},controls:[]})`);
@@ -1300,4 +1304,118 @@ test('calendar request and dashboard use the canonical Airbnb provider', async (
   app.run(`state.properties[0].listing={id:'listing-1',platform:'Airbnb',url:'https://www.airbnb.com/rooms/123'}; state.properties[0].calendars=[{id:'calendar-1',provider:'Airbnb',enabled:true,status:'connected',reservationBlocks:[]}]; renderProperties()`);
   const buttons=app.nodes.get('host-properties').querySelectorAll('button');
   assert.ok(buttons.some(button=>button.textContent===app.run('tr("syncNow")')), buttons.map(button=>button.textContent).join('|'));
+});
+
+// Real Host/controller → shared session/HTTP → real Worker; only the backend
+// transport is synthetic. Producer contract: PublicLinkRoutes/Request on 9b80af3d.
+const connectWorkerSource = fs.readFileSync(path.join(root,'src/index.js'),'utf8')
+  .replace('export default {','globalThis.worker = {');
+const connectPath = `/properties/${calendarProperty}/public-links`;
+const connectUrl = 'https://www.airbnb.com/calendar/ical/123.ics?t=synthetic-only';
+function connectSetup(producer) {
+  const upstream=[];
+  const worker={URL,Headers,Response,console,fetch:async(url,init)=>{
+    const body=await new Response(init.body).json();
+    upstream.push({url,method:init.method,headers:init.headers,body});
+    // Unlike a loose route mock, reject an obsolete endpoint or method.
+    assert.equal(url,'https://api.example.test/api'+connectPath);
+    assert.equal(init.method,'PUT');
+    assert.deepEqual(body,{provider:'Airbnb',icalUrl:connectUrl});
+    assert.equal(init.headers.get('Cookie'),'parrot_session=synthetic');
+    assert.equal(init.headers.get('Authorization'),null);
+    return producer();
+  }};
+  vm.createContext(worker);vm.runInContext(connectWorkerSource,worker);
+  const app=setup({'/auth/me':{body:user},'/dashboard':{body:{properties:[{...privateProperty(calendarProperty,'Connect property'),
+    listings:[{id:'listing-1',url:'https://www.airbnb.com/rooms/123'}]}]}}},'',{
+    transport:async(url,options)=>{
+      if((options.method||'GET')==='GET')return;
+      const headers=new Headers(options.headers);
+      headers.set('Origin','https://parrot669.com');headers.set('Cookie','other=private; parrot_session=synthetic');
+      headers.set('Authorization','Bearer untrusted');
+      return worker.worker.fetch(new Request('https://parrot669.com'+url,{...options,headers}),{
+        PUBLIC_ORIGIN:'https://parrot669.com',API_ORIGIN:'https://api.example.test'
+      });
+    }
+  });
+  return {...app,upstream};
+}
+async function submitConnect(app) {
+  app.run(`expandedPropertyIds.add(${JSON.stringify(calendarProperty)});renderProperties()`);
+  const form=app.nodes.get('host-properties').querySelector('.host-calendar-form');
+  assert.ok(form,'connected listing exposes the existing calendar form');
+  form.querySelector('input').value='  '+connectUrl+'  ';
+  return {form,submit:()=>app.run('connectCalendar(state.properties[0],propertiesNode.querySelector(".host-calendar-form"))')};
+}
+function assertConnectRequest(app) {
+  assert.equal(app.upstream.length,1);
+  const request=app.upstream[0];
+  assert.equal(request.url,'https://api.example.test/api'+connectPath);
+  assert.equal(request.method,'PUT');
+  assert.deepEqual(request.body,{provider:'Airbnb',icalUrl:connectUrl});
+}
+
+test('calendar connect sends actual serialized PUT through Worker and accepts only producer 204',async()=>{
+  const app=connectSetup(()=>new Response(null,{status:204}));await flushHost();
+  const {submit,form}=await submitConnect(app),before=app.calls.filter(x=>x==='/dashboard').length;
+  await submit();
+  assertConnectRequest(app);
+  assert.equal(app.calls.filter(x=>x==='/dashboard').length,before+1);
+  assert.equal(form.querySelector('.host-form-error'),undefined);
+  assert.equal(form.querySelector('input').disabled,false);
+});
+
+for(const [label,status,body] of [
+  ['JSON object',200,'{}'],['JSON array',200,'[]'],['null',200,'null'],['malformed JSON',200,'{broken'],
+  ['empty 200',200,''],['created JSON',201,'{"id":"invented"}'],['accepted JSON',202,'{}'],
+  ['auth',401,'{"code":"AUTHENTICATION_REQUIRED","error":"Sign in"}'],
+  ['ownership',403,'{"code":"FORBIDDEN","error":"Unavailable"}'],
+  ['not found',404,'{"code":"NOT_FOUND","error":"Unavailable"}'],
+  ['rate limit',429,'{"code":"RATE_LIMITED","error":"Try later"}']
+])test(`calendar connect ${label} preserves input and does not refresh or retry`,async()=>{
+  const app=connectSetup(()=>new Response(body,{status,headers:{'Content-Type':'application/json'}}));await flushHost();
+  const {submit,form}=await submitConnect(app),before=app.calls.filter(x=>x==='/dashboard').length;
+  await submit();await flushHost();
+  assertConnectRequest(app);
+  assert.equal(app.calls.filter(x=>x==='/dashboard').length,before);
+  assert.equal(form.querySelector('input').value,'  '+connectUrl+'  ');
+  assert.equal(form.querySelector('input').disabled,false);
+  if(status!==401)assert.ok(form.querySelector('.host-form-error')?.textContent);
+  assert.equal(app.nodes.get('host-status').className.includes('success'),false);
+  if(status===401)assert.equal(app.run('state.authenticated'),false);
+});
+
+for(const status of [204,403])test(`late calendar connect ${status} cannot mutate a replacement session`,async()=>{
+  let release;const pending=new Promise(resolve=>release=resolve);
+  const app=connectSetup(()=>pending);await flushHost();
+  const {submit}=await submitConnect(app);const work=submit();await flushHost();
+  app.run('window.ParrotCore.session.setUser({accountId:"replacement",profile:{id:"replacement-profile"}})');
+  await flushHost();
+  const before=app.calls.filter(x=>x==='/dashboard').length;
+  const message=app.nodes.get('host-status').textContent;
+  release(new Response(status===204?null:'{"code":"FORBIDDEN","error":"OLD PRIVATE ERROR"}',{status}));
+  await work;await flushHost();
+  assertConnectRequest(app);
+  assert.equal(app.nodes.get('host-status').textContent,message);
+  assert.equal(app.calls.filter(x=>x==='/dashboard').length,before);
+});
+
+test('calendar connect refuses a stale property before making a request',async()=>{
+  const app=connectSetup(()=>new Response(null,{status:204}));await flushHost();
+  await submitConnect(app);
+  app.run('globalThis.oldConnectProperty=state.properties[0];state.properties=[]');
+  await app.run('connectCalendar(oldConnectProperty,propertiesNode.querySelector(".host-calendar-form"))');
+  assert.equal(app.upstream.length,0);
+});
+
+test('calendar connect completion cannot refresh a replaced property in the same session',async()=>{
+  let release;const pending=new Promise(resolve=>release=resolve);
+  const app=connectSetup(()=>pending);await flushHost();
+  const {submit}=await submitConnect(app);const work=submit();await flushHost();
+  app.run('state.properties=state.properties.map(property=>({...property}));renderProperties();message("Replacement property state")');
+  const before=app.calls.filter(x=>x==='/dashboard').length;
+  release(new Response(null,{status:204}));await work;await flushHost();
+  assertConnectRequest(app);
+  assert.equal(app.nodes.get('host-status').textContent,'Replacement property state');
+  assert.equal(app.calls.filter(x=>x==='/dashboard').length,before);
 });
