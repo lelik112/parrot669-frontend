@@ -34,6 +34,7 @@ async function harness(t, {handler=()=>undefined, saved=null, messaging=false, s
     if(url.pathname==='/api/search') return response([property(url.searchParams.get('city'))]);
     throw Error(`Unexpected request: ${raw}`);
   };
+  require('./helpers/core.cjs').installCore(w);
   if(messaging) w.eval(file('assets/messaging-common.js'));
   w.eval(file('assets/search.js'));
   await flush();
@@ -333,7 +334,7 @@ test('PM-037: 367 nights preserve dates and filters, translate, restore and allo
 
 test('PM-037: backend range rejection uses localized message and keeps the form',async t=>{
   const h=await harness(t,{handler:url=>url.pathname==='/api/search'?
-    new Response(JSON.stringify({error:'A search request can cover at most 366 nights'}),{status:400}):undefined});
+    new Response(JSON.stringify({error:'A search request can cover at most 366 nights',code:'SEARCH_RANGE_TOO_LONG'}),{status:400}):undefined});
   await h.barcelona();
   assert.match(h.results.textContent,/366 ночей/);
   assert.equal(h.form.elements.from.value,'2026-10-01');

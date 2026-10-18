@@ -17,6 +17,47 @@ const flush = async () => { for(let i=0;i<8;i++) await new Promise(resolve=>setI
 const deferred = () => { let resolve; const promise=new Promise(r=>resolve=r); return {promise,resolve}; };
 const response = (data,status=200) => new Response(JSON.stringify(data),{status});
 
+const navigationHandler=request=>{
+  if(request.path==='/api/messaging/conversations')return {items:[detail(),detail(otherConversation)],nextCursor:null};
+  if(request.path===`/api/messaging/conversations/${conversation}`)return detail();
+  if(request.path===`/api/messaging/conversations/${otherConversation}`)return detail(otherConversation);
+  if(request.path.endsWith('/messages'))return {items:[],nextAfterSequence:null};
+  if(request.path==='/api/host/auth/logout')return new Response(null,{status:204});
+};
+
+test('same-account profile notification preserves composer DOM, draft and focus',async t=>{
+  const h=await harness(t,{url:`/messages.html?conversation=${conversation}`,handler:navigationHandler});
+  const input=h.$('msg-compose').elements.body;h.input(input,'Unfinished private draft');input.focus();
+  h.w.ParrotCore.session.updateProfile({displayName:'Updated profile'});await flush();
+  assert.equal(h.$('msg-compose').elements.body,input);assert.equal(input.value,'Unfinished private draft');
+  assert.equal(h.w.document.activeElement,input);assert.equal(h.w.ParrotCore.session.user.profile.displayName,'Updated profile');
+});
+
+test('Messages Back/Forward restores conversation without pushing history or writing', {timeout:2000},async t=>{
+  const h=await harness(t,{url:`/messages.html?conversation=${conversation}`,handler:navigationHandler});
+  [...h.$('msg-list').querySelectorAll('button')].find(button=>button.textContent.includes('Room')).click();await flush();
+  assert.equal(new URL(h.w.location.href).searchParams.get('conversation'),otherConversation);
+  const length=h.w.history.length;
+  const traverse=async direction=>{
+    const popped=new Promise(resolve=>h.w.addEventListener('popstate',resolve,{once:true}));
+    h.w.history[direction]();await popped;await flush();
+  };
+  await traverse('back');assert.equal(h.$('msg-property').textContent,'Apartment');
+  await traverse('forward');assert.equal(h.$('msg-property').textContent,'Room');
+  assert.equal(h.w.history.length,length);assert.equal(h.calls.some(call=>call.method==='POST'),false);
+});
+
+test('expired private draft stays hidden, same account restores, explicit logout clears',async t=>{
+  const h=await harness(t,{url:`/messages.html?conversation=${conversation}`,handler:navigationHandler});
+  h.input(h.$('msg-compose').elements.body,'Private retained draft');
+  h.w.ParrotCore.session.setUser(null,{reason:'expired'});await flush();
+  assert.equal(h.$('messages-app').hidden,true);assert.equal(h.$('msg-compose').elements.body.value,'');
+  const key=`parrot669-draft:${user.accountId}:${conversation}`;
+  assert.equal(JSON.parse(h.w.ParrotCore.storage.session.getItem(key)).body,'Private retained draft');
+  h.w.ParrotCore.session.setUser(user);await flush();assert.equal(h.$('msg-compose').elements.body.value,'Private retained draft');
+  h.$('msg-logout').click();await flush();assert.equal(h.w.ParrotCore.storage.session.getItem(key),null);
+});
+
 async function harness(t,{url='/messages.html',handler=()=>undefined,loggedIn=true,page='messages.html',sessionData={},localData={},sessionUser=user,initialVisibility='visible'}={}) {
   const dom = new JSDOM(file(page),{url:`https://parrot669.com${url}`,runScripts:'outside-only',pretendToBeVisual:true});
   t.after(()=>dom.window.close());
@@ -41,6 +82,7 @@ async function harness(t,{url='/messages.html',handler=()=>undefined,loggedIn=tr
     if(request.path.endsWith('/read')) return response({throughSequence:request.body.throughSequence});
     throw Error(`Unexpected request: ${request.method} ${raw}`);
   };
+  require('./helpers/core.cjs').installCore(w);
   w.eval(file('assets/messaging-common.js'));
   if(page==='messages.html') { w.eval(file('assets/messaging-email-settings.js')); w.eval(file('assets/messages.js')); }
   await flush();

@@ -19,7 +19,7 @@ test('accepted Home composition makes the three-item preview explicitly lead to 
   assert.match(html,/class="housing-callout"/);
   assert.match(html,/class="housing-cta" href="\/search\.html"/);
   assert.match(html,/assets\/styles\.css\?v=20261018-home-trust/);
-  assert.match(html,/assets\/script\.js\?v=20261018-home-trust/);
+  assert.match(html,/type="module" src="\/assets\/entry\.js" data-parrot-page="home"/);
 });
 
 test('Home trust copy renders the exact localized hero copy and two identical visible guarantee groups',()=>{
@@ -70,6 +70,7 @@ test('Home trust copy renders the exact localized hero copy and two identical vi
   window.requestAnimationFrame=callback=>callback();
   window.scrollTo=()=>{};
   window.HTMLElement.prototype.scrollIntoView=()=>{};
+  require('./helpers/core.cjs').installCore(window);
   window.eval(script);
   const groups=[...window.document.querySelectorAll('.trust-guarantee')];
   assert.equal(groups.length,2);
@@ -156,6 +157,7 @@ function integratedHome(){
   window.HTMLElement.prototype.scrollIntoView=function(){counts.scroll+=1;};
   const pushState=window.history.pushState.bind(window.history);
   window.history.pushState=(...args)=>{counts.history+=1;return pushState(...args);};
+  require('./helpers/core.cjs').installCore(window);
   window.eval(read('public/assets/lead-form.js'));
   window.eval(read('public/assets/script.js'));
   return {dom,window,document:window.document,counts};
@@ -254,7 +256,7 @@ test('Existing lead state machine remains wired to the Home form',()=>{
   const script=read('public/assets/lead-form.js');
   assert.match(html,/id="lead-form" aria-describedby="form-status"/);
   assert.match(html,/id="form-status" role="status" aria-live="polite" aria-atomic="true"/);
-  assert.match(html,/assets\/lead-form\.js\?v=20261018-receipt-focus/);
+  assert.match(read('public/assets/entry.js'),/home: \["lead-form.js", "script.js"\]/);
   assert.match(script,/requestSubmit|addEventListener\(['"]submit['"]/);
   assert.match(script,/uncertain/);
 });

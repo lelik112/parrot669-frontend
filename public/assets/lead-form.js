@@ -101,18 +101,14 @@
     state={kind:"submitting",snapshot:submitted};
     render();
     try{
-      const response=await fetch("/api/contact",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(submitted)});
+      await window.ParrotCore.http("/api/contact",{method:"POST",body:JSON.stringify(submitted)});
       if(attempt!==requestSequence)return;
-      if(!response.ok){
-        const kind=response.status>=400&&response.status<500 ? "error" : "uncertain";
-        state={kind,snapshot:submitted};render({focus:true});return;
-      }
       state={kind:"success",snapshot:submitted};
       render({focus:true});
     }catch(error){
       if(attempt!==requestSequence)return;
-      console.error("Contact form outcome is unknown:",error);
-      state={kind:"uncertain",snapshot:submitted};
+      const kind=error.kind==="http" && error.status>=400 && error.status<500 ? "error" : "uncertain";
+      state={kind,snapshot:submitted};
       render({focus:true});
     }
   });

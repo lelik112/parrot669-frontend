@@ -1,5 +1,6 @@
 (() => {
   "use strict";
+  const core = window.ParrotCore, session = core.session;
   const texts = {
     en: {
       messages:"Messages", writeHost:"Message host", conversations:"Conversations", emptyInbox:"No conversations yet. Start from a property in search.", chooseConversation:"Choose a conversation", from:"Check-in", to:"Check-out", datesOptional:"Stay dates (optional)", send:"Send message", sending:"Sending…", messageLabel:"Your message", placeholder:"Ask about the property or the stay…", loading:"Loading…", retry:"Try again", loadMore:"More conversations", earlier:"Earlier messages", backList:"All conversations", newEnquiry:"New enquiry", notBooking:"A message does not reserve the property.", login:"Log in", register:"Create account", loginLabel:"Email or username", password:"Password", username:"Username", displayName:"Display name", email:"Email", passwordHelp:"At least 10 characters.", usernameHelp:"Unique, case-insensitive. No @ symbol.", authLead:"Log in to message hosts and see your conversations.", registered:"Account created. Check your email (including spam), confirm it, then return here.", logout:"Log out", sessionExpired:"Log in again to continue. Your draft is kept for your account.", errorNetwork:"Could not connect. Please try again.", errorRate:"Too many messages. Wait a little and try again.", errorBlocked:"Messaging is blocked between these participants.", errorDisabled:"You can't send messages in this conversation.", errorDeleted:"This property was deleted. You can still read the conversation.", errorMissing:"This conversation or property is unavailable.", errorInput:"Check the message and dates.", block:"Block participant", unblock:"Unblock participant", confirmBlock:"Block this participant? Neither of you will be able to send messages to the other, including about other properties. History stays available.", blockedMe:"You blocked this participant. Unblock to resume messaging.", blockedOther:"This participant has blocked messaging.", pendingRetry:"Retry sending", pendingUnknown:"Delivery was not confirmed. Retry the same message safely; it will not be duplicated.", invalidDates:"Choose both dates. Check-out must be after check-in.", noSelf:"This is your property. You can reply to guests from your inbox.", newMessages:"New messages ↓", characterLimit:"Use 1–4000 characters.", authError:"Check your email/username and password.", verifyFirst:"Confirm your email before logging in.", draftRestored:"Draft restored", closed:"Read-only conversation", savedDates:"Stay"
@@ -22,8 +23,8 @@
   };
   Object.entries(emailCopy).forEach(([key,value]) => Object.assign(texts[key],value));
   Object.entries({en:"Forgot password?",es:"¿Has olvidado la contraseña?",ca:"Has oblidat la contrasenya?",ru:"Забыли пароль?"}).forEach(([key,value])=>texts[key].forgotPassword=value);
-  let lang = "en", user, revision = 0, unreadBusy = false, unreadTotal = 0, initialSearchSession = null;
-  const subscribers = new Set(), languageSubscribers = new Set();
+  let lang = "en", unreadBusy = false, unreadTotal = 0, initialSearchSession = null;
+  const languageSubscribers = new Set();
   const contactCache = new Map();
   let contactActive = 0;
   const contactQueue = [];
@@ -82,63 +83,29 @@
   }
   function errorText(error) {
     const detail = error?.message || "";
-    if (detail.includes("email verification required")) return t("verifyFirst");
-    if (detail.includes("blocked between")) return t("errorBlocked");
-    if (detail.includes("not accepting")) return t("errorDisabled");
-    if (detail.includes("property was deleted")) return t("errorDeleted");
+    const keys = {EMAIL_VERIFICATION_REQUIRED:"verifyFirst", MESSAGING_BLOCKED:"errorBlocked", MESSAGING_PROPERTY_DELETED:"errorDeleted"};
+    if(keys[error?.code]) return t(keys[error.code]);
     if (error?.status === 401) return t("sessionExpired");
     if (error?.status === 404) return t("errorMissing");
     if (error?.status === 429) return t("errorRate");
     if (!error?.status || error.status >= 500) return t("errorNetwork");
     return detail || t("errorInput");
   }
-  async function request(path, options = {}) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
-    try {
-      const response = await fetch(path, {...options, credentials:"same-origin", signal:controller.signal,
-        headers:{Accept:"application/json", ...(options.body ? {"Content-Type":"application/json"} : {})}});
-      const data = response.status === 204 ? null : await response.json().catch(() => null);
-      if (!response.ok) {
-        const error = new Error(data?.error || `HTTP ${response.status}`);
-        error.status = response.status;
-        throw error;
-      }
-      return data;
-    } finally { clearTimeout(timeout); }
-  }
-  const api = (path, options) => request(`/api/messaging${path}`, options);
-  const auth = (path, options) => request(`/api/host/auth${path}`, options);
-  function setUser(value) {
-    const changed = user === undefined || (user?.accountId || null) !== (value?.accountId || null);
-    user = value || null;
-    if (!changed) return;
-    revision++;
-    unreadTotal = 0; renderUnread();
-    subscribers.forEach(fn => fn(user));
-    if (user) void refreshUnread({allowHidden:true});
-  }
-  async function refreshSession() {
-    const version = revision;
-    try {
-      const current = await auth("/me");
-      if (version === revision) setUser(current);
-      return user;
-    } catch (error) {
-      if (error.status === 401) { if (version === revision) setUser(null); return null; }
-      throw error;
-    }
-  }
+  const api = (path, options = {}) => session.request(`/api/messaging${path}`, {...options, authenticated:true,
+    ...(path.startsWith('/conversations/for-property/') ? {validate:value => value === null || typeof value === 'object'} : {})});
+  const auth = core.auth;
+  const setUser = (value, options) => session.setUser(value, options);
+  const refreshSession = () => session.refresh();
   async function refreshUnread({allowHidden=false} = {}) {
-    if (!user || unreadBusy || (!allowHidden && document.visibilityState === "hidden")) return;
+    if (!session.user || unreadBusy || (!allowHidden && document.visibilityState === "hidden")) return;
     unreadBusy = true;
-    const version = revision;
+    const version = session.epoch;
     try {
       const value = await api("/unread");
-      if (version !== revision) return;
+      if (version !== session.epoch) return;
       unreadTotal = Math.max(0,Number(value.messages) || 0);
       renderUnread();
-    } catch (error) { if (error.status === 401 && version === revision) setUser(null); }
+    } catch (error) { if (error.status === 401 && version === session.epoch) setUser(null); }
     finally { unreadBusy = false; }
   }
   function contactOptions(id) {
@@ -175,8 +142,8 @@
       nudge.href = `/messages.html?${request}`;
       container.append(nudge);
     }
-    const session = user === undefined ? (initialSearchSession || refreshSession().catch(() => null)) : Promise.resolve(user);
-    return Promise.all([contactOptions(property.propertyId), session]).then(([options,currentUser]) => {
+    const currentSession = session.user === undefined ? (initialSearchSession || refreshSession().catch(() => null)) : Promise.resolve(session.user);
+    return Promise.all([contactOptions(property.propertyId), currentSession]).then(([options,currentUser]) => {
       const self = Boolean(currentUser?.profile?.id) && options.hostProfileId === currentUser.profile.id;
       link.hidden = self;
       if (nudge) nudge.hidden = self;
@@ -185,8 +152,8 @@
   }
   function resumeAfterVerification() {
     try {
-      const saved = JSON.parse(localStorage.getItem("parrot669-message-return") || "null");
-      localStorage.removeItem("parrot669-message-return");
+      const saved = JSON.parse(core.storage.local.getItem("parrot669-message-return") || "null");
+      core.storage.local.removeItem("parrot669-message-return");
       if (!saved || saved.expires < Date.now()) return;
       const url = new URL(saved.path, window.location.origin);
       if (url.origin === window.location.origin && ["/messages", "/messages.html"].includes(url.pathname))
@@ -196,26 +163,26 @@
   function clearDrafts(accountId) {
     try {
       const prefix = `parrot669-draft:${accountId}:`;
-      for (let i = sessionStorage.length - 1; i >= 0; i--) {
-        const key = sessionStorage.key(i); if (key?.startsWith(prefix)) sessionStorage.removeItem(key);
+      for (let i = core.storage.session.length - 1; i >= 0; i--) {
+        const key = core.storage.session.key(i); if (key?.startsWith(prefix)) core.storage.session.removeItem(key);
       }
     } catch {}
   }
   window.ParrotMessaging = {t, node, api, auth, errorText, setLanguage, setUser, refreshSession, refreshUnread,
-    attachContact, resumeAfterVerification, clearDrafts, get user() { return user; },
-    onSession(fn) { subscribers.add(fn); if (user !== undefined) fn(user); },
+    attachContact, resumeAfterVerification, clearDrafts, get user() { return session.user; },
+    onSession(fn) { return session.subscribe(({user}) => fn(user)); },
     onLanguage(fn) { languageSubscribers.add(fn); }};
-  try { setLanguage(localStorage.getItem("parrot669-language") || navigator.language.slice(0,2)); } catch { setLanguage("en"); }
+  try { setLanguage(core.storage.local.getItem("parrot669-language") || navigator.language.slice(0,2)); } catch { setLanguage("en"); }
   setInterval(() => void refreshUnread(), 30000);
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") void refreshSession().then(refreshUnread).catch(() => {});
   });
-  window.addEventListener("pageshow", event => {
-    if (!event.persisted || !document.body.matches(".search-page, .messages-page")) return;
-    // A BFCache snapshot may still contain private UI from a session that was
-    // invalidated in another history entry. Hide it before the network check.
-    setUser(null);
-    void refreshSession().then(refreshUnread).catch(() => {});
+  let previousEpoch = session.epoch;
+  session.subscribe(() => {
+    if(previousEpoch !== session.epoch) {
+      previousEpoch = session.epoch; unreadTotal=0; contactCache.clear(); renderUnread();
+    }
+    if(session.user) void refreshUnread({allowHidden:true});
   });
 
   if (document.body.classList.contains("search-page")) initialSearchSession = refreshSession().catch(() => null);

@@ -15,7 +15,8 @@ const ALLOWED_SERVICES = new Set([
 ]);
 
 const json = (data, status = 200) =>
-  new Response(JSON.stringify(data), {
+  new Response(JSON.stringify(status >= 400 ? {...data, code:data.code || ({400:"INVALID_REQUEST",401:"AUTHENTICATION_REQUIRED",
+    403:"FORBIDDEN",404:"NOT_FOUND",405:"INVALID_REQUEST",409:"CONFLICT",429:"RATE_LIMITED",500:"INTERNAL_ERROR"}[status] || "SERVICE_UNAVAILABLE")} : data), {
     status,
     headers: {
       "Content-Type": "application/json; charset=utf-8",
@@ -92,6 +93,10 @@ const proxyBackend = async (request, targetPath, qaSecret, apiOrigin) => {
     "Content-Type": response.headers.get("Content-Type") || "application/json; charset=utf-8",
     "Cache-Control": "no-store",
   });
+  for (const name of ["X-Request-ID", "Retry-After"]) {
+    const value = response.headers.get(name);
+    if (value) responseHeaders.set(name, value);
+  }
   const setCookie = response.headers.get("Set-Cookie");
   if (setCookie) responseHeaders.set("Set-Cookie", setCookie);
 
@@ -181,6 +186,8 @@ export default {
           headers: {
             "Content-Type": response.headers.get("Content-Type") || "application/json; charset=utf-8",
             "Cache-Control": "no-store",
+            ...(response.headers.get("X-Request-ID") ? {"X-Request-ID":response.headers.get("X-Request-ID")} : {}),
+            ...(response.headers.get("Retry-After") ? {"Retry-After":response.headers.get("Retry-After")} : {}),
           },
         });
       } catch (error) {
@@ -237,7 +244,7 @@ export default {
     }
 
 
-    if (qaOrigin && url.pathname.startsWith("/api/")) return json({ error: "Not found" }, 404);
+    if (url.pathname.startsWith("/api/") && url.pathname !== "/api/contact") return json({ error: "Not found", code:"NOT_FOUND" }, 404);
     if (url.pathname !== "/api/contact") {
       return env.ASSETS.fetch(request);
     }

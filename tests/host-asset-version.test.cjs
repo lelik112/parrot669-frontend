@@ -8,13 +8,8 @@ const hostHtml = fs.readFileSync(
   'utf8',
 );
 
-test('host page versions the provider-contract and verification controller assets', () => {
-  assert.match(
-    hostHtml,
-    /<script src="\/assets\/calendar-verification\.js\?v=20261002-camelcase-status"><\/script>/,
-  );
-  assert.match(
-    hostHtml,
-    /<script src="\/assets\/host\.js\?v=20261002-camelcase-status"><\/script>/,
-  );
+test('host page loads one module entrypoint with address and calendar dependencies', () => {
+  assert.match(hostHtml, /type="module" src="\/assets\/entry\.js" data-parrot-page="host"/);
+  const entry=fs.readFileSync(path.join(__dirname,'../public/assets/entry.js'),'utf8');
+  assert.match(entry,/host: \["messaging-common.js", "host-address.js", "calendar-verification.js", "host.js"\]/);
 });

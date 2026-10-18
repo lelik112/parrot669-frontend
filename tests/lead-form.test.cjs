@@ -44,6 +44,7 @@ async function harness(t,{url='https://parrot669.com/',lang='en',fetch=async()=>
   const scrolls=[];
   w.scrollTo=options=>{scrolls.push(options);};
   w.HTMLElement.prototype.scrollIntoView=()=>{};
+  require('./helpers/core.cjs').installCore(w);
   w.eval(source);
   t.after(()=>dom.window.close());
   const form=w.document.getElementById('lead-form');

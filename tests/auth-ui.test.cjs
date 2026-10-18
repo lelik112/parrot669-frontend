@@ -55,6 +55,7 @@ function element(tag = 'div') {
 }
 
 function setup(routes = {}, search = '', {hash = '', sessionData = {}, layout = {}} = {}) {
+  routes['/auth/logout']??={status:204};
   routes['/geocode/countries']??={body:[{code:'ES',name:'Spain'},{code:'FR',name:'France'},{code:'BY',name:'Belarus'}]};
   const nodes = new Map([...html.matchAll(/id="([^"]+)"/g)].map(match => [match[1], element()]));
   nodes.get('host-profile-return').dataset.hostI18n='profileReturn';
@@ -114,6 +115,9 @@ function setup(routes = {}, search = '', {hash = '', sessionData = {}, layout = 
       return {status, ok:status < 400, json:async () => result?.body ?? {error:'Test error'}};
     }
   };
+  Object.assign(sandbox.window,{fetch:(...args)=>sandbox.fetch(...args),localStorage:sandbox.localStorage,
+    sessionStorage:sandbox.sessionStorage,Headers,AbortController,setTimeout,clearTimeout});
+  require('./helpers/core.cjs').installCore(sandbox.window);
   vm.createContext(sandbox);
   vm.runInContext(fs.readFileSync(path.join(root, 'public/assets/host-address.js'), 'utf8'), sandbox);
   vm.runInContext(source, sandbox);
@@ -122,13 +126,13 @@ function setup(routes = {}, search = '', {hash = '', sessionData = {}, layout = 
   }};
 }
 const settle = () => new Promise(resolve => setImmediate(resolve));
-const user = {email:'test@example.test'};
+const user = {accountId:'test-account',email:'test@example.test'};
 
 test('host profile saves public name, keeps account identity private and retains input on a 400', async()=>{
   let fail = true;
   const app = setup({
-    '/auth/me':{body:{accountId:'owner-1',email:'private@example.test',username:'my-login',profile:{displayName:'Old host'}}},
-    '/dashboard':{body:{profile:{displayName:'Old host'},properties:[]}},
+    '/auth/me':{body:{accountId:'owner-1',email:'private@example.test',username:'my-login',profile:{id:'owner-profile',displayName:'Old host'}}},
+    '/dashboard':{body:{profile:{id:'owner-profile',displayName:'Old host'},properties:[]}},
     '/profile':()=>fail ? {status:400,body:{error:'Invalid name'}} : {body:{parrotId:'PAR-TEST',displayName:'New host',createdAt:'2030-01-01'}}
   });
   await settle();
@@ -150,10 +154,10 @@ test('host profile saves public name, keeps account identity private and retains
 });
 
 test('PM-049: Host clears private BFCache DOM before session revalidation',async()=>{
-  let current={accountId:'owner-1',email:'private@example.test',username:'owner',profile:{displayName:'Host'}};
+  let current={accountId:'owner-1',email:'private@example.test',username:'owner',profile:{id:'owner-profile',displayName:'Host'}};
   const app=setup({
     '/auth/me':()=>current ? {body:current} : {status:401,body:{error:'unauthorized'}},
-    '/dashboard':{body:{profile:{displayName:'Host'},properties:[]}}
+    '/dashboard':{body:{profile:{id:'owner-profile',displayName:'Host'},properties:[]}}
   });
   await settle();
   assert.equal(app.nodes.get('host-profile').hidden,false);
@@ -173,8 +177,8 @@ test('profile return points to the same conversation only for the original signe
   const key='parrot669-profile-return';
   const sessionData={[key]:JSON.stringify({accountId:'owner-1',conversationId:conversation,savedAt:Date.now()})};
   const routes={
-    '/auth/me':{body:{accountId:'owner-1',email:'private@example.test',username:'owner',profile:{displayName:'Owner'}}},
-    '/dashboard':{body:{profile:{displayName:'Owner'},properties:[]}}
+    '/auth/me':{body:{accountId:'owner-1',email:'private@example.test',username:'owner',profile:{id:'owner-profile',displayName:'Owner'}}},
+    '/dashboard':{body:{profile:{id:'owner-profile',displayName:'Owner'},properties:[]}}
   };
   const owner=setup(routes,'?fromMessages=1',{hash:'#host-profile',sessionData});
   await settle();
@@ -549,7 +553,7 @@ for (const action of ['add','edit']) {
   for (const status of [400,409]) {
     test(`manual block ${action}: HTTP ${status} keeps the draft and shows the error`, async () => {
       const route = action === 'add' ? '/properties/property-1/unavailability' : '/unavailability/block-1';
-      const app = setup({[route]:{status,body:{error:status===409
+      const app = setup({[route]:{status,body:{code:status===409 ? 'UNAVAILABILITY_OVERLAP' : 'INVALID_REQUEST',error:status===409
         ? 'unavailability period overlaps an existing block'
         : 'to must be after from; end date is exclusive'}}});
       await settle();
@@ -595,10 +599,10 @@ function propertyCard(app) {
 
 test('BUG-024: listing conflict codes render safe localized guidance and support only for other or neutral ownership', async () => {
   const cases=[
-    ['airbnb_listing_already_connected_to_this_property',/already connected to this property/,false],
-    ['airbnb_listing_already_connected_to_your_account',/one of your properties/,false],
-    ['airbnb_listing_connected_to_another_account',/another PARROT account/,true],
-    ['airbnb_listing_already_connected',/Try again or contact us/,true]
+    ['AIRBNB_LISTING_ALREADY_CONNECTED_TO_THIS_PROPERTY',/already connected to this property/,false],
+    ['AIRBNB_LISTING_ALREADY_CONNECTED_TO_YOUR_ACCOUNT',/one of your properties/,false],
+    ['AIRBNB_LISTING_CONNECTED_TO_ANOTHER_ACCOUNT',/another PARROT account/,true],
+    ['AIRBNB_LISTING_ALREADY_CONNECTED',/Try again or contact us/,true]
   ];
   for(const [code,expected,support] of cases){
     const route='/properties/property-1/listings';
@@ -697,7 +701,7 @@ for (const status of [400, 409]) {
   for (const action of ['add', 'edit']) {
     test(`${action} range: HTTP ${status} is shown beside dates and keeps the draft`, async () => {
       const route = action === 'add' ? '/properties/property-1/availability' : '/availability/period-1';
-      const app = setup({[route]:{status,body:{error:'availability period overlaps an existing period'}}});
+      const app = setup({[route]:{status,body:{error:'availability period overlaps an existing period',code:'AVAILABILITY_OVERLAP'}}});
       await settle();
       app.run('lang = "ru"');
       const card = propertyCard(app);
@@ -743,7 +747,7 @@ test('saving a range blocks duplicate submits; retry clears its old error and re
   assert.equal(form.querySelectorAll('input').every(input => input.disabled), true);
   await form.emit('submit');
   assert.equal(app.calls.filter(route => route === '/availability/period-1').length, 2);
-  resolve({body:{}});
+  resolve({status:204});
   await pending;
   const updated = app.nodes.get('host-properties').children[0].querySelector('.host-period');
   assert.notEqual(updated, form);
@@ -952,7 +956,7 @@ test('verification restores session without showing auth modal', async () => {
 });
 
 test('unverified email login explains the next step in the selected language',async()=>{
-  const app=setup({'/auth/login':{status:401,body:{error:'email verification required'}}});await settle();
+  const app=setup({'/auth/login':{status:401,body:{error:'email verification required',code:'EMAIL_VERIFICATION_REQUIRED'}}});await settle();
   app.run('applyLanguage("ru");openAuth("login")');await app.nodes.get('login-form').emit('submit');
   assert.match(app.nodes.get('login-form').querySelector('.host-form-error').textContent,/Подтвердите email по ссылке/);
   assert.match(html,/href="\/recover.html"/);
@@ -960,7 +964,7 @@ test('unverified email login explains the next step in the selected language',as
 
 test('property name can be edited, errors preserve it, successful save refreshes the heading without replacing periods',async()=>{
   let fail=true;
-  const app=setup({'/properties/property-1':options=>fail?{status:400,body:{error:'title is required'}}:{body:{id:'property-1',city:'Barcelona',...JSON.parse(options.body)}}});await settle();
+  const app=setup({'/properties/property-1':options=>fail?{status:400,body:{error:'title is required',code:'TITLE_REQUIRED'}}:{body:{id:'property-1',city:'Barcelona',...JSON.parse(options.body)}}});await settle();
   let card=propertyCard(app);let form=card.querySelector('.host-settings-form');const input=form.querySelectorAll('input').find(n=>n.name==='title');
   assert.equal(input.value,'Test home');input.value='  Новый дом 🏠 <test>  ';
   await app.run('updatePropertySettings(state.properties[0],propertiesNode.children[0].querySelector(".host-settings-form"))');

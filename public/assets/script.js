@@ -300,13 +300,13 @@ function setLanguage(lang){
     if(t[key] !== undefined) node.innerHTML = t[key];
   });
   langButtons.forEach(btn => btn.classList.toggle("active", languageForButton(btn) === lang));
-  localStorage.setItem("parrot669-language", lang);
+  window.ParrotCore.storage.local.setItem("parrot669-language", lang);
   document.dispatchEvent(new CustomEvent("parrot:language",{detail:{lang}}));
 }
 
 langButtons.forEach(btn => btn.addEventListener("click", () => setLanguage(languageForButton(btn))));
 
-const saved = localStorage.getItem("parrot669-language");
+const saved = window.ParrotCore.storage.local.getItem("parrot669-language");
 const browser = (navigator.language || "en").slice(0,2);
 setLanguage(saved || (translations[browser] ? browser : "en"));
 
@@ -407,10 +407,8 @@ if (availabilityForm) {
     renderAvailabilityStatus(availabilityMessage().loading, "loading");
 
     try {
-      const response = await fetch(`/api/search?${params.toString()}`, {headers:{Accept:"application/json"}});
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const items = await response.json();
-      renderAvailabilityResults(Array.isArray(items) ? items : []);
+      const items = await window.ParrotCore.http(`/api/search?${params.toString()}`, {validate:Array.isArray});
+      renderAvailabilityResults(items);
     } catch (error) {
       console.error("Availability search error:", error);
       renderAvailabilityStatus(availabilityMessage().error, "error");
