@@ -29,7 +29,8 @@ async function recordRetryEvents(page){
     };
     for(const type of ['pointerdown','pointerup','mousedown','mouseup','click','submit','focusin','focusout']){
       document.addEventListener(type,event=>sample(event,'capture'),true);
-      document.addEventListener(type,event=>{sample(event,'bubble');queueMicrotask(()=>sample(event,'after-default'));});
+      document.addEventListener(type,event=>{sample(event,'bubble');queueMicrotask(()=>sample(event,'microtask'));});
+      window.addEventListener(type,event=>sample(event,'window-bubble'));
     }
     let scheduled=false;
     document.addEventListener('scroll',event=>{
@@ -115,7 +116,9 @@ test('validation rejection and ambiguous server or network outcomes preserve the
   }
 });
 
-for(const position of ['top','bottom'])test(`physical retry after validation focus from ${position} preserves uncertain draft`,async({page},testInfo)=>{
+// A bounded native press-duration experiment, not a wait/retry workaround:
+// 75ms spans pointerdown/up while the browser may still be moving the page.
+for(const position of ['top','bottom'])for(const pressMs of [0,75])test(`physical retry from ${position}, native press ${pressMs}ms, preserves uncertain draft`,async({page},testInfo)=>{
   await quietNetwork(page);await recordRetryEvents(page);
   let requests=0;
   const outcomes=[];
@@ -128,14 +131,14 @@ for(const position of ['top','bottom'])test(`physical retry after validation foc
     await page.evaluate(position=>window.scrollTo({top:position==='top'?0:document.documentElement.scrollHeight,behavior:'instant'}),position);
     await page.locator('#lead-form').evaluate(form=>form.requestSubmit());
     await expect(page.locator('#form-status')).toHaveAttribute('data-state','error');
-    await page.locator('#lead-form button[type=submit]').click();
+    await page.locator('#lead-form button[type=submit]').click({delay:pressMs});
     await expect(page.locator('#form-status')).toHaveAttribute('data-state','uncertain');
     await expect(page.locator('[name=message]')).toHaveValue('Position-specific retry draft');
     expect(requests).toBe(2);
   }finally{
     const events=await page.evaluate(()=>window.__homeRetryEvents||[]);
-    console.log('HOME_RETRY_POSITION_EVENTS '+JSON.stringify({project:testInfo.project.name,position,outcomes,events}));
-    await testInfo.attach('home-retry-events',{body:Buffer.from(JSON.stringify({position,outcomes,events})),contentType:'application/json'});
+    console.log('HOME_RETRY_POSITION_EVENTS '+JSON.stringify({project:testInfo.project.name,position,pressMs,outcomes,events}));
+    await testInfo.attach('home-retry-events',{body:Buffer.from(JSON.stringify({position,pressMs,outcomes,events})),contentType:'application/json'});
   }
 });
 
