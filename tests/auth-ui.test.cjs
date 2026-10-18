@@ -55,6 +55,7 @@ function element(tag = 'div') {
 }
 
 function setup(routes = {}, search = '', {hash = '', sessionData = {}, layout = {}} = {}) {
+  routes['/auth/logout']??={status:204};
   routes['/geocode/countries']??={body:[{code:'ES',name:'Spain'},{code:'FR',name:'France'},{code:'BY',name:'Belarus'}]};
   const nodes = new Map([...html.matchAll(/id="([^"]+)"/g)].map(match => [match[1], element()]));
   nodes.get('host-profile-return').dataset.hostI18n='profileReturn';
@@ -109,11 +110,15 @@ function setup(routes = {}, search = '', {hash = '', sessionData = {}, layout = 
       const route = url.replace('/api/host', '');
       calls.push(route);
       requests.push({url, route, method: options.method || 'GET', body: options.body ? JSON.parse(options.body) : null});
-      const result = typeof routes[route] === 'function' ? await routes[route](options) : routes[route];
+      const result = typeof routes[route] === 'function' ? await routes[route](options) : routes[route]
+        ?? ((options.method||'GET')==='GET' && /^\/properties\/[^/]+\/calendars$/.test(route) ? {body:{calendars:[]}} : undefined);
       const status = result?.status ?? (!result && route === '/auth/me' ? 401 : 200);
       return {status, ok:status < 400, json:async () => result?.body ?? {error:'Test error'}};
     }
   };
+  Object.assign(sandbox.window,{fetch:(...args)=>sandbox.fetch(...args),localStorage:sandbox.localStorage,
+    sessionStorage:sandbox.sessionStorage,Headers,AbortController,setTimeout,clearTimeout});
+  require('./helpers/core.cjs').installCore(sandbox.window);
   vm.createContext(sandbox);
   vm.runInContext(fs.readFileSync(path.join(root, 'public/assets/host-address.js'), 'utf8'), sandbox);
   vm.runInContext(source, sandbox);
@@ -122,13 +127,218 @@ function setup(routes = {}, search = '', {hash = '', sessionData = {}, layout = 
   }};
 }
 const settle = () => new Promise(resolve => setImmediate(resolve));
-const user = {email:'test@example.test'};
+const user = {accountId:'test-account',email:'test@example.test'};
+
+const flushHost = async () => { for(let i=0;i<10;i++) await settle(); };
+const privateProperty = (id,title) => ({id,title,city:'Barcelona',bedrooms:1,sleeps:2,availability:[],unavailability:[],calendars:[]});
+
+test('PM138 R1: /me A→B clears private DOM/controllers/context before B dashboard resolves',async()=>{
+  let current={accountId:'account-a',username:'A',profile:{id:'profile-a'}};
+  let resolveB;
+  const bDashboard=new Promise(resolve=>resolveB=resolve);
+  const app=setup({'/auth/me':()=>({body:current}),'/dashboard':()=>current.accountId==='account-a'
+    ? {body:{properties:[privateProperty('private-a','PRIVATE A')]}} : bDashboard});
+  await flushHost();
+  const oldCard=app.nodes.get('host-properties').children[0];
+  app.run('expandedPropertyIds.add("private-a");unsavedHostChanges=true;newPropertyAddress.house.value="PRIVATE ADDRESS"');
+  let disposed=0;app.run('calendarVerificationPanels').push({dispose(){disposed++;}});
+  app.run('propertyAddressEditors').set('old-form',{dispose(){disposed++;}});
+  const before=app.calls.filter(x=>x==='/dashboard').length;
+  current={accountId:'account-b',username:'B',profile:{id:'profile-b'}};
+  await app.run('window.ParrotCore.session.refresh()');
+  assert.equal(app.run('accountId'),'account-b');
+  assert.equal(app.nodes.get('host-properties').children.includes(oldCard),false);
+  assert.equal(app.run('state.properties.length'),0);assert.equal(disposed,2);
+  assert.equal(app.run('propertyAddressEditors.size'),0);
+  assert.equal(app.run('expandedPropertyIds.size'),0);assert.equal(app.run('unsavedHostChanges'),false);
+  assert.equal(app.run('newPropertyAddress.house.value'),'');
+  assert.equal(app.calls.filter(x=>x==='/dashboard').length,before+1);
+  resolveB({body:{properties:[privateProperty('private-b','PRIVATE B')]}});await flushHost();
+  assert.equal(app.run('state.properties[0].id'),'private-b');
+  assert.equal(app.nodes.get('host-properties').children[0].dataset.propertyId,'private-b');
+  const bCard=app.nodes.get('host-properties').children[0];
+  app.run('expandedPropertyIds.add("private-b");unsavedHostChanges=true;window.ParrotCore.session.updateProfile({displayName:"Same account"})');
+  assert.equal(app.nodes.get('host-properties').children[0],bCard);
+  assert.equal(app.run('expandedPropertyIds.has("private-b")'),true);assert.equal(app.run('unsavedHostChanges'),true);
+  assert.equal(app.calls.filter(x=>x==='/dashboard').length,before+1);
+});
+
+test('PM138 R1: delayed A dashboard cannot overwrite B dashboard or private DOM',async()=>{
+  let current={accountId:'account-a',profile:{id:'profile-a'}},resolveA;
+  const aDashboard=new Promise(resolve=>resolveA=resolve);
+  const app=setup({'/auth/me':()=>({body:current}),'/dashboard':()=>current.accountId==='account-a'
+    ? aDashboard : {body:{properties:[privateProperty('private-b','B')]}}});
+  await flushHost();current={accountId:'account-b',profile:{id:'profile-b'}};
+  await app.run('window.ParrotCore.session.refresh()');await flushHost();
+  assert.equal(app.run('state.properties[0]?.id'),'private-b');
+  const card=app.nodes.get('host-properties').children[0];
+  resolveA({body:{properties:[privateProperty('private-a','A')]}});await flushHost();
+  assert.equal(app.run('accountId'),'account-b');assert.equal(app.run('state.properties[0].id'),'private-b');
+  assert.equal(app.nodes.get('host-properties').children[0],card);
+});
+
+test('PM138 R3: Host permits only producer-derived empty operations',async()=>{
+  const routes={'/auth/me':{body:user},'/dashboard':{body:{properties:[]}}};
+  for(const route of ['/calendars/cal-1/sync','/calendars/cal-1/activate','/calendars/cal-1','/availability/av-1','/properties/p-1','/listings/l-1','/unavailability/u-1','/profile','/properties/p-1/calendars']) routes[route]={status:204};
+  const app=setup(routes);await flushHost();
+  for(const [method,route] of [['POST','/calendars/cal-1/sync'],['POST','/calendars/cal-1/activate'],['PUT','/calendars/cal-1'],['DELETE','/calendars/cal-1'],['PUT','/availability/av-1'],['DELETE','/availability/av-1'],['DELETE','/properties/p-1'],['DELETE','/listings/l-1'],['DELETE','/unavailability/u-1']])
+    assert.equal(await app.run(`api(${JSON.stringify(route)},{method:${JSON.stringify(method)}})`),null,method+' '+route);
+  for(const [method,route] of [['GET','/calendars/cal-1'],['GET','/calendars/cal-1/activate'],['PUT','/calendars/cal-1/activate'],['PATCH','/profile'],['POST','/properties/p-1/calendars'],['DELETE','/profile'],['PUT','/unavailability/u-1'],['PUT','/properties/p-1']])
+    await assert.rejects(app.run(`api(${JSON.stringify(route)},{method:${JSON.stringify(method)}})`),{kind:'protocol',status:204});
+  for(const command of ['syncCalendar({id:"cal-1"})','setCalendarEnabled({id:"cal-1"},false)']) {
+    const count=app.calls.filter(x=>x==='/dashboard').length;
+    await app.run(command);assert.equal(app.calls.filter(x=>x==='/dashboard').length,count);
+    assert.equal(app.nodes.get('host-status').className.includes('error'),true);
+  }
+});
+
+const calendarProperty='11111111-1111-4111-8111-111111111111';
+const calendarId='22222222-2222-4222-8222-222222222222';
+const calendarView=(extra={})=>({id:calendarId,provider:'Airbnb',listingId:'123',publicUrl:'https://www.airbnb.com/rooms/123',
+  enabled:true,mode:'Active',revision:7,status:'Connected',lastSyncedAt:null,lastSuccessAt:null,lastError:null,reservationBlocks:[],...extra});
+function calendarSetup({snapshot={body:{calendars:[calendarView()]}},command={status:204},dashboard}={}){
+  return setup({'/auth/me':{body:user},'/dashboard':dashboard||{body:{properties:[{
+    ...privateProperty(calendarProperty,'Snapshot property'),listings:[{id:'listing-1',url:'https://www.airbnb.com/rooms/123'}],
+    // A bogus embedded dashboard calendar must never be a command source.
+    calendars:[calendarView({revision:999})]
+  }]}},[`/properties/${calendarProperty}/calendars`]:snapshot,
+    [`/calendars/${calendarId}/sync`]:command,[`/calendars/${calendarId}/activate`]:command,[`/calendars/${calendarId}`]:command});
+}
+const calendarCommand='state.properties[0].calendars[0]';
+
+for(const [name,expression,method,suffix,extra] of [
+  ['sync',`syncCalendar(${calendarCommand})`,'POST','/sync',{}],
+  ['disable',`setCalendarEnabled(${calendarCommand},false)`,'PUT','',{mode:'Disabled'}],
+  ['enable',`setCalendarEnabled(${calendarCommand},true)`,'POST','/activate',{}],
+  ['delete',`disconnectCalendar(${calendarCommand})`,'DELETE','',{}]
+]) test(`PM138 calendar ${name} uses actual snapshot revision and guarded refresh`,async()=>{
+  const app=calendarSetup({snapshot:{body:{calendars:[calendarView(name==='enable'?{mode:'Disabled',enabled:false}:{})]}}});await flushHost();
+  assert.equal(app.run(calendarCommand+'.revision'),7);
+  assert.equal(app.run(calendarCommand+'.status'),'connected');
+  const before=app.calls.filter(x=>x==='/dashboard').length;
+  await app.run(expression);
+  const request=app.requests.find(r=>r.method===method&&r.route===`/calendars/${calendarId}${suffix}`);
+  assert.deepEqual(request?.body,{...extra,expectedRevision:7});
+  assert.equal(app.calls.filter(x=>x==='/dashboard').length,before+1);
+  assert.equal(app.calls.filter(x=>x===`/properties/${calendarProperty}/calendars`).length,2);
+  assert.equal(app.nodes.get('host-status').className.includes('error'),false);
+});
+
+for(const [name,snapshot] of [
+  ['missing calendars',{body:{}}],['null calendar',{body:{calendars:[null]}}],
+  ['missing revision',{body:{calendars:[calendarView({revision:undefined})]}}],
+  ['string revision',{body:{calendars:[calendarView({revision:'7'})]}}],
+  ['negative revision',{body:{calendars:[calendarView({revision:-1})]}}],
+  ['fractional revision',{body:{calendars:[calendarView({revision:1.5})]}}],
+  ['unsafe revision',{body:{calendars:[calendarView({revision:Number.MAX_SAFE_INTEGER+1})]}}],
+  ['unknown mode',{body:{calendars:[calendarView({mode:'active'})]}}],
+  ['missing mode',{body:{calendars:[calendarView({mode:undefined})]}}],
+  ['duplicate ids',{body:{calendars:[calendarView(),calendarView()]}}],
+  ['missing enabled',{body:{calendars:[calendarView({enabled:undefined})]}}],
+  ['invalid id',{body:{calendars:[calendarView({id:'not-a-calendar'})]}}],
+  ['empty snapshot',{body:{calendars:[]}}],['unexpected204',{status:204}],
+  ['unavailable',{status:503,body:{code:'SERVICE_UNAVAILABLE',error:'Snapshot unavailable'}}],
+  ['anonymous',{status:401,body:{code:'AUTHENTICATION_REQUIRED',error:'Sign in'}}],
+  ['cross-owner refusal',{status:404,body:{code:'NOT_FOUND',error:'Not found'}}]
+]) test(`PM138 calendar ${name} never sends a command or trusts dashboard data`,async()=>{
+  const app=calendarSetup({snapshot});await flushHost();
+  const selected='state.properties[0]?.calendars[0]';
+  for(const expression of ['syncCalendar','disconnectCalendar'])await app.run(`${expression}(${selected})`);
+  await app.run(`setCalendarEnabled(${selected},false)`);
+  await app.run(`setCalendarEnabled(${selected},true)`);
+  assert.equal(app.requests.filter(r=>r.route.startsWith('/calendars/')).length,0);
+  assert.equal(app.nodes.get('host-status').className.includes('error'),true);
+});
+
+for(const [status,code] of [[412,'CALENDAR_STALE'],[409,'CALENDAR_DISABLED'],[409,'CALENDAR_INVALID_TRANSITION']])
+for(const command of [`syncCalendar(${calendarCommand})`,`setCalendarEnabled(${calendarCommand},false)`,`setCalendarEnabled(${calendarCommand},true)`,`disconnectCalendar(${calendarCommand})`])
+test(`PM138 calendar ${command} ${status}/${code} is failure without refresh or retry`,async()=>{
+  const app=calendarSetup({command:{status,body:{code,error:'Synthetic calendar refusal'}}});await flushHost();
+  const before=app.calls.filter(x=>x==='/dashboard').length;
+  await app.run(command);
+  assert.equal(app.requests.filter(r=>r.route.startsWith(`/calendars/${calendarId}`)).length,1);
+  assert.equal(app.calls.filter(x=>x==='/dashboard').length,before);
+  assert.equal(app.nodes.get('host-status').textContent,'Synthetic calendar refusal');
+  assert.equal(app.nodes.get('host-status').className.includes('error'),true);
+  assert.equal(app.run(calendarCommand+'.revision'),7);
+});
+
+test('PM138 calendar rejects fabricated and obsolete snapshot objects, accepts revision zero',async()=>{
+  const app=calendarSetup({snapshot:{body:{calendars:[calendarView({revision:0})]}}});await flushHost();
+  await app.run(`syncCalendar(${JSON.stringify(calendarView())})`);
+  assert.equal(app.requests.some(r=>r.route===`/calendars/${calendarId}/sync`),false);
+  app.run('globalThis.oldCalendar=state.properties[0].calendars[0]');
+  await app.run('syncDashboard()');
+  await app.run('syncCalendar(oldCalendar)');
+  assert.equal(app.requests.some(r=>r.route===`/calendars/${calendarId}/sync`),false);
+  await app.run(`syncCalendar(${calendarCommand})`);
+  assert.deepEqual(app.requests.find(r=>r.route===`/calendars/${calendarId}/sync`).body,{expectedRevision:0});
+});
+
+for(const status of [200,401])test(`PM138 delayed old-account calendar snapshot ${status} cannot rebuild or expire B`,async()=>{
+  let current={accountId:'account-a',profile:{id:'profile-a'}},resolveA;
+  const pending=new Promise(resolve=>resolveA=resolve);
+  const app=setup({'/auth/me':()=>({body:current}),'/dashboard':()=>({body:{properties:[privateProperty(current.accountId==='account-a'?calendarProperty:'private-b',current.accountId)]}}),
+    [`/properties/${calendarProperty}/calendars`]:()=>pending});
+  await flushHost();current={accountId:'account-b',profile:{id:'profile-b'}};
+  await app.run('window.ParrotCore.session.refresh()');await flushHost();
+  const card=app.nodes.get('host-properties').children[0];
+  resolveA(status===200?{body:{calendars:[calendarView()]}}:{status:401,body:{error:'old A expired',code:'AUTHENTICATION_REQUIRED'}});await flushHost();
+  assert.equal(app.run('accountId'),'account-b');assert.equal(app.run('state.properties[0].id'),'private-b');
+  assert.equal(app.nodes.get('host-properties').children[0],card);
+  assert.equal(app.run('window.ParrotCore.session.status'),'authenticated');
+  assert.equal(app.requests.some(r=>r.route.startsWith('/calendars/')),false);
+});
+
+test('PM138 snapshots stay with their property; one refused snapshot does not hide another property',async()=>{
+  const second='33333333-3333-4333-8333-333333333333';
+  const app=setup({'/auth/me':{body:user},'/dashboard':{body:{properties:[privateProperty(calendarProperty,'A'),privateProperty(second,'B')]}},
+    [`/properties/${calendarProperty}/calendars`]:{body:{calendars:[calendarView({mode:'Frozen'})]}},
+    [`/properties/${second}/calendars`]:{status:404,body:{code:'NOT_FOUND',error:'Snapshot not available'}},
+    [`/calendars/${calendarId}`]:{status:204}});
+  await flushHost();
+  assert.equal(app.run('state.properties.length'),2);
+  assert.equal(app.run('state.properties[0].calendars[0].mode'),'Frozen');
+  assert.equal(app.run('state.properties[1].calendars.length'),0);
+  assert.equal(app.nodes.get('host-status').textContent,'Snapshot not available');
+  // Moving a valid object into a different property does not grant a command.
+  app.run('globalThis.moved=state.properties[0].calendars.pop();state.properties[1].calendars.push(moved)');
+  await app.run('setCalendarEnabled(moved,false)');
+  assert.equal(app.requests.some(r=>r.route.startsWith('/calendars/')),false);
+});
+
+test('PM138 overlapping same-session dashboard loads cannot replace a newer revision with a delayed snapshot',async()=>{
+  let resolveOld,attempt=0;
+  const old=new Promise(resolve=>resolveOld=resolve);
+  const app=calendarSetup({snapshot:()=>++attempt===1?old:{body:{calendars:[calendarView({revision:9})]}}});
+  await flushHost();await app.run('syncDashboard()');
+  assert.equal(app.run(calendarCommand+'.revision'),9);
+  const card=app.nodes.get('host-properties').children[0];
+  resolveOld({body:{calendars:[calendarView({revision:7})]}});await flushHost();
+  assert.equal(app.run(calendarCommand+'.revision'),9);assert.equal(app.nodes.get('host-properties').children[0],card);
+});
+
+for(const status of [204,401])test(`PM138 old-account calendar command ${status} cannot refresh or report success into B`,async()=>{
+  let resolveCommand;
+  const pending=new Promise(resolve=>resolveCommand=resolve);
+  const app=calendarSetup({command:()=>pending});await flushHost();
+  const command=app.run(`syncCalendar(${calendarCommand})`);
+  await flushHost();
+  app.run('window.ParrotCore.session.setUser({accountId:"account-b",profile:{id:"profile-b"}})');
+  await flushHost();const before=app.calls.filter(r=>r==='/dashboard').length;
+  app.nodes.get('host-status').textContent='B status';
+  resolveCommand(status===204?{status:204}:{status:401,body:{code:'AUTHENTICATION_REQUIRED',error:'Old account'}});
+  await command;await flushHost();
+  assert.equal(app.run('accountId'),'account-b');assert.equal(app.run('window.ParrotCore.session.status'),'authenticated');
+  assert.equal(app.calls.filter(r=>r==='/dashboard').length,before);
+  assert.equal(app.nodes.get('host-status').textContent,'B status');
+});
 
 test('host profile saves public name, keeps account identity private and retains input on a 400', async()=>{
   let fail = true;
   const app = setup({
-    '/auth/me':{body:{accountId:'owner-1',email:'private@example.test',username:'my-login',profile:{displayName:'Old host'}}},
-    '/dashboard':{body:{profile:{displayName:'Old host'},properties:[]}},
+    '/auth/me':{body:{accountId:'owner-1',email:'private@example.test',username:'my-login',profile:{id:'owner-profile',displayName:'Old host'}}},
+    '/dashboard':{body:{profile:{id:'owner-profile',displayName:'Old host'},properties:[]}},
     '/profile':()=>fail ? {status:400,body:{error:'Invalid name'}} : {body:{parrotId:'PAR-TEST',displayName:'New host',createdAt:'2030-01-01'}}
   });
   await settle();
@@ -150,10 +360,10 @@ test('host profile saves public name, keeps account identity private and retains
 });
 
 test('PM-049: Host clears private BFCache DOM before session revalidation',async()=>{
-  let current={accountId:'owner-1',email:'private@example.test',username:'owner',profile:{displayName:'Host'}};
+  let current={accountId:'owner-1',email:'private@example.test',username:'owner',profile:{id:'owner-profile',displayName:'Host'}};
   const app=setup({
     '/auth/me':()=>current ? {body:current} : {status:401,body:{error:'unauthorized'}},
-    '/dashboard':{body:{profile:{displayName:'Host'},properties:[]}}
+    '/dashboard':{body:{profile:{id:'owner-profile',displayName:'Host'},properties:[]}}
   });
   await settle();
   assert.equal(app.nodes.get('host-profile').hidden,false);
@@ -173,8 +383,8 @@ test('profile return points to the same conversation only for the original signe
   const key='parrot669-profile-return';
   const sessionData={[key]:JSON.stringify({accountId:'owner-1',conversationId:conversation,savedAt:Date.now()})};
   const routes={
-    '/auth/me':{body:{accountId:'owner-1',email:'private@example.test',username:'owner',profile:{displayName:'Owner'}}},
-    '/dashboard':{body:{profile:{displayName:'Owner'},properties:[]}}
+    '/auth/me':{body:{accountId:'owner-1',email:'private@example.test',username:'owner',profile:{id:'owner-profile',displayName:'Owner'}}},
+    '/dashboard':{body:{profile:{id:'owner-profile',displayName:'Owner'},properties:[]}}
   };
   const owner=setup(routes,'?fromMessages=1',{hash:'#host-profile',sessionData});
   await settle();
@@ -549,7 +759,7 @@ for (const action of ['add','edit']) {
   for (const status of [400,409]) {
     test(`manual block ${action}: HTTP ${status} keeps the draft and shows the error`, async () => {
       const route = action === 'add' ? '/properties/property-1/unavailability' : '/unavailability/block-1';
-      const app = setup({[route]:{status,body:{error:status===409
+      const app = setup({[route]:{status,body:{code:status===409 ? 'UNAVAILABILITY_OVERLAP' : 'INVALID_REQUEST',error:status===409
         ? 'unavailability period overlaps an existing block'
         : 'to must be after from; end date is exclusive'}}});
       await settle();
@@ -595,10 +805,10 @@ function propertyCard(app) {
 
 test('BUG-024: listing conflict codes render safe localized guidance and support only for other or neutral ownership', async () => {
   const cases=[
-    ['airbnb_listing_already_connected_to_this_property',/already connected to this property/,false],
-    ['airbnb_listing_already_connected_to_your_account',/one of your properties/,false],
-    ['airbnb_listing_connected_to_another_account',/another PARROT account/,true],
-    ['airbnb_listing_already_connected',/Try again or contact us/,true]
+    ['AIRBNB_LISTING_ALREADY_CONNECTED_TO_THIS_PROPERTY',/already connected to this property/,false],
+    ['AIRBNB_LISTING_ALREADY_CONNECTED_TO_YOUR_ACCOUNT',/one of your properties/,false],
+    ['AIRBNB_LISTING_CONNECTED_TO_ANOTHER_ACCOUNT',/another PARROT account/,true],
+    ['AIRBNB_LISTING_ALREADY_CONNECTED',/Try again or contact us/,true]
   ];
   for(const [code,expected,support] of cases){
     const route='/properties/property-1/listings';
@@ -697,7 +907,7 @@ for (const status of [400, 409]) {
   for (const action of ['add', 'edit']) {
     test(`${action} range: HTTP ${status} is shown beside dates and keeps the draft`, async () => {
       const route = action === 'add' ? '/properties/property-1/availability' : '/availability/period-1';
-      const app = setup({[route]:{status,body:{error:'availability period overlaps an existing period'}}});
+      const app = setup({[route]:{status,body:{error:'availability period overlaps an existing period',code:'AVAILABILITY_OVERLAP'}}});
       await settle();
       app.run('lang = "ru"');
       const card = propertyCard(app);
@@ -743,7 +953,7 @@ test('saving a range blocks duplicate submits; retry clears its old error and re
   assert.equal(form.querySelectorAll('input').every(input => input.disabled), true);
   await form.emit('submit');
   assert.equal(app.calls.filter(route => route === '/availability/period-1').length, 2);
-  resolve({body:{}});
+  resolve({status:204});
   await pending;
   const updated = app.nodes.get('host-properties').children[0].querySelector('.host-period');
   assert.notEqual(updated, form);
@@ -952,7 +1162,7 @@ test('verification restores session without showing auth modal', async () => {
 });
 
 test('unverified email login explains the next step in the selected language',async()=>{
-  const app=setup({'/auth/login':{status:401,body:{error:'email verification required'}}});await settle();
+  const app=setup({'/auth/login':{status:401,body:{error:'email verification required',code:'EMAIL_VERIFICATION_REQUIRED'}}});await settle();
   app.run('applyLanguage("ru");openAuth("login")');await app.nodes.get('login-form').emit('submit');
   assert.match(app.nodes.get('login-form').querySelector('.host-form-error').textContent,/Подтвердите email по ссылке/);
   assert.match(html,/href="\/recover.html"/);
@@ -960,7 +1170,7 @@ test('unverified email login explains the next step in the selected language',as
 
 test('property name can be edited, errors preserve it, successful save refreshes the heading without replacing periods',async()=>{
   let fail=true;
-  const app=setup({'/properties/property-1':options=>fail?{status:400,body:{error:'title is required'}}:{body:{id:'property-1',city:'Barcelona',...JSON.parse(options.body)}}});await settle();
+  const app=setup({'/properties/property-1':options=>fail?{status:400,body:{error:'title is required',code:'TITLE_REQUIRED'}}:{body:{id:'property-1',city:'Barcelona',...JSON.parse(options.body)}}});await settle();
   let card=propertyCard(app);let form=card.querySelector('.host-settings-form');const input=form.querySelectorAll('input').find(n=>n.name==='title');
   assert.equal(input.value,'Test home');input.value='  Новый дом 🏠 <test>  ';
   await app.run('updatePropertySettings(state.properties[0],propertiesNode.children[0].querySelector(".host-settings-form"))');
@@ -1030,7 +1240,7 @@ test('Messages property deep link opens only the owned card and returns to its c
   assert.equal(app.nodes.get('host-property-context').hidden,false);
   assert.equal(app.nodes.get('host-property-return').href,`/messages.html?conversation=${conversation}`);
   assert.match(app.nodes.get('host-property-context-status').textContent,/property from your conversation/);
-  assert.deepEqual(app.calls.filter(path=>path.startsWith('/properties/')),[]);
+  assert.deepEqual(app.calls.filter(path=>path.startsWith('/properties/')),[`/properties/${first}/calendars`,`/properties/${second}/calendars`]);
 
   const other=setup({'/auth/me':routes['/auth/me'],'/dashboard':{body:{properties:[routes['/dashboard'].body.properties[0]]}}},
     `?property=${second}&conversation=${conversation}`);

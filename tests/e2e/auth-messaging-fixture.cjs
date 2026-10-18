@@ -20,7 +20,7 @@ const identities = Object.freeze({
   })
 });
 
-function createAuthMessagingFixture() {
+function createAuthMessagingFixture({acknowledge=value=>value}={}) {
   const calls = [];
   const sessions = new Map();
   const messages = [];
@@ -30,6 +30,16 @@ function createAuthMessagingFixture() {
   const actorKey = user => user?.accountId === ids.accountA ? 'a' : user?.accountId === ids.accountB ? 'b' : null;
   const other = key => key === 'a' ? identities.b : identities.a;
   const lastSequence = () => messages.at(-1)?.sequence || 0;
+
+  function saveMessage(input,user,createdAt) {
+    const previous=messages.find(item=>item.senderProfileId===user.profile.id&&item.clientMessageId===input.clientMessageId);
+    if(previous)return previous.body===input.body&&previous.from===(input.from??null)&&previous.to===(input.to??null)?previous:null;
+    const sequence=messages.length+1;
+    const value={id:`77777777-7777-4777-8777-${String(sequence).padStart(12,'0')}`,sequence,
+      senderProfileId:user.profile.id,clientMessageId:input.clientMessageId,body:input.body,
+      from:input.from??null,to:input.to??null,createdAt};
+    messages.push(value);return value;
+  }
 
   function detail(key) {
     return {
@@ -105,12 +115,10 @@ function createAuthMessagingFixture() {
         if (key !== 'a' || input.propertyId !== ids.property || !input.clientMessageId || !input.body)
           return json(400, {error: 'invalid synthetic request'});
         conversationExists = true;
-        messages.push({sequence: messages.length + 1, senderProfileId: user.profile.id,
-          clientMessageId: input.clientMessageId, body: input.body, from: input.from || null,
-          to: input.to || null, createdAt: '2026-09-28T02:55:00.000Z'});
+        const message=saveMessage(input,user,'2026-09-28T02:55:00.000Z');
+        if(!message)return json(409,{code:'CONFLICT',error:'clientMessageId reused for different content'});
         readThrough.set('a', lastSequence());
-        return json(200, {conversationId: ids.conversation, id: input.clientMessageId,
-          sequence: lastSequence()});
+        return json(200, acknowledge({conversationId:ids.conversation,message},{firstSend:true,input}));
       }
       if (path === '/api/messaging/conversations' && method === 'GET')
         return json(200, {items: conversationExists ? [inboxItem(key)] : [], nextCursor: null});
@@ -129,11 +137,10 @@ function createAuthMessagingFixture() {
         const input = body();
         if (!conversationExists || !input.clientMessageId || !input.body)
           return json(400, {error: 'invalid synthetic request'});
-        messages.push({sequence: messages.length + 1, senderProfileId: user.profile.id,
-          clientMessageId: input.clientMessageId, body: input.body, from: input.from || null,
-          to: input.to || null, createdAt: '2026-09-28T02:56:00.000Z'});
+        const message=saveMessage(input,user,'2026-09-28T02:56:00.000Z');
+        if(!message)return json(409,{code:'CONFLICT',error:'clientMessageId reused for different content'});
         readThrough.set(key, lastSequence());
-        return json(200, {id: input.clientMessageId, sequence: lastSequence()});
+        return json(200, acknowledge(message,{firstSend:false,input}));
       }
       if (path === '/api/messaging/conversations/' + ids.conversation + '/read' && method === 'PUT') {
         const through = Math.min(lastSequence(), Number(body().throughSequence) || 0);

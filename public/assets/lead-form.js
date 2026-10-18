@@ -35,6 +35,7 @@
   const setText=(selector,value)=>{const node=receipt.querySelector(selector);if(node)node.textContent=value||"";};
 
   function focusReceipt(){
+    document.documentElement.scrollTop=window.scrollY;
     receipt.focus({preventScroll:true});
     const title=receipt.querySelector("h3");
     if(!title)return;
@@ -42,7 +43,21 @@
     const safeTop=Math.max(0,headerBottom)+16;
     const rect=title.getBoundingClientRect();
     if(rect.top<safeTop||rect.bottom>window.innerHeight-16){
-      window.scrollBy({top:rect.top-safeTop,left:0,behavior:"auto"});
+      window.scrollTo({top:Math.max(0,window.scrollY+rect.top-safeTop),left:0,behavior:"instant"});
+    }
+  }
+
+  function focusStatus(){
+    // Cancel in-flight focus scrolling before enabling a physical retry. With
+    // root smooth scrolling, a moving button can lose pointerup/click to a
+    // different element, so no native submit occurs at all.
+    document.documentElement.scrollTop=window.scrollY;
+    status.focus({preventScroll:true});
+    const headerBottom=document.querySelector(".topbar")?.getBoundingClientRect().bottom||0;
+    const safeTop=Math.max(0,headerBottom)+16;
+    const rect=status.getBoundingClientRect();
+    if(rect.top<safeTop||rect.bottom>window.innerHeight-16){
+      window.scrollTo({top:Math.max(0,window.scrollY+rect.top-safeTop),left:0,behavior:"instant"});
     }
   }
 
@@ -78,7 +93,7 @@
     }
     if(focus){
       if(state.kind==="success") focusReceipt();
-      else status.focus();
+      else focusStatus();
     }
   }
 
@@ -100,18 +115,14 @@
     state={kind:"submitting",snapshot:submitted};
     render();
     try{
-      const response=await fetch("/api/contact",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(submitted)});
+      await window.ParrotCore.http("/api/contact",{method:"POST",body:JSON.stringify(submitted)});
       if(attempt!==requestSequence)return;
-      if(!response.ok){
-        const kind=response.status>=400&&response.status<500 ? "error" : "uncertain";
-        state={kind,snapshot:submitted};render({focus:true});return;
-      }
       state={kind:"success",snapshot:submitted};
       render({focus:true});
     }catch(error){
       if(attempt!==requestSequence)return;
-      console.error("Contact form outcome is unknown:",error);
-      state={kind:"uncertain",snapshot:submitted};
+      const kind=error.kind==="http" && error.status>=400 && error.status<500 ? "error" : "uncertain";
+      state={kind,snapshot:submitted};
       render({focus:true});
     }
   });

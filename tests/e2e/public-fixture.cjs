@@ -46,6 +46,7 @@ async function installHostFixture(page) {
     seen.push({path,method:request.method()});
     const data = path === '/api/host/auth/me' ? user
       : path === '/api/host/dashboard' ? {profile:user.profile,properties:[]}
+      : /^\/api\/host\/properties\/[^/]+\/calendars$/.test(path) ? {calendars:[]}
       : path === '/api/messaging/unread' ? {conversations:0,messages:0}
       : path === '/api/messaging/conversations' ? {items:[],nextCursor:null}
       : path === '/api/messaging/notification-settings' ? {enabled:false,language:'en'}

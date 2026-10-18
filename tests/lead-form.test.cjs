@@ -42,8 +42,9 @@ async function harness(t,{url='https://parrot669.com/',lang='en',fetch=async()=>
   w.document.documentElement.lang=lang;
   w.fetch=fetch;
   const scrolls=[];
-  w.scrollBy=options=>{scrolls.push(options);};
+  w.scrollTo=options=>{scrolls.push(options);};
   w.HTMLElement.prototype.scrollIntoView=()=>{};
+  require('./helpers/core.cjs').installCore(w);
   w.eval(source);
   t.after(()=>dom.window.close());
   const form=w.document.getElementById('lead-form');
@@ -183,6 +184,7 @@ test('manual retry aligns the focused receipt title below the sticky header with
   assert.equal(requests.length,1);
 
   h.w.document.querySelector('.topbar').getBoundingClientRect=()=>({bottom:103.5});
+  h.w.scrollY=300;
   h.receipt().querySelector('h3').getBoundingClientRect=()=>({top:26.859,bottom:55.859});
   h.scrolls.length=0;
   outcome={ok:true,status:200};
@@ -193,8 +195,34 @@ test('manual retry aligns the focused receipt title below the sticky header with
   assert.equal(h.w.document.activeElement,h.receipt());
   assert.equal(h.scrolls.length,1);
   assert.equal(h.scrolls[0].left,0);
-  assert.equal(h.scrolls[0].behavior,'auto');
-  assert.ok(Math.abs(h.scrolls[0].top-(-92.641))<1e-9);
+  assert.equal(h.scrolls[0].behavior,'instant');
+  assert.ok(Math.abs(h.scrolls[0].top-207.359)<1e-9);
+});
+
+for(const status of [400,500])for(const [position,rect,expectedTop] of [
+  ['behind header',{top:24,bottom:74},228],
+  ['below viewport',{top:900,bottom:950},1104],
+  ['already visible',{top:200,bottom:250},null]
+])test(`Home ${status} status focus ${position} avoids implicit smooth scroll and keeps the draft`,async t=>{
+  for(const lang of ['en','es','ca','ru']){
+    let requests=0;
+    const h=await harness(t,{lang,fetch:async()=>{requests++;return new Response('{"error":"Synthetic rejection"}',{status});}});
+    fill(h,{message:'Keep exact focus draft'});
+    h.w.scrollY=300;h.w.innerHeight=800;
+    h.w.document.querySelector('.topbar').getBoundingClientRect=()=>({bottom:80});
+    h.status().getBoundingClientRect=()=>rect;
+    const calls=[],focus=h.status().focus.bind(h.status());
+    h.status().focus=options=>{calls.push(options);focus(options);};
+    await h.submit();
+    assert.equal(h.status().dataset.state,status===400?'error':'uncertain');
+    assert.equal(h.w.document.activeElement,h.status());
+    assert.equal(calls.length,1);assert.equal(calls[0]?.preventScroll,true);
+    assert.equal(h.w.document.documentElement.scrollTop,300);
+    assert.equal(h.form.elements.message.value,'Keep exact focus draft');
+    assert.equal(requests,1);
+    assert.equal(h.scrolls.length,expectedTop===null?0:1);
+    if(expectedTop!==null){assert.equal(h.scrolls[0].top,expectedTop);assert.equal(h.scrolls[0].behavior,'instant');}
+  }
 });
 
 test('confirmed success shows a read-only localized summary and starts a new request explicitly',async t=>{

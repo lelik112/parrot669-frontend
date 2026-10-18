@@ -1,3 +1,4 @@
+const searchCore = window.ParrotCore;
 const LANG_KEY = "parrot669-language";
 const SEARCH_STATE_KEY = "parrot669-search-state";
 
@@ -25,7 +26,7 @@ Object.assign(housingCopy.es,{calendarUnverified:"Control del calendario sin con
 Object.assign(housingCopy.ca,{calendarUnverified:"Control del calendari sense confirmar",calendarPending:"El propietari encara no ha acabat la verificació",calendarVerified:"Control del calendari confirmat ✓",calendarRecheck:"Cal repetir la verificació del calendari"});
 Object.assign(housingCopy.ru,{calendarUnverified:"Контроль календаря не подтверждён",calendarPending:"Владелец ещё не завершил проверку",calendarVerified:"Контроль календаря подтверждён ✓",calendarRecheck:"Требуется повторная проверка"});
 
-let lang=(()=>{const saved=localStorage.getItem(LANG_KEY);if(saved&&copy[saved])return saved;const b=(navigator.language||"en").slice(0,2);return copy[b]?b:"en"})();
+let lang=(()=>{const saved=searchCore.storage.local.getItem(LANG_KEY);if(saved&&copy[saved])return saved;const b=(navigator.language||"en").slice(0,2);return copy[b]?b:"en"})();
 const form=document.getElementById("availability-form");
 const results=document.getElementById("availability-results");
 const countrySelect=form.elements.country;
@@ -69,7 +70,7 @@ const dateRangeCopy={
 Object.entries(dateRangeCopy).forEach(([language,values])=>Object.assign(housingCopy[language],values));
 
 function t(key,...args){const v=(housingCopy[lang]||housingCopy.en)[key]??(copy[lang]||copy.en)[key];return typeof v==="function"?v(...args):v}
-function renderAccountIndicator(user=window.ParrotMessaging?.user){
+function renderAccountIndicator(user=searchCore.session.user){
   const username=String(user?.username||"").trim();
   accountSession.hidden=!user;
   accountLogin.hidden=Boolean(user) || user===undefined;
@@ -80,16 +81,15 @@ accountLogout.addEventListener("click",async()=>{
   accountLogout.disabled=true;
   accountFeedback.textContent="";
   try {
-    await window.ParrotMessaging.auth("/logout",{method:"POST"});
-    window.ParrotMessaging.setUser(null);
+    await searchCore.auth("/logout",{method:"POST"});
   } catch(error) {
-    if(error.status===401) window.ParrotMessaging.setUser(null);
+    if(error.status===401) searchCore.session.setUser(null,{reason:"logout"});
     else accountFeedback.textContent=t("logoutError");
   } finally { accountLogout.disabled=false; }
 });
 function applyLanguage(next){
   lang=copy[next]?next:"en";
-  localStorage.setItem(LANG_KEY,lang);
+  searchCore.storage.local.setItem(LANG_KEY,lang);
   document.documentElement.lang=lang;
   document.title=t("page");
   document.querySelectorAll("[data-search-i18n]").forEach(n=>n.textContent=t(n.dataset.searchI18n));
@@ -127,7 +127,7 @@ function eurosToCents(value){
 }
 function saveSearchState(){
   const fd=new FormData(form);
-  localStorage.setItem(SEARCH_STATE_KEY,JSON.stringify({
+  searchCore.storage.local.setItem(SEARCH_STATE_KEY,JSON.stringify({
     country:String(fd.get("country")||""),
     city:String(fd.get("city")||""),
     accommodationType:String(accommodationTypeFilter?.value||"any"),
@@ -143,7 +143,7 @@ function saveSearchState(){
 }
 function restoreSearchState(){
   try{
-    const saved=JSON.parse(localStorage.getItem(SEARCH_STATE_KEY)||"null");
+    const saved=JSON.parse(searchCore.storage.local.getItem(SEARCH_STATE_KEY)||"null");
     if(!saved||typeof saved!=="object") return null;
     if(saved.accommodationType&&accommodationTypeFilter) accommodationTypeFilter.value=saved.accommodationType;
     if(saved.from) form.elements.from.value=saved.from;
@@ -194,10 +194,7 @@ async function loadCities(countryCode,preferredCity=""){
   updateSearchSubmitState();
   if(!countryCode) return;
 
-  const response=await fetch("/api/locations/cities?country="+encodeURIComponent(countryCode),{headers:{Accept:"application/json"}});
-  if(!response.ok) throw new Error("HTTP "+response.status);
-  const cities=await response.json();
-  if(!Array.isArray(cities)) throw new Error("Invalid cities response");
+  const cities=await searchCore.http("/api/locations/cities?country="+encodeURIComponent(countryCode),{validate:Array.isArray});
 
   cities.forEach(item=>{
     const option=document.createElement("option");
@@ -220,10 +217,7 @@ async function loadLocations(saved){
   resetLocationSelect(citySelect,"chooseCity");
 
   try{
-    const response=await fetch("/api/locations/countries",{headers:{Accept:"application/json"}});
-    if(!response.ok) throw new Error("HTTP "+response.status);
-    const countries=await response.json();
-    if(!Array.isArray(countries)) throw new Error("Invalid countries response");
+    const countries=await searchCore.http("/api/locations/countries",{validate:Array.isArray});
 
     countries.forEach(item=>{
       const option=document.createElement("option");
@@ -406,20 +400,11 @@ async function runSearch(baseParams,{disableSubmit=false}={}){
   if(pricedOnlyFilter) pricedOnlyFilter.disabled=true;
   state("loading","loading");
   try{
-    const response=await fetch(`/api/search?${params}`,{headers:{Accept:"application/json"}});
-    if(!response.ok){
-      const body=await response.json().catch(()=>null);
-      if(response.status===400&&body?.error==="A search request can cover at most 366 nights"){
-        if(requestId===searchSequence) state("searchRangeTooLong","error");
-        return;
-      }
-      throw new Error(`HTTP ${response.status}`);
-    }
-    const items=await response.json();
-    if(requestId===searchSequence) render(Array.isArray(items)?items:[]);
+    const items=await searchCore.http(`/api/search?${params}`,{validate:Array.isArray});
+    if(requestId===searchSequence) render(items);
   }catch(error){
     console.error(error);
-    if(requestId===searchSequence) state("error","error");
+    if(requestId===searchSequence) state(error.code==="SEARCH_RANGE_TOO_LONG" ? "searchRangeTooLong" : "error","error");
   }finally{
     if(requestId===searchSequence){
       updateSearchSubmitState();
@@ -469,10 +454,11 @@ countrySelect.addEventListener("change",async()=>{
   }
 });
 buttons.forEach(b=>b.addEventListener("click",()=>applyLanguage(b.dataset.searchLang)));
-window.ParrotMessaging?.onSession(user=>{
+searchCore.session.subscribe(({user})=>{
   renderAccountIndicator(user);
   if(renderedItems) render(renderedItems);
 });
+void searchCore.session.refresh().catch(()=>{accountFeedback.textContent=t("logoutError");});
 applyLanguage(lang);
 const savedSearchState=restoreSearchState();
 loadLocations(savedSearchState).then(()=>{

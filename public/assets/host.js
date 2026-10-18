@@ -1,3 +1,4 @@
+const hostCore = window.ParrotCore;
 const LANG_KEY = "parrot669-language";
 
 const copy = {
@@ -91,13 +92,14 @@ let sessionLoading = true;
 let authBusy = false;
 const expandedPropertyIds = new Set();
 let accountId = null;
+let dashboardLoad = Promise.resolve();
 let unsavedHostChanges = false;
 let confirmedExit = false;
 const returnKey = id => `parrot669-host-return:${id}`;
 const propertyNavigationParams = new URLSearchParams(window.location.search);
 const propertyNavigationUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const propertyNavigationId = propertyNavigationUuid.test(propertyNavigationParams.get("property") || "") ? propertyNavigationParams.get("property") : null;
-const propertyConversationId = propertyNavigationId && propertyNavigationUuid.test(propertyNavigationParams.get("conversation") || "") ? propertyNavigationParams.get("conversation") : null;
+let propertyNavigationId = propertyNavigationUuid.test(propertyNavigationParams.get("property") || "") ? propertyNavigationParams.get("property") : null;
+let propertyConversationId = propertyNavigationId && propertyNavigationUuid.test(propertyNavigationParams.get("conversation") || "") ? propertyNavigationParams.get("conversation") : null;
 let propertyNavigationPending = Boolean(propertyNavigationId);
 const navCopy = {
   en:{navProperties:"My properties",navTools:"Host tools",discardChanges:"Discard unsaved changes and leave this page?"},
@@ -122,7 +124,7 @@ document.addEventListener("click",event=>{
   if(unsavedHostChanges && !confirm(tr("discardChanges"))){event.preventDefault();return;}
   confirmedExit=true;
   if(link.pathname==="/messages.html" && state.authenticated && accountId){
-    try{sessionStorage.setItem(returnKey(accountId),JSON.stringify({ids:[...expandedPropertyIds],scrollY:window.scrollY}));}catch{}
+    try{hostCore.storage.session.setItem(returnKey(accountId),JSON.stringify({ids:[...expandedPropertyIds],scrollY:window.scrollY}));}catch{}
   }
 });
 window.addEventListener("beforeunload",event=>{
@@ -131,8 +133,8 @@ window.addEventListener("beforeunload",event=>{
 function restoreHostContext(){
   if(!accountId)return;
   try{
-    const key=returnKey(accountId),saved=JSON.parse(sessionStorage.getItem(key)||"null");
-    sessionStorage.removeItem(key);
+    const key=returnKey(accountId),saved=JSON.parse(hostCore.storage.session.getItem(key)||"null");
+    hostCore.storage.session.removeItem(key);
     if(!saved || !Array.isArray(saved.ids))return;
     const owned=new Set(state.properties.map(property=>property.id));
     saved.ids.filter(id=>typeof id==="string" && owned.has(id)).forEach(id=>expandedPropertyIds.add(id));
@@ -243,7 +245,7 @@ const profileReturnId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-
 function profileReturnContext(){
   if (!state.authenticated || new URLSearchParams(window.location.search).get("fromMessages") !== "1" || window.location.hash !== "#host-profile") return null;
   try {
-    const saved=JSON.parse(sessionStorage.getItem(profileReturnKey)||"null");
+    const saved=JSON.parse(hostCore.storage.session.getItem(profileReturnKey)||"null");
     return saved?.accountId === accountId && profileReturnId.test(saved.conversationId || "") &&
       saved.savedAt > Date.now()-86400000 ? saved : null;
   } catch { return null; }
@@ -268,7 +270,7 @@ function addressSessionExpired(){
 }
 
 function loadLanguage(){
-  const saved = localStorage.getItem(LANG_KEY);
+  const saved = hostCore.storage.local.getItem(LANG_KEY);
   if (saved && copy[saved]) return saved;
   const browser = (navigator.language || "en").slice(0,2);
   return copy[browser] ? browser : "en";
@@ -281,7 +283,7 @@ function tr(key, ...args){
 
 function applyLanguage(next){
   lang = copy[next] ? next : "en";
-  localStorage.setItem(LANG_KEY, lang);
+  hostCore.storage.local.setItem(LANG_KEY, lang);
   document.documentElement.lang = lang;
   document.title = tr("title");
 
@@ -323,40 +325,32 @@ function message(text, kind = ""){
 }
 
 async function api(path, options = {}){
-  const headers = new Headers(options.headers || {});
-  headers.set("Accept", "application/json");
-  if (options.body) headers.set("Content-Type", "application/json");
-
-  // Browser host API is namespaced under /api/host; the Worker strips /api/host
-  // and forwards the same request to the backend under /api.
-  const response = await fetch(`/api/host${path}`, {
-    ...options,
-    headers,
-    credentials:"same-origin"
-  });
-  if (response.status === 204) return null;
-
-  let data = null;
-  try { data = await response.json(); } catch {}
-  if (!response.ok) {
-    const detail = data?.error || data?.message || `HTTP ${response.status}`;
-    const knownErrors = {
-      "email verification required":"verifyFirst",
-      "title is required":"titleRequired",
-      "title is too long":"titleTooLong",
-      "select an address with a country and city":"addressChoose",
-      "select a full address with a street and house number":"addressChoose",
-      "availability period overlaps an existing period":"overlapError",
-      "unavailability period overlaps an existing block":"blockOverlap",
-      "to must be after from; checkout date is exclusive":"blockDateError",
-      "to must be after from; end date is exclusive":"blockDateError"
-    };
-    const error = new Error(knownErrors[detail] ? tr(knownErrors[detail]) : detail);
-    error.status = response.status;
-    error.code = typeof data?.code === "string" ? data.code : "";
+  try {
+    if (path === "/auth/me") {
+      const user = await hostCore.session.refresh();
+      if (!user) throw Object.assign(new Error(tr("signIn")), {status:401, code:"AUTHENTICATION_REQUIRED"});
+      return user;
+    }
+    if (path.startsWith("/auth/")) return await hostCore.auth(path.slice(5), options);
+    // Explicit producer contracts; a 204 from any other operation is a protocol error.
+    const method = options.method || "GET";
+    const empty = method === "DELETE" && /^\/(properties|listings|calendars|availability|unavailability)\/[^/]+$/.test(path)
+      || method === "PUT" && /^\/(availability|calendars)\/[^/]+$/.test(path)
+      || method === "POST" && /^\/calendars\/[^/]+\/(sync|activate)$/.test(path);
+    return await hostCore.session.request(`/api/host${path}`, {...options, authenticated:true,
+      ...(empty ? {expected:"empty"} : {}),
+      ...(path === "/dashboard" ? {validate:value => value && typeof value === "object" && Array.isArray(value.properties)} : {})});
+  } catch (error) {
+    const keys = {EMAIL_VERIFICATION_REQUIRED:"verifyFirst", TITLE_REQUIRED:"titleRequired", TITLE_TOO_LONG:"titleTooLong",
+      ADDRESS_REQUIRED:"addressChoose", FULL_ADDRESS_REQUIRED:"addressChoose", AVAILABILITY_OVERLAP:"overlapError",
+      UNAVAILABILITY_OVERLAP:"blockOverlap"};
+    if(keys[error.code]) error.message = tr(keys[error.code]);
+    // INVALID_REQUEST is contextual in PM120; retain these two existing date
+    // explanations until the backend has a field-specific validation contract.
+    if(error.code === "INVALID_REQUEST" && ["to must be after from; checkout date is exclusive",
+      "to must be after from; end date is exclusive"].includes(error.message)) error.message=tr("blockDateError");
     throw error;
   }
-  return data;
 }
 
 function setBusy(form, busy){
@@ -382,10 +376,10 @@ function setFormError(form, text = ""){
 }
 
 const listingConflictKeys={
-  airbnb_listing_already_connected_to_this_property:"listingConflictThisProperty",
-  airbnb_listing_already_connected_to_your_account:"listingConflictYourAccount",
-  airbnb_listing_connected_to_another_account:"listingConflictOtherAccount",
-  airbnb_listing_already_connected:"listingConflictNeutral"
+  AIRBNB_LISTING_ALREADY_CONNECTED_TO_THIS_PROPERTY:"listingConflictThisProperty",
+  AIRBNB_LISTING_ALREADY_CONNECTED_TO_YOUR_ACCOUNT:"listingConflictYourAccount",
+  AIRBNB_LISTING_CONNECTED_TO_ANOTHER_ACCOUNT:"listingConflictOtherAccount",
+  AIRBNB_LISTING_ALREADY_CONNECTED:"listingConflictNeutral"
 };
 
 function setListingFormError(form,error){
@@ -393,7 +387,7 @@ function setListingFormError(form,error){
   if(!key){setFormError(form,error.message);return error.message;}
   const text=tr(key);
   setFormError(form,text);
-  if(error.code==="airbnb_listing_connected_to_another_account"||error.code==="airbnb_listing_already_connected"){
+  if(error.code==="AIRBNB_LISTING_CONNECTED_TO_ANOTHER_ACCOUNT"||error.code==="AIRBNB_LISTING_ALREADY_CONNECTED"){
     const node=form.querySelector(".host-form-error");
     const link=document.createElement("a");
     link.className="host-form-support-link";
@@ -405,20 +399,26 @@ function setListingFormError(form,error){
 }
 
 function setAuthenticated(user){
-  accountId=user?.accountId || null;
-  window.ParrotMessaging?.setUser(user);
-  state = {
-    ...emptyState(),
-    authenticated:true,
-    accountEmail:String(user?.email || ""),
-    username:String(user?.username || ""),
-    profile:user?.profile || null
-  };
+  hostCore.session.setUser(user);
+}
+
+function clearPrivatePresentation(){
+  state = emptyState();
+  renderAuthState();
+  renderProperties(); // Disposes property address/verification controllers and detached closures.
+  expandedPropertyIds.clear();
+  unsavedHostChanges = false;
+  propertyForm.reset?.();
+  newPropertyAddress.reset();
+  loginForm.elements.password.value = "";
+  registerForm.elements.password.value = "";
+  setFormError(propertyForm);
+  setFormError(hostProfileForm);
+  message("");
 }
 
 function renderAuthState(){
   const ready = Boolean(state.authenticated);
-  if (!ready && !sessionLoading) window.ParrotMessaging?.setUser(null);
   hostAuthLinks.hidden = sessionLoading || ready;
   hostAccountSession.hidden = !ready;
   hostHero.hidden = !ready;
@@ -463,21 +463,64 @@ function setAuthBusy(form, busy){
   authDialog.setAttribute("aria-busy", String(busy));
 }
 
+const calendarSnapshots = new WeakMap();
+let dashboardVersion = 0;
+function calendarSnapshot(value){
+  if(!value || !Array.isArray(value.calendars)) return false;
+  const ids = new Set();
+  return value.calendars.every(calendar => {
+    if(!calendar || typeof calendar.id !== "string"
+      || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(calendar.id)
+      || ids.has(calendar.id.toLowerCase()) || typeof calendar.provider !== "string"
+      || typeof calendar.enabled !== "boolean" || !["Active","Frozen","Disabled"].includes(calendar.mode)
+      || !Number.isSafeInteger(calendar.revision) || calendar.revision < 0) return false;
+    ids.add(calendar.id.toLowerCase());
+    return true;
+  });
+}
+
+function calendarRevision(calendar){
+  const snapshot = calendar && calendarSnapshots.get(calendar);
+  if(!snapshot || snapshot.epoch !== hostCore.session.epoch || !state.authenticated
+    || !state.properties.some(property => property.id === snapshot.propertyId && property.calendars.includes(calendar)))
+    throw new Error("Invalid server response");
+  return snapshot.revision;
+}
+
 async function syncDashboard(){
+  const epoch = hostCore.session.epoch, version = ++dashboardVersion;
   message(tr("loading"));
   try {
     const dashboard = await api("/dashboard");
+    if(epoch !== hostCore.session.epoch || version !== dashboardVersion) return;
+    let calendarError;
+    const properties = await Promise.all(dashboard.properties.map(async property => {
+      let calendars = [];
+      try {
+        // Dashboard does not contain calendar mode/revision. Only the
+        // authenticated property snapshot is a command source.
+        const snapshot = await api(`/properties/${property.id}/calendars`, {validate:calendarSnapshot});
+        calendars = snapshot.calendars.map(calendar => {
+          const view = {...calendar, status:String(calendar.status || "").toLowerCase()};
+          calendarSnapshots.set(view, {propertyId:property.id, epoch, revision:calendar.revision});
+          return view;
+        });
+      } catch(error) {
+        if(error.kind === "stale" || error.status === 401) throw error;
+        calendarError ||= error;
+      }
+      return {...property,
+        listing:Array.isArray(property.listings) ? (property.listings[0] || null) : null,
+        availability:Array.isArray(property.availability) ? property.availability : [],
+        unavailability:Array.isArray(property.unavailability) ? property.unavailability : [],
+        calendars};
+    }));
+    if(epoch !== hostCore.session.epoch || version !== dashboardVersion) return;
     if (dashboard.profile) {
       state.profile = dashboard.profile;
       hostProfileForm.elements.displayName.value = dashboard.profile.displayName || "";
     }
-    state.properties = (dashboard.properties || []).map(property => ({
-      ...property,
-      listing: Array.isArray(property.listings) ? (property.listings[0] || null) : null,
-      availability: Array.isArray(property.availability) ? property.availability : [],
-      unavailability: Array.isArray(property.unavailability) ? property.unavailability : [],
-      calendars: Array.isArray(property.calendars) ? property.calendars : []
-    }));
+    state.properties = properties;
     const navigateToProperty = propertyNavigationPending;
     const returningFromMessages = !navigateToProperty && profileReturnContext();
     let previousScroll = null;
@@ -485,7 +528,7 @@ async function syncDashboard(){
       propertyNavigationPending = false;
       expandedPropertyIds.clear();
       if(state.properties.some(property=>property.id===propertyNavigationId)) expandedPropertyIds.add(propertyNavigationId);
-      try { sessionStorage.removeItem(returnKey(accountId)); } catch {}
+      try { hostCore.storage.session.removeItem(returnKey(accountId)); } catch {}
     }else if(!returningFromMessages) previousScroll=restoreHostContext();
     renderProperties();
     if(navigateToProperty) requestAnimationFrame(()=>{
@@ -497,8 +540,9 @@ async function syncDashboard(){
       requestAnimationFrame(()=>hostProfilePanel.scrollIntoView?.({block:"start"}));
     else if(previousScroll!==null && previousScroll!==undefined)
       restoreHostScroll(previousScroll);
-    message("");
+    message(calendarError?.message || "", calendarError ? "error" : "");
   } catch (error) {
+    if(error.kind === "stale" || epoch !== hostCore.session.epoch || version !== dashboardVersion) return;
     if (error.status === 401) {
       state = emptyState();
       state.properties = [];
@@ -559,7 +603,7 @@ async function restoreSession(){
       });
       setAuthenticated(user);
       renderAuthState();
-      await syncDashboard();
+      await dashboardLoad;
       params.delete("verifyEmail");
       const query = params.toString();
       history.replaceState(null, "", window.location.pathname + (query ? `?${query}` : "") + window.location.hash);
@@ -582,7 +626,7 @@ async function restoreSession(){
     const user = await api("/auth/me");
     setAuthenticated(user);
     renderAuthState();
-    await syncDashboard();
+    await dashboardLoad;
   } catch (error) {
     state = emptyState();
     renderAuthState();
@@ -604,6 +648,7 @@ hostProfileForm.addEventListener("submit", async event => {
       body:JSON.stringify({displayName:hostProfileForm.elements.displayName.value.trim()})
     });
     state.profile = profile;
+    hostCore.session.updateProfile(profile);
     hostProfileForm.elements.displayName.value = profile.displayName;
     message(tr("profileSaved"), "success");
   } catch (error) {
@@ -637,7 +682,7 @@ loginForm.addEventListener("submit", async event => {
     });
     setAuthenticated(user);
     renderAuthState();
-    await syncDashboard();
+    await dashboardLoad;
     loginForm.elements.password.value = "";
     message(tr("loggedIn"), "success");
   } catch (error) {
@@ -747,8 +792,8 @@ resetButton.addEventListener("click", async () => {
     }
   }
   state = emptyState();
-  if(accountId){try{sessionStorage.removeItem(returnKey(accountId));}catch{}}
-  try{sessionStorage.removeItem(profileReturnKey);}catch{}
+  if(accountId){try{hostCore.storage.session.removeItem(returnKey(accountId));}catch{}}
+  try{hostCore.storage.session.removeItem(profileReturnKey);}catch{}
   accountId=null;
     newPropertyAddress.reset();
     unsavedHostChanges=false;
@@ -1029,29 +1074,33 @@ async function connectCalendar(property, form){
 async function syncCalendar(calendar){
   message(tr("loading"));
   try{
-    await api(`/calendars/${calendar.id}/sync`,{method:"POST"});
+    const expectedRevision = calendarRevision(calendar);
+    await api(`/calendars/${calendar.id}/sync`,{method:"POST",body:JSON.stringify({expectedRevision})});
     message(tr("calendarSynced"),"success");
     await syncDashboard();
-  }catch(error){message(error.message,"error")}
+  }catch(error){if(error.kind !== "stale")message(error.message,"error")}
 }
 
 async function setCalendarEnabled(calendar, enabled){
   message(tr("loading"));
   try{
-    await api(`/calendars/${calendar.id}`,{method:"PUT",body:JSON.stringify({enabled})});
+    const expectedRevision = calendarRevision(calendar);
+    await api(`/calendars/${calendar.id}${enabled ? "/activate" : ""}`,{
+      method:enabled ? "POST" : "PUT",body:JSON.stringify(enabled ? {expectedRevision} : {mode:"Disabled",expectedRevision})});
     message(tr(enabled ? "calendarEnabled" : "calendarDisabled"),"success");
     await syncDashboard();
-  }catch(error){message(error.message,"error")}
+  }catch(error){if(error.kind !== "stale")message(error.message,"error")}
 }
 
 async function disconnectCalendar(calendar){
   if(!confirm(tr("disconnectCalendarConfirm"))) return;
   message(tr("loading"));
   try{
-    await api(`/calendars/${calendar.id}`,{method:"DELETE"});
+    const expectedRevision = calendarRevision(calendar);
+    await api(`/calendars/${calendar.id}`,{method:"DELETE",body:JSON.stringify({expectedRevision})});
     message(tr("calendarDisconnected"),"success");
     await syncDashboard();
-  }catch(error){message(error.message,"error")}
+  }catch(error){if(error.kind !== "stale")message(error.message,"error")}
 }
 
 function formatSyncTime(value){
@@ -1183,7 +1232,12 @@ function renderUnavailability(property, feedbackKey = null){
 function renderPropertyNavigation(){
   const visible=Boolean(state.authenticated && propertyNavigationId);
   propertyNavigationNode.hidden=!visible;
-  if(!visible)return;
+  if(!visible){
+    document.getElementById("host-property-context-status").textContent="";
+    const back=document.getElementById("host-property-return");
+    back.removeAttribute("href");back.textContent="";back.hidden=true;
+    return;
+  }
   const owned=state.properties.some(property=>property.id===propertyNavigationId);
   document.getElementById("host-property-context-status").textContent=tr(owned?"propertyFromConversation":"propertyUnavailableHere");
   const back=document.getElementById("host-property-return");
@@ -1630,5 +1684,31 @@ langButtons.forEach(btn => btn.addEventListener("click", () => {
   applyLanguage(btn.dataset.hostLang);
 }));
 
+hostCore.session.subscribe(({user, reason}) => {
+  if(user) {
+    const changed = accountId !== user.accountId;
+    if(changed) {
+      const previous = accountId;
+      clearPrivatePresentation();
+      if(previous) {
+        propertyNavigationPending = false;
+        propertyNavigationId = null; propertyConversationId = null;
+        hostCore.storage.session.removeItem(profileReturnKey);
+        hostCore.storage.session.removeItem(returnKey(previous));
+      }
+    }
+    accountId = user.accountId;
+    state = {...(changed ? emptyState() : state), authenticated:true,
+      accountEmail:String(user.email || ""), username:String(user.username || ""), profile:user.profile || null};
+    renderAuthState();
+    if(changed) dashboardLoad = syncDashboard();
+  } else {
+    clearPrivatePresentation(); accountId = null;
+    if(reason === "revalidate" || reason === "expired") {
+      loginForm.elements.password.value = "";
+      registerForm.elements.password.value = "";
+    }
+  }
+});
 applyLanguage(lang);
 boot();

@@ -10,6 +10,7 @@ module.exports = defineConfig({
   reporter: process.env.CI ? [['list'], ['html', {open:'never'}]] : 'list',
   use: {
     baseURL: 'http://127.0.0.1:4173',
+    serviceWorkers: 'block',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'off'
@@ -22,7 +23,7 @@ module.exports = defineConfig({
   webServer: {
     command: 'python3 -m http.server 4173 --bind 127.0.0.1 --directory public',
     url: 'http://127.0.0.1:4173/search.html',
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
     timeout: 15_000
   }
 });
