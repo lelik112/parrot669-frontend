@@ -128,6 +128,69 @@ function setup(routes = {}, search = '', {hash = '', sessionData = {}, layout = 
 const settle = () => new Promise(resolve => setImmediate(resolve));
 const user = {accountId:'test-account',email:'test@example.test'};
 
+const flushHost = async () => { for(let i=0;i<10;i++) await settle(); };
+const privateProperty = (id,title) => ({id,title,city:'Barcelona',bedrooms:1,sleeps:2,availability:[],unavailability:[],calendars:[]});
+
+test('PM138 R1: /me A→B clears private DOM/controllers/context before B dashboard resolves',async()=>{
+  let current={accountId:'account-a',username:'A',profile:{id:'profile-a'}};
+  let resolveB;
+  const bDashboard=new Promise(resolve=>resolveB=resolve);
+  const app=setup({'/auth/me':()=>({body:current}),'/dashboard':()=>current.accountId==='account-a'
+    ? {body:{properties:[privateProperty('private-a','PRIVATE A')]}} : bDashboard});
+  await flushHost();
+  const oldCard=app.nodes.get('host-properties').children[0];
+  app.run('expandedPropertyIds.add("private-a");unsavedHostChanges=true;newPropertyAddress.house.value="PRIVATE ADDRESS"');
+  let disposed=0;app.run('calendarVerificationPanels').push({dispose(){disposed++;}});
+  app.run('propertyAddressEditors').set('old-form',{dispose(){disposed++;}});
+  const before=app.calls.filter(x=>x==='/dashboard').length;
+  current={accountId:'account-b',username:'B',profile:{id:'profile-b'}};
+  await app.run('window.ParrotCore.session.refresh()');
+  assert.equal(app.run('accountId'),'account-b');
+  assert.equal(app.nodes.get('host-properties').children.includes(oldCard),false);
+  assert.equal(app.run('state.properties.length'),0);assert.equal(disposed,2);
+  assert.equal(app.run('propertyAddressEditors.size'),0);
+  assert.equal(app.run('expandedPropertyIds.size'),0);assert.equal(app.run('unsavedHostChanges'),false);
+  assert.equal(app.run('newPropertyAddress.house.value'),'');
+  assert.equal(app.calls.filter(x=>x==='/dashboard').length,before+1);
+  resolveB({body:{properties:[privateProperty('private-b','PRIVATE B')]}});await flushHost();
+  assert.equal(app.run('state.properties[0].id'),'private-b');
+  assert.equal(app.nodes.get('host-properties').children[0].dataset.propertyId,'private-b');
+  const bCard=app.nodes.get('host-properties').children[0];
+  app.run('expandedPropertyIds.add("private-b");unsavedHostChanges=true;window.ParrotCore.session.updateProfile({displayName:"Same account"})');
+  assert.equal(app.nodes.get('host-properties').children[0],bCard);
+  assert.equal(app.run('expandedPropertyIds.has("private-b")'),true);assert.equal(app.run('unsavedHostChanges'),true);
+  assert.equal(app.calls.filter(x=>x==='/dashboard').length,before+1);
+});
+
+test('PM138 R1: delayed A dashboard cannot overwrite B dashboard or private DOM',async()=>{
+  let current={accountId:'account-a',profile:{id:'profile-a'}},resolveA;
+  const aDashboard=new Promise(resolve=>resolveA=resolve);
+  const app=setup({'/auth/me':()=>({body:current}),'/dashboard':()=>current.accountId==='account-a'
+    ? aDashboard : {body:{properties:[privateProperty('private-b','B')]}}});
+  await flushHost();current={accountId:'account-b',profile:{id:'profile-b'}};
+  await app.run('window.ParrotCore.session.refresh()');await flushHost();
+  assert.equal(app.run('state.properties[0]?.id'),'private-b');
+  const card=app.nodes.get('host-properties').children[0];
+  resolveA({body:{properties:[privateProperty('private-a','A')]}});await flushHost();
+  assert.equal(app.run('accountId'),'account-b');assert.equal(app.run('state.properties[0].id'),'private-b');
+  assert.equal(app.nodes.get('host-properties').children[0],card);
+});
+
+test('PM138 R3: Host permits only producer-derived empty operations',async()=>{
+  const routes={'/auth/me':{body:user},'/dashboard':{body:{properties:[]}}};
+  for(const route of ['/calendars/cal-1/sync','/calendars/cal-1','/availability/av-1','/properties/p-1','/listings/l-1','/unavailability/u-1','/profile','/properties/p-1/calendars']) routes[route]={status:204};
+  const app=setup(routes);await flushHost();
+  for(const [method,route] of [['POST','/calendars/cal-1/sync'],['PUT','/calendars/cal-1'],['DELETE','/calendars/cal-1'],['PUT','/availability/av-1'],['DELETE','/availability/av-1'],['DELETE','/properties/p-1'],['DELETE','/listings/l-1'],['DELETE','/unavailability/u-1']])
+    assert.equal(await app.run(`api(${JSON.stringify(route)},{method:${JSON.stringify(method)}})`),null,method+' '+route);
+  for(const [method,route] of [['GET','/calendars/cal-1'],['PATCH','/profile'],['POST','/properties/p-1/calendars'],['DELETE','/profile'],['PUT','/unavailability/u-1'],['PUT','/properties/p-1']])
+    await assert.rejects(app.run(`api(${JSON.stringify(route)},{method:${JSON.stringify(method)}})`),{kind:'protocol',status:204});
+  for(const command of ['syncCalendar({id:"cal-1"})','setCalendarEnabled({id:"cal-1"},false)']) {
+    const count=app.calls.filter(x=>x==='/dashboard').length;
+    await app.run(command);assert.equal(app.calls.filter(x=>x==='/dashboard').length,count+1);
+    assert.equal(app.nodes.get('host-status').className.includes('error'),false);
+  }
+});
+
 test('host profile saves public name, keeps account identity private and retains input on a 400', async()=>{
   let fail = true;
   const app = setup({

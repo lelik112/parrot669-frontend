@@ -136,6 +136,17 @@ test('auth rejection cannot expire a working session; logout clears through the 
   await auth('/logout',{method:'POST'});assert.equal(session.status,'anonymous');assert.equal(session.user,null);
 });
 
+test('PM138 R3: auth logout/recovery-confirm are empty; login/reset-request are JSON',async()=>{
+  const session=createSession({http:createHttp({fetch:async()=>new Response(null,{status:204})}),storage:createStorage(root())});
+  const auth=createAuth(session);
+  assert.equal(await auth('/logout',{method:'POST'}),null);
+  assert.equal(await auth('/password-reset/confirm',{method:'POST',body:'{}'}),null);
+  for(const path of ['/login','/password-reset/request','/verify-email','/me'])
+    await assert.rejects(auth(path,{method:'POST',body:'{}'}),{kind:'protocol',status:204});
+  for(const path of ['/logout','/password-reset/confirm'])
+    await assert.rejects(auth(path),{kind:'protocol',status:204});
+});
+
 test('real imported Worker preserves upstream diagnostics and rejects unknown API/origin/QA requests',async()=>{
   const original=globalThis.fetch,seen=[];
   globalThis.fetch=async(url,init)=>{seen.push({url,init});return response({error:'safe',code:'CONFLICT',requestId:'r'},409,{'X-Request-ID':'r','Retry-After':'3','X-Private':'hidden'});};

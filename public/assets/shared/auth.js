@@ -4,7 +4,7 @@ import {sessionUser} from "./session.js";
 export function createAuth(session) {
   return async function auth(path, options = {}) {
     const {beforeSession, ...init} = options;
-    const empty = path === "/logout" || path === "/password-reset/confirm";
+    const empty = init.method === "POST" && (path === "/logout" || path === "/password-reset/confirm");
     const adoptsUser = path === "/login" || path === "/verify-email";
     const result = await session.request(`/api/host/auth${path}`, {...init,
       ...(empty ? {expected: "empty"} : {}), ...(adoptsUser || path === "/me" ? {validate: sessionUser} : {})});

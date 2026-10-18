@@ -430,7 +430,10 @@
       }
     } catch (error) {
       if (version !== threadVersion) return;
-      if (error.status && error.status < 500) pending = null;
+      // A damaged successful response may follow a committed write. Keep the
+      // original endpoint/payload/key unless this attempt was definitively rejected.
+      if (error.kind === "http" && error.status >= 400 && error.status < 500 && error.status !== 408 && error.code)
+        pending = null;
       saveDraft(); failed(error,$("msg-thread-notice"));
       if (error.status === 409) void poll();
     } finally {

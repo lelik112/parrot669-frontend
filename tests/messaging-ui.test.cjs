@@ -17,6 +17,76 @@ const flush = async () => { for(let i=0;i<8;i++) await new Promise(resolve=>setI
 const deferred = () => { let resolve; const promise=new Promise(r=>resolve=r); return {promise,resolve}; };
 const response = (data,status=200) => new Response(JSON.stringify(data),{status});
 
+for(const firstSend of [true,false]) for(const outcome of ['malformed200','unexpected204','invalidDTO','network','timeout','server500','http408','malformed400'])
+test(`PM138 R2: ${firstSend?'first-send':'reply'} ${outcome} retains exact pending payload for manual retry`,async t=>{
+  const posts=[];
+  const h=await harness(t,{url:firstSend?`/messages.html?property=${property}`:`/messages.html?conversation=${conversation}`,handler:r=>{
+    if(r.path==='/api/messaging/conversations'&&r.method==='GET')return {items:[detail()],nextCursor:null};
+    if(r.path===`/api/messaging/conversations/${conversation}`)return detail();
+    if(r.method==='POST'&&(r.path==='/api/messaging/conversations'||r.path.endsWith('/messages'))) {
+      posts.push(r);
+      if(posts.length===1) {
+        if(outcome==='malformed200')return new Response('{broken',{status:200});
+        if(outcome==='unexpected204')return new Response(null,{status:204});
+        if(outcome==='invalidDTO')return {};
+        if(outcome==='network')throw new TypeError('Synthetic lost response');
+        if(outcome==='timeout')return new Promise(()=>{});
+        if(outcome==='http408')return response({code:'REQUEST_TIMEOUT',error:'Synthetic intermediary timeout'},408);
+        if(outcome==='malformed400')return new Response('broken error envelope',{status:400});
+        return response({error:'Synthetic server failure'},500);
+      }
+      return firstSend?{conversationId:conversation}:{id:'accepted-message'};
+    }
+    if(r.path.endsWith('/messages'))return {items:[],nextAfterSequence:null};
+  }});
+  if(outcome==='timeout') {
+    const api=h.w.ParrotMessaging.api;
+    h.w.ParrotMessaging.api=(path,options={})=>api(path,{...options,timeoutMs:options.method==='POST'?5:15000});
+  }
+  const form=h.$('msg-compose');h.input(form.elements.body,'Synthetic retry body');
+  h.submit(form);if(outcome==='timeout')await new Promise(resolve=>setTimeout(resolve,20));
+  await flush();assert.equal(posts.length,1);
+  const key=`parrot669-draft:${user.accountId}:${firstSend?'property:'+property:conversation}`;
+  const saved=JSON.parse(h.w.ParrotCore.storage.session.getItem(key));
+  assert.deepEqual(saved.pending.payload,posts[0].body);assert.equal(saved.pending.endpoint,posts[0].path.replace('/api/messaging',''));
+  assert.equal(form.elements.body.disabled,true);await flush();assert.equal(posts.length,1,'no automatic resend');
+  h.submit(form);await flush();assert.equal(posts.length,2);
+  assert.equal(posts[1].path,posts[0].path);assert.deepEqual(posts[1].body,posts[0].body);
+  const after=JSON.parse(h.w.ParrotCore.storage.session.getItem(key));
+  assert.ok(after===null||after.pending===null&&after.body==='');
+});
+
+test('PM138 R2: definitive HTTP400 rejects pending and permits a new corrected send key',async t=>{
+  const posts=[];
+  const h=await harness(t,{url:`/messages.html?conversation=${conversation}`,handler:r=>{
+    if(r.path===`/api/messaging/conversations/${conversation}`)return detail();
+    if(r.path.endsWith('/messages')&&r.method==='POST'){posts.push(r.body);return response({code:'INVALID_REQUEST',error:'Synthetic rejection'},400);}
+    if(r.path.endsWith('/messages'))return {items:[],nextAfterSequence:null};
+  }});
+  const form=h.$('msg-compose');h.input(form.elements.body,'Rejected body');h.submit(form);await flush();
+  assert.equal(JSON.parse(h.w.ParrotCore.storage.session.getItem(`parrot669-draft:${user.accountId}:${conversation}`)).pending,null);
+  h.input(form.elements.body,'Corrected body');h.submit(form);await flush();
+  assert.notEqual(posts[0].clientMessageId,posts[1].clientMessageId);
+});
+
+for(const firstSend of [true,false]) test(`PM138 R2: ${firstSend?'first-send':'reply'} committed malformed response reconciles by original key without another POST`,async t=>{
+  let sent=null;
+  const h=await harness(t,{url:firstSend?`/messages.html?property=${property}`:`/messages.html?conversation=${conversation}`,handler:r=>{
+    if(r.path==='/api/messaging/conversations'&&r.method==='GET')return {items:[detail()],nextCursor:null};
+    if(r.path===`/api/messaging/conversations/for-property/${property}`)return sent?detail():null;
+    if(r.path===`/api/messaging/conversations/${conversation}`)return detail();
+    if(r.method==='POST'){assert.equal(sent,null);sent=r.body;return new Response('{broken',{status:200});}
+    if(r.path.endsWith('/messages'))return {items:sent?[message(1,{...sent,senderProfileId:profile})]:[],nextAfterSequence:null};
+  }});
+  const form=h.$('msg-compose');h.input(form.elements.body,'Committed synthetic message');h.submit(form);await flush();
+  assert.equal(form.elements.body.disabled,true);
+  // Re-open from current URL, like Back/Forward/restore; the server history proves the commit.
+  h.w.dispatchEvent(new h.w.PopStateEvent('popstate'));await flush();
+  assert.equal(form.elements.body.value,'');assert.equal(form.elements.body.disabled,false);
+  assert.equal(h.calls.filter(r=>r.method==='POST').length,1);
+  assert.match(h.$('msg-history').textContent,/Committed synthetic message/);
+});
+
 const navigationHandler=request=>{
   if(request.path==='/api/messaging/conversations')return {items:[detail(),detail(otherConversation)],nextCursor:null};
   if(request.path===`/api/messaging/conversations/${conversation}`)return detail();
@@ -426,7 +496,7 @@ test('uncertain delivery retains a stable idempotency key; a rate error remains 
       attempts.push(r.body);
       if(attempts.length===1) throw Error('Connection lost');
       if(attempts.length===2) {success=true;return message(2);}
-      return response({error:'too many'},429);
+      return response({code:'RATE_LIMITED',error:'too many'},429);
     }
   }});
   const form=h.$('msg-compose');h.input(form.elements.body,'Hello');h.submit(form);await flush();

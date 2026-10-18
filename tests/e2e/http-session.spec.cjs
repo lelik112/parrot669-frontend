@@ -1,6 +1,25 @@
 const {test,expect}=require('./isolated-fixture.cjs');
 const {installPublicFixture,installHostFixture}=require('./public-fixture.cjs');
 
+test('Host account switch removes previous private cards before the next dashboard arrives',async({page})=>{
+  await installHostFixture(page);
+  let account='a',releaseB;
+  const bReady=new Promise(resolve=>releaseB=resolve);
+  await page.route('**/api/host/auth/me',route=>route.fulfill({json:{accountId:account,username:account,profile:{id:'profile-'+account}}}));
+  await page.route('**/api/host/dashboard',async route=>{
+    const requestedAccount=account;
+    if(requestedAccount==='b')await bReady;
+    await route.fulfill({json:{properties:[{id:'private-'+requestedAccount,title:'PRIVATE '+requestedAccount,city:'Barcelona',bedrooms:1,sleeps:2}]}});
+  });
+  await page.goto('/host.html');
+  await expect(page.locator('[data-property-id="private-a"]')).toBeVisible();
+  account='b';
+  await page.evaluate(()=>window.ParrotCore.session.refresh());
+  await expect(page.locator('[data-property-id="private-a"]')).toHaveCount(0);
+  await expect(page.locator('#host-account-email')).toHaveText('b');
+  releaseB();await expect(page.locator('[data-property-id="private-b"]')).toBeVisible();
+});
+
 test('document load includes page handlers even when controller downloads are delayed',async({page})=>{
   await page.setViewportSize({width:390,height:844});
   for(const asset of ['script.js','messages.js']) await page.route(`**/assets/${asset}`,async route=>{

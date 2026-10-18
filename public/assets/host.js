@@ -92,13 +92,14 @@ let sessionLoading = true;
 let authBusy = false;
 const expandedPropertyIds = new Set();
 let accountId = null;
+let dashboardLoad = Promise.resolve();
 let unsavedHostChanges = false;
 let confirmedExit = false;
 const returnKey = id => `parrot669-host-return:${id}`;
 const propertyNavigationParams = new URLSearchParams(window.location.search);
 const propertyNavigationUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const propertyNavigationId = propertyNavigationUuid.test(propertyNavigationParams.get("property") || "") ? propertyNavigationParams.get("property") : null;
-const propertyConversationId = propertyNavigationId && propertyNavigationUuid.test(propertyNavigationParams.get("conversation") || "") ? propertyNavigationParams.get("conversation") : null;
+let propertyNavigationId = propertyNavigationUuid.test(propertyNavigationParams.get("property") || "") ? propertyNavigationParams.get("property") : null;
+let propertyConversationId = propertyNavigationId && propertyNavigationUuid.test(propertyNavigationParams.get("conversation") || "") ? propertyNavigationParams.get("conversation") : null;
 let propertyNavigationPending = Boolean(propertyNavigationId);
 const navCopy = {
   en:{navProperties:"My properties",navTools:"Host tools",discardChanges:"Discard unsaved changes and leave this page?"},
@@ -331,7 +332,11 @@ async function api(path, options = {}){
       return user;
     }
     if (path.startsWith("/auth/")) return await hostCore.auth(path.slice(5), options);
-    const empty = options.method === "DELETE" || (options.method === "PUT" && /^\/availability\//.test(path));
+    // Explicit producer contracts; a 204 from any other operation is a protocol error.
+    const method = options.method || "GET";
+    const empty = method === "DELETE" && /^\/(properties|listings|calendars|availability|unavailability)\/[^/]+$/.test(path)
+      || method === "PUT" && /^\/(availability|calendars)\/[^/]+$/.test(path)
+      || method === "POST" && /^\/calendars\/[^/]+\/sync$/.test(path);
     return await hostCore.session.request(`/api/host${path}`, {...options, authenticated:true,
       ...(empty ? {expected:"empty"} : {}),
       ...(path === "/dashboard" ? {validate:value => value && typeof value === "object" && Array.isArray(value.properties)} : {})});
@@ -394,15 +399,22 @@ function setListingFormError(form,error){
 }
 
 function setAuthenticated(user){
-  accountId=user?.accountId || null;
   hostCore.session.setUser(user);
-  state = {
-    ...emptyState(),
-    authenticated:true,
-    accountEmail:String(user?.email || ""),
-    username:String(user?.username || ""),
-    profile:user?.profile || null
-  };
+}
+
+function clearPrivatePresentation(){
+  state = emptyState();
+  renderAuthState();
+  renderProperties(); // Disposes property address/verification controllers and detached closures.
+  expandedPropertyIds.clear();
+  unsavedHostChanges = false;
+  propertyForm.reset?.();
+  newPropertyAddress.reset();
+  loginForm.elements.password.value = "";
+  registerForm.elements.password.value = "";
+  setFormError(propertyForm);
+  setFormError(hostProfileForm);
+  message("");
 }
 
 function renderAuthState(){
@@ -550,7 +562,7 @@ async function restoreSession(){
       });
       setAuthenticated(user);
       renderAuthState();
-      await syncDashboard();
+      await dashboardLoad;
       params.delete("verifyEmail");
       const query = params.toString();
       history.replaceState(null, "", window.location.pathname + (query ? `?${query}` : "") + window.location.hash);
@@ -573,7 +585,7 @@ async function restoreSession(){
     const user = await api("/auth/me");
     setAuthenticated(user);
     renderAuthState();
-    await syncDashboard();
+    await dashboardLoad;
   } catch (error) {
     state = emptyState();
     renderAuthState();
@@ -629,7 +641,7 @@ loginForm.addEventListener("submit", async event => {
     });
     setAuthenticated(user);
     renderAuthState();
-    await syncDashboard();
+    await dashboardLoad;
     loginForm.elements.password.value = "";
     message(tr("loggedIn"), "success");
   } catch (error) {
@@ -1175,7 +1187,12 @@ function renderUnavailability(property, feedbackKey = null){
 function renderPropertyNavigation(){
   const visible=Boolean(state.authenticated && propertyNavigationId);
   propertyNavigationNode.hidden=!visible;
-  if(!visible)return;
+  if(!visible){
+    document.getElementById("host-property-context-status").textContent="";
+    const back=document.getElementById("host-property-return");
+    back.removeAttribute("href");back.textContent="";back.hidden=true;
+    return;
+  }
   const owned=state.properties.some(property=>property.id===propertyNavigationId);
   document.getElementById("host-property-context-status").textContent=tr(owned?"propertyFromConversation":"propertyUnavailableHere");
   const back=document.getElementById("host-property-return");
@@ -1625,13 +1642,23 @@ langButtons.forEach(btn => btn.addEventListener("click", () => {
 hostCore.session.subscribe(({user, reason}) => {
   if(user) {
     const changed = accountId !== user.accountId;
+    if(changed) {
+      const previous = accountId;
+      clearPrivatePresentation();
+      if(previous) {
+        propertyNavigationPending = false;
+        propertyNavigationId = null; propertyConversationId = null;
+        hostCore.storage.session.removeItem(profileReturnKey);
+        hostCore.storage.session.removeItem(returnKey(previous));
+      }
+    }
     accountId = user.accountId;
     state = {...(changed ? emptyState() : state), authenticated:true,
       accountEmail:String(user.email || ""), username:String(user.username || ""), profile:user.profile || null};
     renderAuthState();
+    if(changed) dashboardLoad = syncDashboard();
   } else {
-    state = emptyState(); accountId = null;
-    renderAuthState(); renderProperties();
+    clearPrivatePresentation(); accountId = null;
     if(reason === "revalidate" || reason === "expired") {
       loginForm.elements.password.value = "";
       registerForm.elements.password.value = "";
