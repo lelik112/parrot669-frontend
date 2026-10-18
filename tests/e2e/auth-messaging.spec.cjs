@@ -9,6 +9,32 @@ async function login(page, username) {
   await expect(page.locator('#msg-account-name')).toHaveText(username);
 }
 
+test('invalid structured first-send/reply ACK retains text and same-key manual retry after commit',async({page})=>{
+  const attempts={start:[],reply:[]};
+  const fixture=createAuthMessagingFixture({acknowledge:(value,{firstSend,input})=>{
+    const calls=firstSend?attempts.start:attempts.reply;calls.push({...input});
+    if(calls.length===1)return firstSend?{conversationId:'not-a-uuid',message:value.message}:{...value,id:123};
+    return value;
+  }});
+  await fixture.install(page,'a');
+  try {
+    await page.goto(`/messages.html?property=${fixture.ids.property}`);
+    await login(page,fixture.identities.a.username);
+    const body=page.locator('#msg-compose textarea[name="body"]');
+    for(const [name,text] of [['start','Synthetic first ACK'],['reply','Synthetic reply ACK']]) {
+      await expect(body).toBeEnabled();await body.fill(text);await page.locator('#msg-send').click();
+      await expect(body).toHaveValue(text);await expect(body).toBeDisabled();
+      await expect(page.locator('#msg-send')).toContainText('Retry');
+      expect(attempts[name]).toHaveLength(1);
+      await page.locator('#msg-send').click();
+      await expect(body).toHaveValue('');await expect(body).toBeEnabled();
+      expect(attempts[name]).toHaveLength(2);expect(attempts[name][1]).toEqual(attempts[name][0]);
+      await expect(page.locator('#msg-history')).toContainText(text);
+    }
+    expect(fixture.snapshot().messages).toHaveLength(2);
+  } finally {fixture.cleanup();}
+});
+
 test('isolated A/B auth contexts exchange, read and survive independent logout', async ({browser,baseURL}) => {
   const fixture = createAuthMessagingFixture();
   const contextA = await browser.newContext({baseURL,serviceWorkers: 'block'});

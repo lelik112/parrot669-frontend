@@ -11,11 +11,110 @@ const user = {accountId:'guest-account',username:'guest',profile:{id:profile}};
 const detail = (id=conversation, extra={}) => ({id,propertyId:property,propertyTitle:id===conversation?'Apartment':'Room',
   otherDisplayName:'Host',lastSequence:1,readThroughSequence:0,unreadCount:1,lastMessagePreview:'Hello',
   updatedAt:'2026-09-23T10:00:00Z',canReply:true,blockedByMe:false,blockedByOther:false,...extra});
-const message = (sequence=1, extra={}) => ({id:`message-${sequence}`,sequence,senderProfileId:'host',clientMessageId:'old',
+const message = (sequence=1, extra={}) => ({id:`55555555-5555-4555-8555-${String(sequence).padStart(12,'0')}`,sequence,
+  senderProfileId:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',clientMessageId:'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
   body:`Message ${sequence}`,from:null,to:null,createdAt:'2026-09-23T10:00:00Z',...extra});
 const flush = async () => { for(let i=0;i<8;i++) await new Promise(resolve=>setImmediate(resolve)); };
 const deferred = () => { let resolve; const promise=new Promise(r=>resolve=r); return {promise,resolve}; };
 const response = (data,status=200) => new Response(JSON.stringify(data),{status});
+
+// Actual producer variants, not a truthy acknowledgement stub.
+const sendAck = (payload,firstSend=false,sequence=1) => {
+  const value={id:`55555555-5555-4555-8555-${String(sequence).padStart(12,'0')}`,sequence,
+    senderProfileId:profile,clientMessageId:payload.clientMessageId,body:payload.body,
+    from:payload.from??null,to:payload.to??null,createdAt:'2026-10-18T12:00:00.123456Z'};
+  return firstSend?{conversationId:conversation,message:value}:value;
+};
+const invalidAckCases={
+  'truthy invalid identifier type':(ack,first)=>first?{...ack,conversationId:123}:{...ack,id:123},
+  'truthy invalid identifier value':(ack,first)=>first?{...ack,conversationId:'not-a-uuid'}:{...ack,id:'not-a-uuid'},
+  'identifier array is not a string':(ack,first)=>first?{...ack,conversationId:[conversation]}:{...ack,id:[ack.id]},
+  'wrong ACK variant':(ack,first)=>first?ack.message:{conversationId:conversation,message:ack},
+  'missing MessageView fields':(ack,first)=>first?{conversationId:conversation,message:{id:ack.message.id}}:{id:ack.id},
+  'invalid nested message id':(ack,first)=>first?{...ack,message:{...ack.message,id:123}}:{...ack,id:123},
+  'clientMessageId wrong type':(ack,first)=>{const value=first?ack.message:ack;const bad={...value,clientMessageId:[value.clientMessageId]};return first?{...ack,message:bad}:bad;},
+  'different clientMessageId':(ack,first)=>{const bad={...(first?ack.message:ack),clientMessageId:'99999999-9999-4999-8999-999999999999'};return first?{...ack,message:bad}:bad;},
+  'different sender':(ack,first)=>{const bad={...(first?ack.message:ack),senderProfileId:'99999999-9999-4999-8999-999999999999'};return first?{...ack,message:bad}:bad;},
+  'invalid sender type':(ack,first)=>{const bad={...(first?ack.message:ack),senderProfileId:[profile]};return first?{...ack,message:bad}:bad;},
+  'different body':(ack,first)=>{const bad={...(first?ack.message:ack),body:'Not this submitted message'};return first?{...ack,message:bad}:bad;},
+  'non-integer sequence':(ack,first)=>{const bad={...(first?ack.message:ack),sequence:'1'};return first?{...ack,message:bad}:bad;},
+  'non-positive sequence':(ack,first)=>{const bad={...(first?ack.message:ack),sequence:0};return first?{...ack,message:bad}:bad;},
+  'fractional sequence':(ack,first)=>{const bad={...(first?ack.message:ack),sequence:1.5};return first?{...ack,message:bad}:bad;},
+  'sequence outside producer Int':(ack,first)=>{const bad={...(first?ack.message:ack),sequence:2147483648};return first?{...ack,message:bad}:bad;},
+  'unusable timestamp':(ack,first)=>{const bad={...(first?ack.message:ack),createdAt:'not-a-date'};return first?{...ack,message:bad}:bad;},
+  'missing optional date fields':(ack,first)=>{const bad={...(first?ack.message:ack)};delete bad.from;delete bad.to;return first?{...ack,message:bad}:bad;},
+  'different dates':(ack,first)=>{const bad={...(first?ack.message:ack),from:'2027-01-01',to:'2027-01-03'};return first?{...ack,message:bad}:bad;}
+};
+
+for(const firstSend of [true,false]) for(const [name,invalid] of Object.entries(invalidAckCases))
+test(`PM138 R2-D: ${firstSend?'first-send':'reply'} ${name} keeps draft and manual-retry key`,async t=>{
+  const posts=[];
+  const h=await harness(t,{url:firstSend?`/messages.html?property=${property}`:`/messages.html?conversation=${conversation}`,handler:r=>{
+    if(r.path==='/api/messaging/conversations'&&r.method==='GET')return {items:[detail()],nextCursor:null};
+    if(r.path===`/api/messaging/conversations/${conversation}`)return detail();
+    if(r.method==='POST'){
+      posts.push(r);
+      const valid=sendAck(r.body,firstSend);
+      return posts.length===1?invalid(valid,firstSend):valid;
+    }
+    if(r.path.endsWith('/messages'))return {items:[],nextAfterSequence:null};
+  }});
+  const form=h.$('msg-compose');h.input(form.elements.body,'Synthetic unconfirmed ACK');
+  h.submit(form);await flush();assert.equal(posts.length,1);
+  const key=`parrot669-draft:${user.accountId}:${firstSend?'property:'+property:conversation}`;
+  const saved=JSON.parse(h.w.ParrotCore.storage.session.getItem(key));
+  assert.ok(saved?.pending,'uncertain pending must remain');
+  assert.deepEqual(saved.pending.payload,posts[0].body);
+  assert.equal(saved.pending.endpoint,posts[0].path.replace('/api/messaging',''));
+  assert.equal(saved.body,'Synthetic unconfirmed ACK');assert.equal(form.elements.body.value,saved.body);
+  assert.equal(form.elements.body.disabled,true);assert.equal(new URL(h.w.location.href).searchParams.has('property'),firstSend);
+  await flush();assert.equal(posts.length,1,'no automatic resend');
+  h.submit(form);await flush();assert.equal(posts.length,2);
+  assert.equal(posts[1].path,posts[0].path);assert.deepEqual(posts[1].body,posts[0].body);
+  assert.equal(form.elements.body.value,'');assert.equal(form.elements.body.disabled,false);
+});
+
+for(const firstSend of [true,false]) test(`PM138 R2-D: valid ${firstSend?'ConversationStarted':'MessageView'} accepts dates, UUID case and extra fields`,async t=>{
+  const h=await harness(t,{url:firstSend?`/messages.html?property=${property}`:`/messages.html?conversation=${conversation}`,handler:r=>{
+    if(r.path==='/api/messaging/conversations'&&r.method==='GET')return {items:[detail()],nextCursor:null};
+    if(r.path===`/api/messaging/conversations/${conversation}`)return detail();
+    if(r.method==='POST'){
+      const ack=sendAck(r.body,firstSend,2147483647),item=firstSend?ack.message:ack;
+      item.id=item.id.toUpperCase();item.clientMessageId=item.clientMessageId.toUpperCase();item.senderProfileId=item.senderProfileId.toUpperCase();
+      item.createdAt='2026-10-18T14:00:00+02:00';item.futureField='ignored';
+      return ack;
+    }
+    if(r.path.endsWith('/messages'))return {items:[],nextAfterSequence:null};
+  }});
+  const form=h.$('msg-compose');h.input(form.elements.body,'Valid dated acknowledgement');
+  h.input(form.elements.from,'2027-01-01');h.input(form.elements.to,'2027-01-03');
+  h.submit(form);await flush();assert.equal(form.elements.body.value,'');assert.equal(form.elements.body.disabled,false);
+  assert.equal(h.calls.filter(r=>r.method==='POST').length,1);
+});
+
+test('PM138 R2-D: shared browser fixture emits producer ACK variants and idempotent message history',async()=>{
+  const fixture=require('./e2e/auth-messaging-fixture.cjs').createAuthMessagingFixture();
+  let handle;
+  await fixture.install({route:async(pattern,fn)=>{if(pattern==='**/api/**')handle=fn;}},'a');
+  const call=(path,body)=>handle({request:()=>({url:()=>`https://parrot669.com${path}`,method:()=> 'POST',postDataJSON:()=>body}),fulfill:value=>value});
+  try {
+    await call('/api/host/auth/login',{login:fixture.identities.a.username,password:'fixture-only-pass'});
+    const payload={propertyId:fixture.ids.property,clientMessageId:'12345678-1234-4234-8234-123456789abc',body:'Start fixture'};
+    const start=await call('/api/messaging/conversations',payload),repeat=await call('/api/messaging/conversations',payload);
+    assert.deepEqual(Object.keys(start.json).sort(),['conversationId','message']);assert.equal(start.json.conversationId,fixture.ids.conversation);
+    assert.deepEqual(start.json,repeat.json);assert.equal(fixture.snapshot().messages.length,1);
+    const replyPayload={clientMessageId:'23456789-2345-4345-8345-23456789abcd',body:'Reply fixture'};
+    const reply=await call(`/api/messaging/conversations/${fixture.ids.conversation}/messages`,replyPayload);
+    for(const value of [start.json.message,reply.json]) {
+      assert.deepEqual(Object.keys(value).sort(),['body','clientMessageId','createdAt','from','id','senderProfileId','sequence','to']);
+      assert.match(value.id,/^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i);
+      assert.notEqual(value.id,value.clientMessageId);assert.equal(value.senderProfileId,fixture.ids.profileA);
+    }
+    assert.equal(reply.json.clientMessageId,replyPayload.clientMessageId);
+    const conflict=await call(`/api/messaging/conversations/${fixture.ids.conversation}/messages`,{...replyPayload,body:'Different'});
+    assert.equal(conflict.status,409);assert.equal(fixture.snapshot().messages.length,2);
+  } finally {fixture.cleanup();}
+});
 
 for(const firstSend of [true,false]) for(const outcome of ['malformed200','unexpected204','invalidDTO','network','timeout','server500','http408','malformed400'])
 test(`PM138 R2: ${firstSend?'first-send':'reply'} ${outcome} retains exact pending payload for manual retry`,async t=>{
@@ -35,7 +134,7 @@ test(`PM138 R2: ${firstSend?'first-send':'reply'} ${outcome} retains exact pendi
         if(outcome==='malformed400')return new Response('broken error envelope',{status:400});
         return response({error:'Synthetic server failure'},500);
       }
-      return firstSend?{conversationId:conversation}:{id:'accepted-message'};
+      return sendAck(r.body,firstSend);
     }
     if(r.path.endsWith('/messages'))return {items:[],nextAfterSequence:null};
   }});
@@ -344,7 +443,7 @@ test('guest prepares an enquiry before login; sending waits for auth and preserv
   let sent=null;
   const h=await harness(t,{loggedIn:false,url:`/messages.html?property=${property}&from=2027-05-01&to=2027-05-04`,handler:r=>{
     if(r.path==='/api/host/auth/login') return user;
-    if(r.path==='/api/messaging/conversations' && r.method==='POST') {sent=r.body;return {conversationId:conversation,message:message()};}
+    if(r.path==='/api/messaging/conversations' && r.method==='POST') {sent=r.body;return sendAck(sent,true);}
     if(r.path===`/api/messaging/conversations/${conversation}`) return detail();
     if(r.path.endsWith(`/${conversation}/messages`)) return {items:[message(1,{...sent,senderProfileId:profile})],nextAfterSequence:null};
   }});
@@ -495,7 +594,7 @@ test('uncertain delivery retains a stable idempotency key; a rate error remains 
     if(r.path.endsWith('/messages') && r.method==='POST') {
       attempts.push(r.body);
       if(attempts.length===1) throw Error('Connection lost');
-      if(attempts.length===2) {success=true;return message(2);}
+      if(attempts.length===2) {success=true;return sendAck(r.body,false,2);}
       return response({code:'RATE_LIMITED',error:'too many'},429);
     }
   }});
@@ -509,11 +608,11 @@ test('uncertain delivery retains a stable idempotency key; a rate error remains 
 });
 
 test('send refresh starts at the last fetched cursor and does not skip a concurrent incoming message',async t=>{
-  let sent=false;const after=[];
+  let sent=null;const after=[];
   const h=await harness(t,{url:`/messages.html?conversation=${conversation}`,handler:r=>{
     if(r.path===`/api/messaging/conversations/${conversation}`) return detail();
-    if(r.path.endsWith('/messages') && r.method==='POST') {sent=true;return message(3);}
-    if(r.path.endsWith('/messages')) {after.push(r.query.get('afterSequence'));return {items:sent?[message(2,{body:'Incoming'}),message(3,{body:'Outgoing',senderProfileId:profile})]:[message()],nextAfterSequence:null};}
+    if(r.path.endsWith('/messages') && r.method==='POST') {sent=r.body;return sendAck(sent,false,3);}
+    if(r.path.endsWith('/messages')) {after.push(r.query.get('afterSequence'));return {items:sent?[message(2,{body:'Incoming'}),sendAck(sent,false,3)]:[message()],nextAfterSequence:null};}
   }});
   h.input(h.$('msg-compose').elements.body,'Outgoing');h.submit(h.$('msg-compose'));await flush();
   assert.deepEqual(after,['0','1']);assert.match(h.$('msg-history').textContent,/Incoming/);

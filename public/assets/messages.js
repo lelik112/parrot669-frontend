@@ -5,6 +5,21 @@
   const app = $("messages-app"), historyNode = $("msg-history"), form = $("msg-compose");
   const loginForm = $("msg-login-form"), registerForm = $("msg-register-form");
   const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const record = value => value !== null && typeof value === "object" && !Array.isArray(value);
+  const isUuid = value => typeof value === "string" && uuid.test(value);
+  const sameUuid = (a,b) => isUuid(a) && isUuid(b) && a.toLowerCase() === b.toLowerCase();
+  // Validate the producer ACK and this pending attempt before deleting any draft.
+  function sendAcknowledged(value, attempt, senderProfileId) {
+    const firstSend = attempt.endpoint === "/conversations";
+    if (!record(value) || firstSend && !isUuid(value.conversationId)) return false;
+    const item = firstSend ? value.message : value, payload = attempt.payload;
+    return record(item) && isUuid(item.id)
+      && Number.isInteger(item.sequence) && item.sequence > 0 && item.sequence <= 2147483647
+      && sameUuid(item.senderProfileId, senderProfileId) && sameUuid(item.clientMessageId, payload.clientMessageId)
+      && typeof item.body === "string" && item.body === payload.body
+      && item.from === (payload.from ?? null) && item.to === (payload.to ?? null)
+      && typeof item.createdAt === "string" && Number.isFinite(Date.parse(item.createdAt));
+  }
   let actor = null, accountVersion = 0, threadVersion = 0, inboxVersion = 0;
   const initialQuery = new URLSearchParams(window.location.search);
   const calendarNudgeProperty = initialQuery.get("verifyCalendar") === "1" ? initialQuery.get("property") : null;
@@ -415,15 +430,15 @@
       if (!active.id) payload.propertyId = active.propertyId;
       pending = {endpoint:active.id ? `/conversations/${active.id}/messages` : "/conversations",payload};
     }
-    const attempt = pending, version = threadVersion, key = draftKey();
+    const attempt = pending, version = threadVersion, key = draftKey(), senderProfileId = actor.profile?.id;
     saveDraft(); sending = true; threadError = null; updateComposer();
     try {
-      const response = await M.api(attempt.endpoint,{method:"POST",body:JSON.stringify(attempt.payload)});
-      if (!(response?.id || response?.conversationId)) throw new Error("Invalid send response");
+      const response = await M.api(attempt.endpoint,{method:"POST",body:JSON.stringify(attempt.payload),
+        validate:value => sendAcknowledged(value, attempt, senderProfileId)});
       if (version !== threadVersion) return;
       removeDraft(key);
       pending = null; form.reset(); $("msg-dates").open = false; status();
-      if (response.conversationId && !active.id) await openConversation(response.conversationId);
+      if (attempt.endpoint === "/conversations") await openConversation(response.conversationId);
       else {
         // Fetch from the last contiguous server cursor, not from the returned send sequence.
         await fetchMessages(version); await loadInbox();
