@@ -96,3 +96,62 @@ for(const action of ['request','confirm'])test(`password recovery ${action} keep
   const get=await sandbox.worker.fetch(new Request('https://parrot669.com'+path),baseEnv);assert.equal(get.status,404);
 });
 
+for (const [method,route,status] of [
+  ['GET',`/properties/${id}/calendars`,200],
+  ['POST',`/calendars/${id}/activate`,204]
+]) test(`calendar transport forwards only the existing ${method} ${route} operation`,async()=>{
+  const calls=[];
+  const sandbox={URL,Headers,Response,console,fetch:async(url,init)=>{
+    calls.push({url,...init,body:init.body?await new Response(init.body).json():null});
+    return new Response(status===204?null:JSON.stringify({calendars:[]}),{status,headers:{'X-Request-ID':'calendar-request'}});
+  }};
+  vm.createContext(sandbox);vm.runInContext(source,sandbox);
+  for(const host of ['parrot669.com','preview.example.test']) {
+    const response=await sandbox.worker.fetch(new Request(`https://${host}/api/host${route}`,{
+      method,headers:{Origin:`https://${host}`,Cookie:'other=private; parrot_session=synthetic',
+        Authorization:'Bearer must-not-forward','X-Parrot-QA-Worker':'spoof','Content-Type':'application/json'},
+      ...(method==='POST'?{body:JSON.stringify({expectedRevision:7})}:{})
+    }),qaEnv);
+    assert.equal(response.status,status);
+    assert.equal(response.headers.get('Cache-Control'),'no-store');
+    assert.equal(response.headers.get('X-Request-ID'),'calendar-request');
+  }
+  for(const call of calls){
+    assert.equal(call.url,'https://api.example.test/api'+route);
+    assert.equal(call.method,method);assert.equal(call.headers.get('Cookie'),'parrot_session=synthetic');
+    assert.equal(call.headers.get('Authorization'),null);
+    assert.deepEqual(call.body,method==='POST'?{expectedRevision:7}:null);
+  }
+  assert.equal(calls[0].headers.get('X-Parrot-QA-Worker'),null);
+  assert.equal(calls[1].headers.get('X-Parrot-QA-Worker'),qaEnv.QA_WORKER_SECRET);
+});
+
+test('calendar transport retains exact methods, paths, origin and QA denials',async()=>{
+  let calls=0;
+  const sandbox={URL,Headers,Response,console,fetch:async()=>{calls++;throw Error('Unexpected upstream');}};
+  vm.createContext(sandbox);vm.runInContext(source,sandbox);
+  for(const [method,route] of [
+    ['PUT',`/properties/${id}/calendars`],['DELETE',`/properties/${id}/calendars`],
+    ['GET',`/calendars/${id}/activate`],['PUT',`/calendars/${id}/activate`],
+    ['DELETE',`/calendars/${id}/activate`],['POST',`/calendars/${id}/activate/extra`],
+    ['GET',`/properties/${id}/calendars/extra`],['POST','/calendars/not-an-id/activate']
+  ]) assert.equal((await sandbox.worker.fetch(new Request('https://parrot669.com/api/host'+route,{method}),qaEnv)).status,404);
+  const path=`/api/host/calendars/${id}/activate`;
+  assert.equal((await sandbox.worker.fetch(new Request('https://parrot669.com'+path,{method:'POST',headers:{Origin:'https://evil.test'}}),qaEnv)).status,403);
+  assert.equal((await sandbox.worker.fetch(new Request('https://evil.test'+path,{method:'POST'}),qaEnv)).status,403);
+  assert.equal((await sandbox.worker.fetch(new Request('https://preview.example.test'+path,{method:'POST'}),{...qaEnv,QA_WORKER_SECRET:''})).status,503);
+  assert.equal(calls,0);
+});
+
+for(const [status,code] of [[401,'AUTHENTICATION_REQUIRED'],[404,'NOT_FOUND'],[409,'CALENDAR_INVALID_TRANSITION'],[412,'CALENDAR_STALE']])
+test(`calendar proxy preserves upstream ${status} ${code} without retry`,async()=>{
+  let calls=0;
+  const sandbox={URL,Headers,Response,console,fetch:async(url,init)=>{
+    calls++;assert.equal(init.headers.get('Cookie'),null);
+    return new Response(JSON.stringify({code,error:'synthetic refusal'}),{status});
+  }};
+  vm.createContext(sandbox);vm.runInContext(source,sandbox);
+  const response=await sandbox.worker.fetch(new Request(`https://parrot669.com/api/host/calendars/${id}/activate`,{method:'POST',body:'{"expectedRevision":7}'}),baseEnv);
+  assert.equal(response.status,status);assert.equal((await response.json()).code,code);assert.equal(calls,1);
+});
+

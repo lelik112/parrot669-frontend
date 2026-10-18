@@ -336,7 +336,7 @@ async function api(path, options = {}){
     const method = options.method || "GET";
     const empty = method === "DELETE" && /^\/(properties|listings|calendars|availability|unavailability)\/[^/]+$/.test(path)
       || method === "PUT" && /^\/(availability|calendars)\/[^/]+$/.test(path)
-      || method === "POST" && /^\/calendars\/[^/]+\/sync$/.test(path);
+      || method === "POST" && /^\/calendars\/[^/]+\/(sync|activate)$/.test(path);
     return await hostCore.session.request(`/api/host${path}`, {...options, authenticated:true,
       ...(empty ? {expected:"empty"} : {}),
       ...(path === "/dashboard" ? {validate:value => value && typeof value === "object" && Array.isArray(value.properties)} : {})});
@@ -463,23 +463,64 @@ function setAuthBusy(form, busy){
   authDialog.setAttribute("aria-busy", String(busy));
 }
 
+const calendarSnapshots = new WeakMap();
+let dashboardVersion = 0;
+function calendarSnapshot(value){
+  if(!value || !Array.isArray(value.calendars)) return false;
+  const ids = new Set();
+  return value.calendars.every(calendar => {
+    if(!calendar || typeof calendar.id !== "string"
+      || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(calendar.id)
+      || ids.has(calendar.id.toLowerCase()) || typeof calendar.provider !== "string"
+      || typeof calendar.enabled !== "boolean" || !["Active","Frozen","Disabled"].includes(calendar.mode)
+      || !Number.isSafeInteger(calendar.revision) || calendar.revision < 0) return false;
+    ids.add(calendar.id.toLowerCase());
+    return true;
+  });
+}
+
+function calendarRevision(calendar){
+  const snapshot = calendar && calendarSnapshots.get(calendar);
+  if(!snapshot || snapshot.epoch !== hostCore.session.epoch || !state.authenticated
+    || !state.properties.some(property => property.id === snapshot.propertyId && property.calendars.includes(calendar)))
+    throw new Error("Invalid server response");
+  return snapshot.revision;
+}
+
 async function syncDashboard(){
+  const epoch = hostCore.session.epoch, version = ++dashboardVersion;
   message(tr("loading"));
   try {
-    const epoch = hostCore.session.epoch;
     const dashboard = await api("/dashboard");
-    if(epoch !== hostCore.session.epoch) return;
+    if(epoch !== hostCore.session.epoch || version !== dashboardVersion) return;
+    let calendarError;
+    const properties = await Promise.all(dashboard.properties.map(async property => {
+      let calendars = [];
+      try {
+        // Dashboard does not contain calendar mode/revision. Only the
+        // authenticated property snapshot is a command source.
+        const snapshot = await api(`/properties/${property.id}/calendars`, {validate:calendarSnapshot});
+        calendars = snapshot.calendars.map(calendar => {
+          const view = {...calendar, status:String(calendar.status || "").toLowerCase()};
+          calendarSnapshots.set(view, {propertyId:property.id, epoch, revision:calendar.revision});
+          return view;
+        });
+      } catch(error) {
+        if(error.kind === "stale" || error.status === 401) throw error;
+        calendarError ||= error;
+      }
+      return {...property,
+        listing:Array.isArray(property.listings) ? (property.listings[0] || null) : null,
+        availability:Array.isArray(property.availability) ? property.availability : [],
+        unavailability:Array.isArray(property.unavailability) ? property.unavailability : [],
+        calendars};
+    }));
+    if(epoch !== hostCore.session.epoch || version !== dashboardVersion) return;
     if (dashboard.profile) {
       state.profile = dashboard.profile;
       hostProfileForm.elements.displayName.value = dashboard.profile.displayName || "";
     }
-    state.properties = (dashboard.properties || []).map(property => ({
-      ...property,
-      listing: Array.isArray(property.listings) ? (property.listings[0] || null) : null,
-      availability: Array.isArray(property.availability) ? property.availability : [],
-      unavailability: Array.isArray(property.unavailability) ? property.unavailability : [],
-      calendars: Array.isArray(property.calendars) ? property.calendars : []
-    }));
+    state.properties = properties;
     const navigateToProperty = propertyNavigationPending;
     const returningFromMessages = !navigateToProperty && profileReturnContext();
     let previousScroll = null;
@@ -499,9 +540,9 @@ async function syncDashboard(){
       requestAnimationFrame(()=>hostProfilePanel.scrollIntoView?.({block:"start"}));
     else if(previousScroll!==null && previousScroll!==undefined)
       restoreHostScroll(previousScroll);
-    message("");
+    message(calendarError?.message || "", calendarError ? "error" : "");
   } catch (error) {
-    if(error.kind === "stale") return;
+    if(error.kind === "stale" || epoch !== hostCore.session.epoch || version !== dashboardVersion) return;
     if (error.status === 401) {
       state = emptyState();
       state.properties = [];
@@ -1033,29 +1074,33 @@ async function connectCalendar(property, form){
 async function syncCalendar(calendar){
   message(tr("loading"));
   try{
-    await api(`/calendars/${calendar.id}/sync`,{method:"POST"});
+    const expectedRevision = calendarRevision(calendar);
+    await api(`/calendars/${calendar.id}/sync`,{method:"POST",body:JSON.stringify({expectedRevision})});
     message(tr("calendarSynced"),"success");
     await syncDashboard();
-  }catch(error){message(error.message,"error")}
+  }catch(error){if(error.kind !== "stale")message(error.message,"error")}
 }
 
 async function setCalendarEnabled(calendar, enabled){
   message(tr("loading"));
   try{
-    await api(`/calendars/${calendar.id}`,{method:"PUT",body:JSON.stringify({enabled})});
+    const expectedRevision = calendarRevision(calendar);
+    await api(`/calendars/${calendar.id}${enabled ? "/activate" : ""}`,{
+      method:enabled ? "POST" : "PUT",body:JSON.stringify(enabled ? {expectedRevision} : {mode:"Disabled",expectedRevision})});
     message(tr(enabled ? "calendarEnabled" : "calendarDisabled"),"success");
     await syncDashboard();
-  }catch(error){message(error.message,"error")}
+  }catch(error){if(error.kind !== "stale")message(error.message,"error")}
 }
 
 async function disconnectCalendar(calendar){
   if(!confirm(tr("disconnectCalendarConfirm"))) return;
   message(tr("loading"));
   try{
-    await api(`/calendars/${calendar.id}`,{method:"DELETE"});
+    const expectedRevision = calendarRevision(calendar);
+    await api(`/calendars/${calendar.id}`,{method:"DELETE",body:JSON.stringify({expectedRevision})});
     message(tr("calendarDisconnected"),"success");
     await syncDashboard();
-  }catch(error){message(error.message,"error")}
+  }catch(error){if(error.kind !== "stale")message(error.message,"error")}
 }
 
 function formatSyncTime(value){

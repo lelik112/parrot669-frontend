@@ -110,7 +110,8 @@ function setup(routes = {}, search = '', {hash = '', sessionData = {}, layout = 
       const route = url.replace('/api/host', '');
       calls.push(route);
       requests.push({url, route, method: options.method || 'GET', body: options.body ? JSON.parse(options.body) : null});
-      const result = typeof routes[route] === 'function' ? await routes[route](options) : routes[route];
+      const result = typeof routes[route] === 'function' ? await routes[route](options) : routes[route]
+        ?? ((options.method||'GET')==='GET' && /^\/properties\/[^/]+\/calendars$/.test(route) ? {body:{calendars:[]}} : undefined);
       const status = result?.status ?? (!result && route === '/auth/me' ? 401 : 200);
       return {status, ok:status < 400, json:async () => result?.body ?? {error:'Test error'}};
     }
@@ -178,17 +179,159 @@ test('PM138 R1: delayed A dashboard cannot overwrite B dashboard or private DOM'
 
 test('PM138 R3: Host permits only producer-derived empty operations',async()=>{
   const routes={'/auth/me':{body:user},'/dashboard':{body:{properties:[]}}};
-  for(const route of ['/calendars/cal-1/sync','/calendars/cal-1','/availability/av-1','/properties/p-1','/listings/l-1','/unavailability/u-1','/profile','/properties/p-1/calendars']) routes[route]={status:204};
+  for(const route of ['/calendars/cal-1/sync','/calendars/cal-1/activate','/calendars/cal-1','/availability/av-1','/properties/p-1','/listings/l-1','/unavailability/u-1','/profile','/properties/p-1/calendars']) routes[route]={status:204};
   const app=setup(routes);await flushHost();
-  for(const [method,route] of [['POST','/calendars/cal-1/sync'],['PUT','/calendars/cal-1'],['DELETE','/calendars/cal-1'],['PUT','/availability/av-1'],['DELETE','/availability/av-1'],['DELETE','/properties/p-1'],['DELETE','/listings/l-1'],['DELETE','/unavailability/u-1']])
+  for(const [method,route] of [['POST','/calendars/cal-1/sync'],['POST','/calendars/cal-1/activate'],['PUT','/calendars/cal-1'],['DELETE','/calendars/cal-1'],['PUT','/availability/av-1'],['DELETE','/availability/av-1'],['DELETE','/properties/p-1'],['DELETE','/listings/l-1'],['DELETE','/unavailability/u-1']])
     assert.equal(await app.run(`api(${JSON.stringify(route)},{method:${JSON.stringify(method)}})`),null,method+' '+route);
-  for(const [method,route] of [['GET','/calendars/cal-1'],['PATCH','/profile'],['POST','/properties/p-1/calendars'],['DELETE','/profile'],['PUT','/unavailability/u-1'],['PUT','/properties/p-1']])
+  for(const [method,route] of [['GET','/calendars/cal-1'],['GET','/calendars/cal-1/activate'],['PUT','/calendars/cal-1/activate'],['PATCH','/profile'],['POST','/properties/p-1/calendars'],['DELETE','/profile'],['PUT','/unavailability/u-1'],['PUT','/properties/p-1']])
     await assert.rejects(app.run(`api(${JSON.stringify(route)},{method:${JSON.stringify(method)}})`),{kind:'protocol',status:204});
   for(const command of ['syncCalendar({id:"cal-1"})','setCalendarEnabled({id:"cal-1"},false)']) {
     const count=app.calls.filter(x=>x==='/dashboard').length;
-    await app.run(command);assert.equal(app.calls.filter(x=>x==='/dashboard').length,count+1);
-    assert.equal(app.nodes.get('host-status').className.includes('error'),false);
+    await app.run(command);assert.equal(app.calls.filter(x=>x==='/dashboard').length,count);
+    assert.equal(app.nodes.get('host-status').className.includes('error'),true);
   }
+});
+
+const calendarProperty='11111111-1111-4111-8111-111111111111';
+const calendarId='22222222-2222-4222-8222-222222222222';
+const calendarView=(extra={})=>({id:calendarId,provider:'Airbnb',listingId:'123',publicUrl:'https://www.airbnb.com/rooms/123',
+  enabled:true,mode:'Active',revision:7,status:'Connected',lastSyncedAt:null,lastSuccessAt:null,lastError:null,reservationBlocks:[],...extra});
+function calendarSetup({snapshot={body:{calendars:[calendarView()]}},command={status:204},dashboard}={}){
+  return setup({'/auth/me':{body:user},'/dashboard':dashboard||{body:{properties:[{
+    ...privateProperty(calendarProperty,'Snapshot property'),listings:[{id:'listing-1',url:'https://www.airbnb.com/rooms/123'}],
+    // A bogus embedded dashboard calendar must never be a command source.
+    calendars:[calendarView({revision:999})]
+  }]}},[`/properties/${calendarProperty}/calendars`]:snapshot,
+    [`/calendars/${calendarId}/sync`]:command,[`/calendars/${calendarId}/activate`]:command,[`/calendars/${calendarId}`]:command});
+}
+const calendarCommand='state.properties[0].calendars[0]';
+
+for(const [name,expression,method,suffix,extra] of [
+  ['sync',`syncCalendar(${calendarCommand})`,'POST','/sync',{}],
+  ['disable',`setCalendarEnabled(${calendarCommand},false)`,'PUT','',{mode:'Disabled'}],
+  ['enable',`setCalendarEnabled(${calendarCommand},true)`,'POST','/activate',{}],
+  ['delete',`disconnectCalendar(${calendarCommand})`,'DELETE','',{}]
+]) test(`PM138 calendar ${name} uses actual snapshot revision and guarded refresh`,async()=>{
+  const app=calendarSetup({snapshot:{body:{calendars:[calendarView(name==='enable'?{mode:'Disabled',enabled:false}:{})]}}});await flushHost();
+  assert.equal(app.run(calendarCommand+'.revision'),7);
+  assert.equal(app.run(calendarCommand+'.status'),'connected');
+  const before=app.calls.filter(x=>x==='/dashboard').length;
+  await app.run(expression);
+  const request=app.requests.find(r=>r.method===method&&r.route===`/calendars/${calendarId}${suffix}`);
+  assert.deepEqual(request?.body,{...extra,expectedRevision:7});
+  assert.equal(app.calls.filter(x=>x==='/dashboard').length,before+1);
+  assert.equal(app.calls.filter(x=>x===`/properties/${calendarProperty}/calendars`).length,2);
+  assert.equal(app.nodes.get('host-status').className.includes('error'),false);
+});
+
+for(const [name,snapshot] of [
+  ['missing calendars',{body:{}}],['null calendar',{body:{calendars:[null]}}],
+  ['missing revision',{body:{calendars:[calendarView({revision:undefined})]}}],
+  ['string revision',{body:{calendars:[calendarView({revision:'7'})]}}],
+  ['negative revision',{body:{calendars:[calendarView({revision:-1})]}}],
+  ['fractional revision',{body:{calendars:[calendarView({revision:1.5})]}}],
+  ['unsafe revision',{body:{calendars:[calendarView({revision:Number.MAX_SAFE_INTEGER+1})]}}],
+  ['unknown mode',{body:{calendars:[calendarView({mode:'active'})]}}],
+  ['missing mode',{body:{calendars:[calendarView({mode:undefined})]}}],
+  ['duplicate ids',{body:{calendars:[calendarView(),calendarView()]}}],
+  ['missing enabled',{body:{calendars:[calendarView({enabled:undefined})]}}],
+  ['invalid id',{body:{calendars:[calendarView({id:'not-a-calendar'})]}}],
+  ['empty snapshot',{body:{calendars:[]}}],['unexpected204',{status:204}],
+  ['unavailable',{status:503,body:{code:'SERVICE_UNAVAILABLE',error:'Snapshot unavailable'}}],
+  ['anonymous',{status:401,body:{code:'AUTHENTICATION_REQUIRED',error:'Sign in'}}],
+  ['cross-owner refusal',{status:404,body:{code:'NOT_FOUND',error:'Not found'}}]
+]) test(`PM138 calendar ${name} never sends a command or trusts dashboard data`,async()=>{
+  const app=calendarSetup({snapshot});await flushHost();
+  const selected='state.properties[0]?.calendars[0]';
+  for(const expression of ['syncCalendar','disconnectCalendar'])await app.run(`${expression}(${selected})`);
+  await app.run(`setCalendarEnabled(${selected},false)`);
+  await app.run(`setCalendarEnabled(${selected},true)`);
+  assert.equal(app.requests.filter(r=>r.route.startsWith('/calendars/')).length,0);
+  assert.equal(app.nodes.get('host-status').className.includes('error'),true);
+});
+
+for(const [status,code] of [[412,'CALENDAR_STALE'],[409,'CALENDAR_DISABLED'],[409,'CALENDAR_INVALID_TRANSITION']])
+for(const command of [`syncCalendar(${calendarCommand})`,`setCalendarEnabled(${calendarCommand},false)`,`setCalendarEnabled(${calendarCommand},true)`,`disconnectCalendar(${calendarCommand})`])
+test(`PM138 calendar ${command} ${status}/${code} is failure without refresh or retry`,async()=>{
+  const app=calendarSetup({command:{status,body:{code,error:'Synthetic calendar refusal'}}});await flushHost();
+  const before=app.calls.filter(x=>x==='/dashboard').length;
+  await app.run(command);
+  assert.equal(app.requests.filter(r=>r.route.startsWith(`/calendars/${calendarId}`)).length,1);
+  assert.equal(app.calls.filter(x=>x==='/dashboard').length,before);
+  assert.equal(app.nodes.get('host-status').textContent,'Synthetic calendar refusal');
+  assert.equal(app.nodes.get('host-status').className.includes('error'),true);
+  assert.equal(app.run(calendarCommand+'.revision'),7);
+});
+
+test('PM138 calendar rejects fabricated and obsolete snapshot objects, accepts revision zero',async()=>{
+  const app=calendarSetup({snapshot:{body:{calendars:[calendarView({revision:0})]}}});await flushHost();
+  await app.run(`syncCalendar(${JSON.stringify(calendarView())})`);
+  assert.equal(app.requests.some(r=>r.route===`/calendars/${calendarId}/sync`),false);
+  app.run('globalThis.oldCalendar=state.properties[0].calendars[0]');
+  await app.run('syncDashboard()');
+  await app.run('syncCalendar(oldCalendar)');
+  assert.equal(app.requests.some(r=>r.route===`/calendars/${calendarId}/sync`),false);
+  await app.run(`syncCalendar(${calendarCommand})`);
+  assert.deepEqual(app.requests.find(r=>r.route===`/calendars/${calendarId}/sync`).body,{expectedRevision:0});
+});
+
+for(const status of [200,401])test(`PM138 delayed old-account calendar snapshot ${status} cannot rebuild or expire B`,async()=>{
+  let current={accountId:'account-a',profile:{id:'profile-a'}},resolveA;
+  const pending=new Promise(resolve=>resolveA=resolve);
+  const app=setup({'/auth/me':()=>({body:current}),'/dashboard':()=>({body:{properties:[privateProperty(current.accountId==='account-a'?calendarProperty:'private-b',current.accountId)]}}),
+    [`/properties/${calendarProperty}/calendars`]:()=>pending});
+  await flushHost();current={accountId:'account-b',profile:{id:'profile-b'}};
+  await app.run('window.ParrotCore.session.refresh()');await flushHost();
+  const card=app.nodes.get('host-properties').children[0];
+  resolveA(status===200?{body:{calendars:[calendarView()]}}:{status:401,body:{error:'old A expired',code:'AUTHENTICATION_REQUIRED'}});await flushHost();
+  assert.equal(app.run('accountId'),'account-b');assert.equal(app.run('state.properties[0].id'),'private-b');
+  assert.equal(app.nodes.get('host-properties').children[0],card);
+  assert.equal(app.run('window.ParrotCore.session.status'),'authenticated');
+  assert.equal(app.requests.some(r=>r.route.startsWith('/calendars/')),false);
+});
+
+test('PM138 snapshots stay with their property; one refused snapshot does not hide another property',async()=>{
+  const second='33333333-3333-4333-8333-333333333333';
+  const app=setup({'/auth/me':{body:user},'/dashboard':{body:{properties:[privateProperty(calendarProperty,'A'),privateProperty(second,'B')]}},
+    [`/properties/${calendarProperty}/calendars`]:{body:{calendars:[calendarView({mode:'Frozen'})]}},
+    [`/properties/${second}/calendars`]:{status:404,body:{code:'NOT_FOUND',error:'Snapshot not available'}},
+    [`/calendars/${calendarId}`]:{status:204}});
+  await flushHost();
+  assert.equal(app.run('state.properties.length'),2);
+  assert.equal(app.run('state.properties[0].calendars[0].mode'),'Frozen');
+  assert.equal(app.run('state.properties[1].calendars.length'),0);
+  assert.equal(app.nodes.get('host-status').textContent,'Snapshot not available');
+  // Moving a valid object into a different property does not grant a command.
+  app.run('globalThis.moved=state.properties[0].calendars.pop();state.properties[1].calendars.push(moved)');
+  await app.run('setCalendarEnabled(moved,false)');
+  assert.equal(app.requests.some(r=>r.route.startsWith('/calendars/')),false);
+});
+
+test('PM138 overlapping same-session dashboard loads cannot replace a newer revision with a delayed snapshot',async()=>{
+  let resolveOld,attempt=0;
+  const old=new Promise(resolve=>resolveOld=resolve);
+  const app=calendarSetup({snapshot:()=>++attempt===1?old:{body:{calendars:[calendarView({revision:9})]}}});
+  await flushHost();await app.run('syncDashboard()');
+  assert.equal(app.run(calendarCommand+'.revision'),9);
+  const card=app.nodes.get('host-properties').children[0];
+  resolveOld({body:{calendars:[calendarView({revision:7})]}});await flushHost();
+  assert.equal(app.run(calendarCommand+'.revision'),9);assert.equal(app.nodes.get('host-properties').children[0],card);
+});
+
+for(const status of [204,401])test(`PM138 old-account calendar command ${status} cannot refresh or report success into B`,async()=>{
+  let resolveCommand;
+  const pending=new Promise(resolve=>resolveCommand=resolve);
+  const app=calendarSetup({command:()=>pending});await flushHost();
+  const command=app.run(`syncCalendar(${calendarCommand})`);
+  await flushHost();
+  app.run('window.ParrotCore.session.setUser({accountId:"account-b",profile:{id:"profile-b"}})');
+  await flushHost();const before=app.calls.filter(r=>r==='/dashboard').length;
+  app.nodes.get('host-status').textContent='B status';
+  resolveCommand(status===204?{status:204}:{status:401,body:{code:'AUTHENTICATION_REQUIRED',error:'Old account'}});
+  await command;await flushHost();
+  assert.equal(app.run('accountId'),'account-b');assert.equal(app.run('window.ParrotCore.session.status'),'authenticated');
+  assert.equal(app.calls.filter(r=>r==='/dashboard').length,before);
+  assert.equal(app.nodes.get('host-status').textContent,'B status');
 });
 
 test('host profile saves public name, keeps account identity private and retains input on a 400', async()=>{
@@ -1097,7 +1240,7 @@ test('Messages property deep link opens only the owned card and returns to its c
   assert.equal(app.nodes.get('host-property-context').hidden,false);
   assert.equal(app.nodes.get('host-property-return').href,`/messages.html?conversation=${conversation}`);
   assert.match(app.nodes.get('host-property-context-status').textContent,/property from your conversation/);
-  assert.deepEqual(app.calls.filter(path=>path.startsWith('/properties/')),[]);
+  assert.deepEqual(app.calls.filter(path=>path.startsWith('/properties/')),[`/properties/${first}/calendars`,`/properties/${second}/calendars`]);
 
   const other=setup({'/auth/me':routes['/auth/me'],'/dashboard':{body:{properties:[routes['/dashboard'].body.properties[0]]}}},
     `?property=${second}&conversation=${conversation}`);

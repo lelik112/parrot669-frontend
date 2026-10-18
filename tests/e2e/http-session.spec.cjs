@@ -1,6 +1,68 @@
 const {test,expect}=require('./isolated-fixture.cjs');
 const {installPublicFixture,installHostFixture}=require('./public-fixture.cjs');
 
+test('Host calendar uses snapshot revisions for sync, disable, activate and delete; stale is not retried',async({page})=>{
+  await installHostFixture(page);
+  const propertyId='11111111-1111-4111-8111-111111111111',id='22222222-2222-4222-8222-222222222222';
+  let revision=7,mode='Active',removed=false,refuse=false,dashboards=0;
+  const commands=[];
+  await page.route('**/api/host/dashboard',route=>{
+    dashboards++;
+    return route.fulfill({json:{properties:[{id:propertyId,title:'Synthetic calendar property',city:'Barcelona',bedrooms:1,sleeps:2,
+      listings:[{id:'listing-1',url:'https://www.airbnb.com/rooms/123'}]}]}});
+  });
+  await page.route(`**/api/host/properties/${propertyId}/calendars`,route=>route.fulfill({json:{calendars:removed?[]:[{
+    id,provider:'Airbnb',listingId:'123',publicUrl:'https://www.airbnb.com/rooms/123',enabled:mode!=='Disabled',mode,revision,
+    status:'Connected',lastSyncedAt:null,lastSuccessAt:null,lastError:null,reservationBlocks:[]
+  }]}}));
+  await page.route(`**/api/host/calendars/${id}/verification`,route=>route.fulfill({json:{status:'Required',canStart:false,canCheck:false}}));
+  await page.route(new RegExp(`/api/host/calendars/${id}(?:/(?:sync|activate))?$`),async route=>{
+    const method=route.request().method(),path=new URL(route.request().url()).pathname,body=route.request().postDataJSON();
+    commands.push({method,path,body});
+    if(refuse)return route.fulfill({status:412,json:{code:'CALENDAR_STALE',error:'Synthetic stale calendar'}});
+    expect(body.expectedRevision).toBe(revision);
+    if(method==='PUT'){expect(body.mode).toBe('Disabled');mode='Disabled';}
+    else if(path.endsWith('/activate')){expect(method).toBe('POST');mode='Active';}
+    else if(method==='DELETE')removed=true;
+    else {expect(method).toBe('POST');expect(path.endsWith('/sync')).toBe(true);}
+    revision++;
+    return route.fulfill({status:204});
+  });
+  await page.goto('/host.html');
+  const card=page.locator(`[data-property-id="${propertyId}"]`);
+  await card.getByRole('button',{name:'Expand',exact:true}).click();
+  const actions=card.locator('.host-calendar-actions');
+  async function refreshedClick(name){
+    const old=await card.elementHandle();
+    await actions.getByRole('button',{name,exact:true}).click();
+    await expect.poll(()=>old.evaluate(node=>node.isConnected)).toBe(false);
+    await old.dispose();
+  }
+  await refreshedClick('Sync now');
+  expect(dashboards).toBe(2);
+  await expect(actions.getByRole('button',{name:'Disable',exact:true})).toBeVisible();
+  await refreshedClick('Disable');
+  await expect(actions.getByRole('button',{name:'Enable',exact:true})).toBeVisible();
+  await refreshedClick('Enable');
+  await expect(actions.getByRole('button',{name:'Disable',exact:true})).toBeVisible();
+  refuse=true;
+  const before=dashboards;
+  await actions.getByRole('button',{name:'Sync now',exact:true}).click();
+  await expect(page.locator('#host-status')).toContainText('Synthetic stale calendar');
+  expect(dashboards).toBe(before);expect(commands).toHaveLength(4);
+  refuse=false;
+  page.once('dialog',dialog=>dialog.accept());
+  await actions.getByRole('button',{name:'Delete',exact:true}).click();
+  await expect(card.locator('.host-calendar-actions')).toHaveCount(0);
+  expect(commands.map(c=>[c.method,c.path,c.body])).toEqual([
+    ['POST',`/api/host/calendars/${id}/sync`,{expectedRevision:7}],
+    ['PUT',`/api/host/calendars/${id}`,{mode:'Disabled',expectedRevision:8}],
+    ['POST',`/api/host/calendars/${id}/activate`,{expectedRevision:9}],
+    ['POST',`/api/host/calendars/${id}/sync`,{expectedRevision:10}],
+    ['DELETE',`/api/host/calendars/${id}`,{expectedRevision:10}]
+  ]);
+});
+
 test('Host account switch removes previous private cards before the next dashboard arrives',async({page})=>{
   await installHostFixture(page);
   let account='a',releaseB;
