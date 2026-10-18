@@ -1,6 +1,17 @@
 const {test,expect}=require('./isolated-fixture.cjs');
 const {installPublicFixture,installHostFixture}=require('./public-fixture.cjs');
 
+async function selectFixtureCity(page) {
+  const country=page.locator('#availability-form select[name=country]');
+  const city=page.locator('#availability-form select[name=city]');
+  await expect(country).toBeEnabled();
+  await country.selectOption('ES');
+  await expect(city).toBeEnabled();
+  await city.selectOption('Barcelona');
+  await expect(country).toHaveValue('ES');
+  await expect(city).toHaveValue('Barcelona');
+}
+
 test('module entrypoints boot Home, Search, Host and Recover with blocked storage',async({page})=>{
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.addInitScript(()=>{
@@ -16,8 +27,7 @@ test('module entrypoints boot Home, Search, Host and Recover with blocked storag
   await page.locator('#lead-form button[type=submit]').click();
   await expect(page.locator('#lead-receipt')).toBeVisible();
   await page.goto('/search.html');
-  await expect(page.locator('#availability-form select[name=country]')).toBeEnabled();
-  await expect(page.locator('#availability-form select[name=city]')).toHaveValue('Barcelona');
+  await selectFixtureCity(page);
   await installHostFixture(page);
   await page.goto('/host.html');
   await expect(page.locator('#host-profile')).toBeVisible();
@@ -33,6 +43,7 @@ test('malformed Search response is an error rather than an empty result',async({
   await installPublicFixture(page);
   await page.route('**/api/search?**',route=>route.fulfill({status:200,body:'{broken',contentType:'application/json'}));
   await page.goto('/search.html');
+  await selectFixtureCity(page);
   await page.locator('#availability-form [name=from]').fill('2026-11-10');
   await page.locator('#availability-form [name=to]').fill('2026-11-17');
   await page.locator('#availability-form button[type=submit]').click();
