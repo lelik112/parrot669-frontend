@@ -21,6 +21,8 @@ for(const width of [1440,390,320])for(const locale of ['ru','en','es','ca']){
       return {
         width:document.documentElement.clientWidth,scroll:document.documentElement.scrollWidth,
         overflow:[...document.querySelectorAll('body *')].map(node=>({tag:node.tagName,selector:node.id||node.className?.baseVal||node.className,left:node.getBoundingClientRect().left,right:node.getBoundingClientRect().right})).filter(box=>box.left< -1||box.right>innerWidth+1).slice(0,40),
+        contentOverflow:[...document.querySelectorAll('body *')].filter(node=>node.clientWidth>0&&node.scrollWidth>node.clientWidth+1).map(node=>({tag:node.tagName,selector:node.id||node.className?.baseVal||node.className,client:node.clientWidth,scroll:node.scrollWidth,overflow:getComputedStyle(node).overflowX})).slice(0,40),
+        textOverflow:[...document.querySelectorAll('body *')].flatMap(node=>[...node.childNodes].filter(child=>child.nodeType===Node.TEXT_NODE&&child.textContent.trim()).map(child=>{const range=document.createRange();range.selectNode(child);return {tag:node.tagName,selector:node.id||node.className?.baseVal||node.className,right:range.getBoundingClientRect().right,text:child.textContent.trim().slice(0,50)};})).filter(box=>box.right>innerWidth+1).slice(0,40),
         groups:groups.map(node=>{
           const box=node.getBoundingClientRect();
           return {left:box.left,right:box.right,height:box.height,client:node.clientWidth,scroll:node.scrollWidth,
@@ -31,6 +33,7 @@ for(const width of [1440,390,320])for(const locale of ['ru','en','es','ca']){
       };
     });
     await testInfo.attach('layout-geometry',{body:Buffer.from(JSON.stringify(report)),contentType:'application/json'});
+    if(report.scroll>report.width+1)console.log('Home overflow geometry',JSON.stringify(report));
     await page.evaluate(()=>window.scrollTo({top:0,behavior:'instant'}));
     await captureEvidence(page,testInfo,{screen:'home',state:'localized-layout',locale,cssViewportWidth:width});
     expect(report.scroll,JSON.stringify(report.overflow)).toBeLessThanOrEqual(report.width+1);
