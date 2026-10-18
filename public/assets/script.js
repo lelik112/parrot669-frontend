@@ -484,7 +484,7 @@ function rememberHomeAnchorActivator(source){
 function navigateHomeAnchor({source,target,hash,scroll=true}){
   rememberHomeAnchorActivator(source);
   history.pushState(null, "", hash);
-  if (scroll) target.scrollIntoView({block:"start", behavior:"auto"});
+  if (scroll) target.scrollIntoView({block:"start", behavior:"instant"});
   focusAnchorHeading(target);
 }
 

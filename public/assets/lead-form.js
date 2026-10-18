@@ -35,6 +35,7 @@
   const setText=(selector,value)=>{const node=receipt.querySelector(selector);if(node)node.textContent=value||"";};
 
   function focusReceipt(){
+    document.documentElement.scrollTop=window.scrollY;
     receipt.focus({preventScroll:true});
     const title=receipt.querySelector("h3");
     if(!title)return;
@@ -42,7 +43,7 @@
     const safeTop=Math.max(0,headerBottom)+16;
     const rect=title.getBoundingClientRect();
     if(rect.top<safeTop||rect.bottom>window.innerHeight-16){
-      window.scrollBy({top:rect.top-safeTop,left:0,behavior:"auto"});
+      window.scrollTo({top:Math.max(0,window.scrollY+rect.top-safeTop),left:0,behavior:"instant"});
     }
   }
 

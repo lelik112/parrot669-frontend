@@ -254,7 +254,7 @@ test('Existing lead state machine remains wired to the Home form',()=>{
   const script=read('public/assets/lead-form.js');
   assert.match(html,/id="lead-form" aria-describedby="form-status"/);
   assert.match(html,/id="form-status" role="status" aria-live="polite" aria-atomic="true"/);
-  assert.match(html,/assets\/lead-form\.js\?v=20261003-state-machine/);
+  assert.match(html,/assets\/lead-form\.js\?v=20261018-receipt-focus/);
   assert.match(script,/requestSubmit|addEventListener\(['"]submit['"]/);
   assert.match(script,/uncertain/);
 });

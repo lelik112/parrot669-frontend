@@ -29,6 +29,9 @@ for(const width of [1440,390,320])for(const locale of ['ru','en','es','ca']){
         })
       };
     });
+    await testInfo.attach('layout-geometry',{body:Buffer.from(JSON.stringify(report)),contentType:'application/json'});
+    await page.evaluate(()=>window.scrollTo({top:0,behavior:'instant'}));
+    await captureEvidence(page,testInfo,{screen:'home',state:'localized-layout',locale,cssViewportWidth:width});
     expect(report.scroll).toBeLessThanOrEqual(report.width+1);
     expect(report.groups).toHaveLength(2);
     expect(report.groups[0].content).toEqual(report.groups[1].content);
@@ -39,8 +42,6 @@ for(const width of [1440,390,320])for(const locale of ['ru','en','es','ca']){
       expect(group.paragraphs[1].size).toBeGreaterThanOrEqual(16);
       for(const paragraph of group.paragraphs)expect(paragraph.scroll).toBeLessThanOrEqual(paragraph.client+1);
     }
-    await page.evaluate(()=>window.scrollTo({top:0,behavior:'instant'}));
-    await captureEvidence(page,testInfo,{screen:'home',state:'localized-layout',locale,cssViewportWidth:width});
   });
 }
 
@@ -103,6 +104,10 @@ test('external HTTP and WebSocket probes are intercepted in the fresh context',a
     const socket=new WebSocket(url);socket.onopen=()=>resolve('opened');socket.onclose=()=>resolve('closed');socket.onerror=()=>resolve('closed');
   }),ws)).toBe('closed');
   expect(audit.blockedRequests).toEqual(expect.arrayContaining([{kind:'blocked HTTP',url:http},{kind:'blocked WebSocket',url:ws}]));
-  expect(await page.evaluate(()=>navigator.serviceWorker.register('/qa-probe-sw.js').then(()=>false,()=>true))).toBe(true);
+  let workerScriptRequested=false;
+  page.on('request',request=>{if(request.url().endsWith('/qa-probe-sw.js'))workerScriptRequested=true;});
+  await page.evaluate(()=>navigator.serviceWorker.register('/qa-probe-sw.js').catch(()=>null));
+  expect(workerScriptRequested).toBe(false);
+  expect(await page.evaluate(()=>Boolean(navigator.serviceWorker.controller))).toBe(false);
   expect(context.serviceWorkers()).toHaveLength(0);
 });

@@ -2656,8 +2656,8 @@ footer{
   .home-page .brand-feature{grid-template-columns:minmax(0,1fr) 220px;column-gap:34px}
   .home-page .brand-feature-bird{width:200px}
   .home-page .housing-callout{padding:46px}
-  .home-page .contact{grid-template-columns:1fr;gap:58px;padding:88px 0}
-  .home-page .contact-copy{max-width:660px}
+  .home-page .contact{grid-template-columns:minmax(0,1fr);gap:58px;padding:88px 0}
+  .home-page .contact-copy{min-width:0;max-width:660px}
   .home-page .site-footer{grid-template-columns:1fr auto}
   .home-page .footer-nav{grid-column:1/-1;grid-row:1;justify-content:flex-start}
 }
@@ -2749,3 +2749,6 @@ footer{
   .home-page *::before,
   .home-page *::after{scroll-behavior:auto!important;transition-duration:.01ms!important;animation-duration:.01ms!important}
 }
+
+/* Keep long localized Contact headings inside the compact grid track. */
+.home-page .contact-copy>h2{overflow-wrap:anywhere}

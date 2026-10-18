@@ -56,7 +56,7 @@ jobs:
           python3 - <<'PYTHON'
           import os
           from pathlib import Path
-          size=sum(p.stat().st_size for root in ('test-results','playwright-report') for p in Path(root).rglob('*') if p.is_file())
+          size=sum(p.stat().st_size for root in ('test-results',) for p in Path(root).rglob('*') if p.is_file())
           allowed=size <= 64 * 1024 * 1024
           with open(os.environ['GITHUB_ENV'],'a') as output:
               output.write('HOME_EVIDENCE_ALLOWED='+str(allowed).lower()+'\n')
@@ -67,9 +67,7 @@ jobs:
         if: always() && env.HOME_EVIDENCE_ALLOWED == 'true'
         with:
           name: home-qa-${{ github.run_id }}
-          path: |
-            test-results/
-            playwright-report/
+          path: test-results/
           if-no-files-found: error
           retention-days: 3
           compression-level: 9
