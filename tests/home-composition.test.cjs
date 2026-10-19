@@ -19,7 +19,7 @@ test('accepted Home composition makes the three-item preview explicitly lead to 
   assert.match(html,/class="housing-callout"/);
   assert.match(html,/class="housing-cta" href="\/search\.html"/);
   assert.match(html,/assets\/styles\.css\?v=20261018-home-trust/);
-  assert.match(html,/assets\/script\.js\?v=20261018-home-trust/);
+  assert.match(html,/assets\/script\.js\?v=20261019-contact-contract/);
 });
 
 test('Home trust copy renders the exact localized hero copy and two identical visible guarantee groups',()=>{
@@ -166,15 +166,17 @@ function activatePointer(window,node){
 }
 
 function activateKey(window,node,key){
-  node.dispatchEvent(new window.KeyboardEvent('keydown',{key,bubbles:true,cancelable:true}));
+  const event=new window.KeyboardEvent('keydown',{key,bubbles:true,cancelable:true});
+  node.dispatchEvent(event);
+  // jsdom does not perform the native anchor Enter default action.
+  if(key==='Enter'&&!event.defaultPrevented&&node.matches('a[href]'))activatePointer(window,node);
 }
 
-test('both Home scripts produce exactly one history mutation and scroll for service links and cards',()=>{
+test('both Home scripts produce exactly one history mutation and scroll for the sole native service target',()=>{
   for(const [selector,activation] of [
     ['[data-service="rental"]','pointer'],
-    ['[data-service-card="visit"]','pointer'],
-    ['[data-service-card="documents"]','Enter'],
-    ['[data-service-card="search"]',' ']
+    ['[data-service-card="visit"] a[data-service]','pointer'],
+    ['[data-service-card="documents"] a[data-service]','Enter']
   ]){
     const app=integratedHome();
     const node=app.document.querySelector(selector);
@@ -197,6 +199,21 @@ test('nested and repeated service activation keeps one mutation/scroll per activ
   activatePointer(app.window,link);
   assert.deepEqual(app.counts,{history:2,scroll:2});
   assert.equal(app.document.activeElement,app.document.querySelector('#contact h2'));
+  app.dom.window.close();
+});
+
+test('service card body is passive and Space on its sole native link never activates Contact',()=>{
+  const app=integratedHome();
+  const card=app.document.querySelector('[data-service-card="owner"]');
+  const link=card.querySelector('a[data-service]');
+  const originalService=app.document.querySelector('[name=service]').value;
+  assert.equal(card.hasAttribute('tabindex'),false);assert.notEqual(card.getAttribute('role'),'button');
+  activatePointer(app.window,card.querySelector('h3'));
+  activateKey(app.window,card,'Enter');activateKey(app.window,card,' ');
+  link.focus();activateKey(app.window,link,' ');
+  assert.deepEqual(app.counts,{history:0,scroll:0});assert.equal(app.window.location.hash,'');
+  assert.equal(app.document.querySelector('[name=service]').value,originalService);
+  assert.equal(app.document.activeElement,link);
   app.dom.window.close();
 });
 
@@ -223,7 +240,7 @@ test('submitting and success guards block service navigation in the integrated s
 
 test('popstate restores the original visible service activator or compact Menu trigger',()=>{
   const serviceApp=integratedHome();
-  const card=serviceApp.document.querySelector('[data-service-card="other"]');
+  const card=serviceApp.document.querySelector('[data-service-card="other"] a[data-service]');
   card.focus();
   activateKey(serviceApp.window,card,'Enter');
   serviceApp.window.dispatchEvent(new serviceApp.window.PopStateEvent('popstate'));
@@ -254,7 +271,7 @@ test('Existing lead state machine remains wired to the Home form',()=>{
   const script=read('public/assets/lead-form.js');
   assert.match(html,/id="lead-form" aria-describedby="form-status"/);
   assert.match(html,/id="form-status" role="status" aria-live="polite" aria-atomic="true"/);
-  assert.match(html,/assets\/lead-form\.js\?v=20261018-receipt-focus/);
+  assert.match(html,/assets\/lead-form\.js\?v=20261019-contact-contract/);
   assert.match(script,/requestSubmit|addEventListener\(['"]submit['"]/);
   assert.match(script,/uncertain/);
 });

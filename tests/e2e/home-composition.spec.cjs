@@ -207,11 +207,11 @@ for(const activation of ['pointer','keyboard']){
   });
 }
 
-for(const activation of ['pointer','Enter','Space']){
+for(const activation of ['pointer','Enter']){
   test(`service cards preserve one history/scroll and return focus on Back (${activation})`,async({page})=>{
     await quietNetwork(page);
     await page.goto('/');
-    const card=page.locator('[data-service-card="rental"]');
+    const card=page.locator('[data-service-card="rental"] a[data-service]');
     const historyBefore=await page.evaluate(()=>history.length);
     const scrolls=await page.evaluate(()=>{
       window.__homeScrolls=0;
@@ -223,7 +223,7 @@ for(const activation of ['pointer','Enter','Space']){
     expect(scrolls).toBe(0);
     await card.focus();
     if(activation==='pointer')await card.click();
-    else await card.press(activation==='Space'?'Space':'Enter');
+    else await card.press('Enter');
     await expect(page).toHaveURL(/#contact$/);
     await expect(page.locator('#contact h2')).toBeFocused();
     expect(await page.evaluate(()=>history.length)).toBe(historyBefore+1);
@@ -249,4 +249,15 @@ test('Enter in the message textarea never submits the preserved lead form',async
   await expect(message).toHaveValue('First line\nSecond line');
   await page.waitForTimeout(100);
   expect(requests).toBe(0);
+});
+
+test('Space on the sole native service link does not activate or preselect Contact',async({page})=>{
+  await quietNetwork(page);await page.goto('/');
+  const card=page.locator('[data-service-card=owner]');
+  await expect(card).not.toHaveAttribute('tabindex');await expect(card).not.toHaveAttribute('role','button');
+  const link=card.locator('a[data-service]');await link.focus();
+  const before=await page.evaluate(()=>({url:location.href,history:history.length,service:document.querySelector('[name=service]').value}));
+  await link.press('Space');
+  expect(await page.evaluate(()=>({url:location.href,history:history.length,service:document.querySelector('[name=service]').value}))).toEqual(before);
+  await expect(link).toBeFocused();
 });
