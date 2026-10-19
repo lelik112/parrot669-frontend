@@ -422,6 +422,8 @@ function patchHostView(current, next){
   }
   if (!next.children.length) {
     if (!protectedControl && current.textContent !== next.textContent) current.textContent = next.textContent;
+    if(current.tagName === "INPUT" && current.type === "checkbox" && !current.closest?.("form"))
+      current.checked=next.checked;
   } else {
     const children = [...current.children], used = new Set();
     let position = 0;
@@ -557,7 +559,7 @@ function message(text, kind = ""){
 async function api(path, options = {}){
   const {hostOperation, ...requestOptions}=options;
   options=requestOptions;
-  let ownedWrite, resource, epoch;
+  let ownedWrite, resource, epoch, currentResource=()=>true;
   try {
     if (path === "/auth/me") {
       const user = await hostCore.session.refresh();
@@ -589,19 +591,21 @@ async function api(path, options = {}){
     const resourceVersion=hostResourceVersions.get(resource) || 0;
     const period=resource?.availability?.find(value=>path===`/availability/${value.id}`)
       || resource?.unavailability?.find(value=>path===`/unavailability/${value.id}`);
+    const listingId=resource && path===`/listings/${resource.listing?.id}` ? resource.listing.id : null;
+    const calendarId=resource?.calendars?.find(calendar=>path===`/calendars/${calendar.id}` || path.startsWith(`/calendars/${calendar.id}/`))?.id;
+    currentResource=()=>!resource || (epoch===hostCore.session.epoch && state.properties.includes(resource)
+      && (method!=="GET" || resourceVersion===(hostResourceVersions.get(resource) || 0))
+      && (!period || [...(resource.availability || []),...(resource.unavailability || [])].includes(period))
+      && (!listingId || resource.listing?.id===listingId)
+      && (!calendarId || resource.calendars?.some(calendar=>calendar.id===calendarId)));
     const value = await hostCore.session.request(`/api/host${path}`, {...options, authenticated:true,
       ...(empty ? {expected:"empty"} : {}),
       ...(path === "/dashboard" ? {validate:value => value && typeof value === "object" && Array.isArray(value.properties)} : {})});
-    if (resource && (epoch !== hostCore.session.epoch || !state.properties.includes(resource)))
-      throw Object.assign(new Error("Stale Host resource"), {kind:"stale"});
-    if (resource && method === "GET" && resourceVersion !== (hostResourceVersions.get(resource) || 0))
-      throw Object.assign(new Error("Stale Host read"), {kind:"stale"});
-    if (period && ![...(resource.availability || []),...(resource.unavailability || [])].includes(period))
-      throw Object.assign(new Error("Stale Host period"), {kind:"stale"});
+    if (!currentResource()) throw Object.assign(new Error("Stale Host resource"), {kind:"stale"});
     if (method !== "GET") dashboardVersion++;
     return value;
   } catch (error) {
-    if (resource && (epoch !== hostCore.session.epoch || !state.properties.includes(resource)))
+    if (!currentResource())
       throw Object.assign(new Error("Stale Host resource"), {kind:"stale"});
     const keys = {EMAIL_VERIFICATION_REQUIRED:"verifyFirst", TITLE_REQUIRED:"titleRequired", TITLE_TOO_LONG:"titleTooLong",
       ADDRESS_REQUIRED:"addressChoose", FULL_ADDRESS_REQUIRED:"addressChoose", AVAILABILITY_OVERLAP:"overlapError",

@@ -229,3 +229,18 @@ test('server reordering keeps keyed cards/fields, focus and selection',async t=>
   assert.equal(h.form('property-b'),form);assert.equal(input.value,'B draft');assert.equal(h.w.document.activeElement,input);
   assert.equal(input.selectionStart,1);assert.equal(input.selectionEnd,4);
 });
+
+test('listing removed during a visibility write ignores its late response and updates clean checkbox baselines',async t=>{
+  const h=await setup();t.after(h.close);
+  const withListing=visible=>({...property('property-a','A'),listings:[{id:'listing-a',url:'https://www.airbnb.com/rooms/123',showInSearch:visible}]});
+  h.setProperties([withListing(true)]);await h.w.hostTest.syncDashboard();
+  const checkbox=h.w.document.querySelector('.host-listing-visibility input');
+  h.setProperties([withListing(false)]);await h.w.hostTest.syncDashboard();assert.equal(checkbox.checked,false);
+  const pending=deferred();h.routes.set('PUT /listings/listing-a',()=>pending.promise);
+  checkbox.checked=true;checkbox.dispatchEvent(new h.w.Event('change',{bubbles:true}));await tick();
+  h.setProperties([property('property-a','A')]);await h.w.hostTest.syncDashboard();
+  pending.resolve({showInSearch:true});await tick();
+  assert.equal(h.w.hostTest.getState().properties[0].listing,null);
+  assert.equal(h.w.document.querySelector('.host-listing-visibility'),null);
+  assert.equal(h.w.document.getElementById('host-status').textContent.includes('saved'),false);
+});
