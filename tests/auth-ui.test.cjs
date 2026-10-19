@@ -16,10 +16,10 @@ function element(tag = 'div') {
   const attributes = new Map();
   const children = [];
   const controls = [];
-  return {
+  const node = {
     tagName: tag.toUpperCase(), children,
     hidden: false, open: false, disabled: false, value: '', textContent: '',
-    dataset: {}, elements: {}, controls, classList: {toggle() {}},
+    dataset: {}, elements: {}, controls,
     addEventListener(type, fn) {
       listeners.set(type, [...(listeners.get(type) || []), fn]);
     },
@@ -32,9 +32,26 @@ function element(tag = 'div') {
       }
     },
     setAttribute(name, value) { attributes.set(name, value); },
+    getAttributeNames() {return [...attributes.keys()];},
+    hasAttribute(name) {return attributes.has(name);},
     getAttribute(name) { return attributes.get(name); },
     removeAttribute(name) { attributes.delete(name); },
-    append(...nodes) { children.push(...nodes); },
+    append(...nodes) { for (const child of nodes) this.insertBefore(child, null); },
+    insertBefore(child, before) {
+      child.remove();
+      const index = before ? children.indexOf(before) : children.length;
+      children.splice(index, 0, child); child.parentElement=this;
+    },
+    remove() {
+      const siblings=this.parentElement?.children;
+      if(siblings){const index=siblings.indexOf(this);if(index>=0)siblings.splice(index,1);}
+      this.parentElement=null;
+    },
+    closest(selector) {
+      if(selector==='form' && this.tagName==='FORM') return this;
+      if(selector==='[data-host-island]' && this.dataset.hostIsland) return this;
+      return this.parentElement?.closest(selector) || null;
+    },
     contains(target) { return this === target || children.some(child => child.contains(target)); },
     replaceChildren() { children.length = 0; },
     querySelector(selector) {
@@ -52,12 +69,28 @@ function element(tag = 'div') {
     close() { this.open = false; void this.emit('close'); },
     getBoundingClientRect() { return {left:100, right:500, top:100, bottom:600}; }
   };
+  node.classList={
+    contains(name){return (node.className || '').split(' ').includes(name);},
+    toggle(name, force){
+      const classes=new Set((node.className || '').split(' ').filter(Boolean));
+      const enabled=force ?? !classes.has(name);
+      if(enabled)classes.add(name);else classes.delete(name);
+      node.className=[...classes].join(' ');return enabled;
+    }
+  };
+  for(const [property,attribute] of Object.entries({className:'class',id:'id',name:'name',type:'type',title:'title',placeholder:'placeholder',min:'min',max:'max',step:'step',href:'href',target:'target',rel:'rel'}))
+    Object.defineProperty(node,property,{get:()=>attributes.get(attribute)||'',set:value=>attributes.set(attribute,String(value)),configurable:true});
+  for(const property of ['hidden','disabled','required'])
+    Object.defineProperty(node,property,{get:()=>attributes.has(property),set:value=>value?attributes.set(property,''):attributes.delete(property),configurable:true});
+  return node;
 }
 
 function setup(routes = {}, search = '', {hash = '', sessionData = {}, layout = {}, transport} = {}) {
   routes['/auth/logout']??={status:204};
   routes['/geocode/countries']??={body:[{code:'ES',name:'Spain'},{code:'FR',name:'France'},{code:'BY',name:'Belarus'}]};
-  const nodes = new Map([...html.matchAll(/id="([^"]+)"/g)].map(match => [match[1], element()]));
+  const nodes = new Map([...html.matchAll(/id="([^"]+)"/g)].map(match => {
+    const node=element(match[1].endsWith('-form')?'form':'div');node.id=match[1];return [match[1],node];
+  }));
   nodes.get('host-profile-return').dataset.hostI18n='profileReturn';
   for (const id of ['login-form', 'register-form']) {
     const form = nodes.get(id);
@@ -70,6 +103,7 @@ function setup(routes = {}, search = '', {hash = '', sessionData = {}, layout = 
   }
   const profileForm = nodes.get('host-profile-form');
   profileForm.elements.displayName = element('input');
+  profileForm.elements.displayName.name = 'displayName';
   profileForm.controls.push(profileForm.elements.displayName);
   profileForm.controls.push(element('button'));
   const modes = ['login', 'register'].map(mode => {
@@ -161,7 +195,7 @@ test('PM138 R1: /me A→B clears private DOM/controllers/context before B dashbo
   assert.equal(app.run('state.properties[0].id'),'private-b');
   assert.equal(app.nodes.get('host-properties').children[0].dataset.propertyId,'private-b');
   const bCard=app.nodes.get('host-properties').children[0];
-  app.run('expandedPropertyIds.add("private-b");unsavedHostChanges=true;window.ParrotCore.session.updateProfile({displayName:"Same account"})');
+  app.run('expandedPropertyIds.add("private-b");hostProfileForm.elements.displayName.value="Same account draft";captureHostDraft(hostProfileForm);hostDirtyState();window.ParrotCore.session.updateProfile({displayName:"Same account"})');
   assert.equal(app.nodes.get('host-properties').children[0],bCard);
   assert.equal(app.run('expandedPropertyIds.has("private-b")'),true);assert.equal(app.run('unsavedHostChanges'),true);
   assert.equal(app.calls.filter(x=>x==='/dashboard').length,before+1);
@@ -954,15 +988,16 @@ test('saving a range blocks duplicate submits; retry clears its old error and re
   const pending = form.emit('submit');
   assert.equal(form.querySelector('.host-form-error').hidden, true);
   assert.equal(form.getAttribute('aria-busy'), 'true');
-  assert.equal(form.querySelectorAll('input').every(input => input.disabled), true);
+  assert.equal(form.querySelectorAll('button').every(button => button.disabled), true);
+  assert.equal(form.querySelectorAll('input').every(input => !input.disabled), true);
   await form.emit('submit');
   assert.equal(app.calls.filter(route => route === '/availability/period-1').length, 2);
   resolve({status:204});
   await pending;
   const updated = app.nodes.get('host-properties').children[0].querySelector('.host-period');
-  assert.notEqual(updated, form);
+  assert.equal(updated, form);
   assert.equal(updated.querySelectorAll('input')[0].value, '2026-10-06');
-  assert.equal(updated.querySelector('.host-form-error'), undefined);
+  assert.equal(updated.querySelector('.host-form-error').hidden, true);
 });
 
 test('collapse stays alone in the header; destructive action is only in the expanded footer', async () => {
@@ -976,7 +1011,7 @@ test('collapse stays alone in the header; destructive action is only in the expa
   card = app.nodes.get('host-properties').children[0];
   assert.equal(card.querySelector('.host-property-head-actions').children.length, 1);
   assert.equal(card.querySelector('.host-property-toggle').getAttribute('aria-expanded'), 'false');
-  assert.equal(card.querySelector('.host-property-footer'), undefined);
+  assert.equal(card.querySelector('.host-property-footer').hidden, true);
   await card.querySelector('.host-property-toggle').emit('click');
   assert.equal(app.nodes.get('host-properties').children[0].querySelector('.host-property-head-actions').children.length, 1);
 });

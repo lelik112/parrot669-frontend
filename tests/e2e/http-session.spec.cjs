@@ -3,6 +3,8 @@ const {installPublicFixture,installHostFixture}=require('./public-fixture.cjs');
 
 test('Host calendar connect retains invalid-ACK draft then saves through existing PUT/204 contract',async({page})=>{
   await installHostFixture(page);
+  // Keep the native retry click stable while this protocol test changes error layout.
+  await page.emulateMedia({reducedMotion:'reduce'});
   const propertyId='11111111-1111-4111-8111-111111111111';
   const icalUrl='https://www.airbnb.com/calendar/ical/123.ics?s=SyntheticOnly123';
   const commands=[];let dashboards=0,accept=false;
@@ -27,7 +29,7 @@ test('Host calendar connect retains invalid-ACK draft then saves through existin
   accept=true;
   await form.locator('button[type=submit]').click();
   await expect.poll(()=>dashboards).toBe(2);
-  await expect(form.locator('.host-form-error')).toHaveCount(0);
+  await expect(form.locator('.host-form-error')).toBeHidden();
   expect(commands).toEqual(Array(2).fill({method:'PUT',body:{provider:'Airbnb',icalUrl}}));
 });
 
@@ -64,8 +66,11 @@ test('Host calendar uses snapshot revisions for sync, disable, activate and dele
   const actions=card.locator('.host-calendar-actions');
   async function refreshedClick(name){
     const old=await card.elementHandle();
+    const before=dashboards;
     await actions.getByRole('button',{name,exact:true}).click();
-    await expect.poll(()=>old.evaluate(node=>node.isConnected)).toBe(false);
+    await expect.poll(()=>dashboards).toBe(before+1);
+    await expect(card.locator('.host-calendar-sync')).toHaveAttribute('data-calendar-revision',String(revision));
+    expect(await old.evaluate(node=>node.isConnected)).toBe(true);
     await old.dispose();
   }
   await refreshedClick('Sync now');

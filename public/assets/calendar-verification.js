@@ -12,7 +12,7 @@
     ru:{from:"Первая ночь",to:"Последняя ночь (включительно)",choose:"Выберите ночи для проверки и начните. Airbnb может обновлять календарь с задержкой.",bounds:(a,b)=>`Выбирайте даты с ${a} по ${b} (шесть календарных месяцев).`,close:"Эти ночи свободны. Закройте в Airbnb все выбранные ночи и нажмите «Проверить».",open:"Эти ночи закрыты вами в Airbnb. Откройте все выбранные ночи и нажмите «Проверить».",waitingClose:"Эти ночи свободны. Закройте в Airbnb все выбранные ночи.",waitingOpen:"Эти ночи закрыты вами в Airbnb. Откройте все выбранные ночи.",dates:(a,b)=>`Выбранные ночи: ${a} – ${b}`,invalidDates:(a,b)=>`Выберите даты с ${a} по ${b}, по порядку.`,reserved:"Среди этих ночей есть бронь или неизвестная блокировка. Выберите ночи без брони.",mixed:"Здесь смешаны свободные и закрытые ночи. Выберите однородный период.",restore:"Теперь временное изменение календаря Airbnb можно вернуть обратно.",again:"Выберите другие ночи для новой попытки."}
   };
   function create({calendar,request,language="en",onUnauthorized=()=>{},onStatus=()=>{}}){
-    const tr=copy[language]||copy.en,ch=challengeCopy[language]||challengeCopy.en;
+    let tr=copy[language]||copy.en,ch=challengeCopy[language]||challengeCopy.en;
     const node=document.createElement("section");node.className="calendar-verification";node.setAttribute("aria-live","polite");
     const title=document.createElement("strong"),detail=document.createElement("p"),timing=document.createElement("p"),attempt=document.createElement("p");
     const notice=document.createElement("p");notice.className="calendar-verification-error";notice.setAttribute("role","alert");
@@ -49,7 +49,7 @@
       const {minimum,maximum}=selectableBounds();
       from.min=minimum;from.max=maximum;to.min=from.value||minimum;to.max=maximum;
     }
-    function render(){
+    function render(notify=true){
       const state=canonical(value?.status),expectedAction=canonical(value?.expectedAction);
       node.dataset.status=state||"loading";
       let heading=tr.loading,description="",time="";
@@ -100,7 +100,7 @@
       }
       text(attempt,value?.attemptsCount && !["verified","cancelled"].includes(state)?tr.attempt(value.attemptsCount,value.maxAttempts):"");
       text(notice,formError||error);button.disabled=busy;cancelButton.disabled=busy;node.setAttribute("aria-busy",String(busy));
-      if(value)onStatus(value);
+      if(value && notify)onStatus(value);
     }
     function schedule(){
       clearTimeout(timer);
@@ -157,8 +157,16 @@
     function visible(){if(document.visibilityState!=="hidden")void load();else clearTimeout(timer);}
     document.addEventListener("visibilitychange",visible);
     function dispose(){disposed=true;clearTimeout(timer);controller?.abort();document.removeEventListener("visibilitychange",visible);}
+    function updateLanguage(next){
+      if(disposed)return;
+      language=copy[next]?next:"en";
+      tr=copy[language];ch=challengeCopy[language];
+      fromLabel.firstChild.nodeValue=ch.from;toLabel.firstChild.nodeValue=ch.to;
+      scope.textContent=tr.scope;
+      render(false);
+    }
     render();void load();
-    return {node,name:tr.name,dispose};
+    return {node,get name(){return tr.name;},dispose,updateLanguage};
   }
   root.ParrotCalendarVerification={create};
 })(window);
