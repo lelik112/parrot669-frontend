@@ -15,7 +15,8 @@ const ALLOWED_SERVICES = new Set([
 ]);
 
 const json = (data, status = 200) =>
-  new Response(JSON.stringify(data), {
+  new Response(JSON.stringify(status >= 400 ? {...data, code:data.code || ({400:"INVALID_REQUEST",401:"AUTHENTICATION_REQUIRED",
+    403:"FORBIDDEN",404:"NOT_FOUND",405:"INVALID_REQUEST",409:"CONFLICT",429:"RATE_LIMITED",500:"INTERNAL_ERROR"}[status] || "SERVICE_UNAVAILABLE")} : data), {
     status,
     headers: {
       "Content-Type": "application/json; charset=utf-8",
@@ -23,8 +24,8 @@ const json = (data, status = 200) =>
     },
   });
 
-const clean = (value, max) =>
-  typeof value === "string" ? value.trim().slice(0, max) : "";
+// Contact limits count UTF-16 code units after trim; never silently truncate.
+const clean = (value) => typeof value === "string" ? value.trim() : "";
 
 const escapeHtml = (value) =>
   value.replace(/[&<>"']/g, (c) => ({
@@ -92,6 +93,10 @@ const proxyBackend = async (request, targetPath, qaSecret, apiOrigin) => {
     "Content-Type": response.headers.get("Content-Type") || "application/json; charset=utf-8",
     "Cache-Control": "no-store",
   });
+  for (const name of ["X-Request-ID", "Retry-After"]) {
+    const value = response.headers.get(name);
+    if (value) responseHeaders.set(name, value);
+  }
   const setCookie = response.headers.get("Set-Cookie");
   if (setCookie) responseHeaders.set("Set-Cookie", setCookie);
 
@@ -181,6 +186,8 @@ export default {
           headers: {
             "Content-Type": response.headers.get("Content-Type") || "application/json; charset=utf-8",
             "Cache-Control": "no-store",
+            ...(response.headers.get("X-Request-ID") ? {"X-Request-ID":response.headers.get("X-Request-ID")} : {}),
+            ...(response.headers.get("Retry-After") ? {"Retry-After":response.headers.get("Retry-After")} : {}),
           },
         });
       } catch (error) {
@@ -211,14 +218,16 @@ export default {
         (path === "/profile" && request.method === "PATCH") ||
         (["/geocode/autocomplete", "/geocode/countries"].includes(path) && request.method === "GET") ||
         (path === "/properties" && request.method === "POST") ||
-        (/^\/properties\/[0-9a-f-]+$/i.test(path) && ["PUT", "DELETE"].includes(request.method)) ||
+        (/^\/properties\/[0-9a-f-]+$/i.test(path) && ["PATCH", "DELETE"].includes(request.method)) ||
         (/^\/properties\/[0-9a-f-]+\/listings$/i.test(path) && request.method === "POST") ||
         (/^\/listings\/[0-9a-f-]+$/i.test(path) && ["PUT", "DELETE"].includes(request.method)) ||
         (/^\/properties\/[0-9a-f-]+\/availability$/i.test(path) && ["GET", "POST"].includes(request.method)) ||
         (/^\/availability\/[0-9a-f-]+$/i.test(path) && ["PUT", "DELETE"].includes(request.method)) ||
         (/^\/properties\/[0-9a-f-]+\/unavailability$/i.test(path) && ["GET", "POST"].includes(request.method)) ||
         (/^\/unavailability\/[0-9a-f-]+$/i.test(path) && ["PUT", "DELETE"].includes(request.method)) ||
-        (/^\/properties\/[0-9a-f-]+\/calendars$/i.test(path) && request.method === "POST") ||
+        (/^\/properties\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/public-links$/i.test(path) && request.method === "PUT") ||
+        (/^\/properties\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/calendars$/i.test(path) && request.method === "GET") ||
+        (/^\/calendars\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/activate$/i.test(path) && request.method === "POST") ||
         (/^\/calendars\/[0-9a-f-]+\/sync$/i.test(path) && request.method === "POST") ||
         (/^\/calendars\/[0-9a-f-]+\/verification$/i.test(path) && request.method === "GET") ||
         (/^\/calendars\/[0-9a-f-]+\/verification\/(start|check|cancel)$/i.test(path) && request.method === "POST") ||
@@ -237,7 +246,7 @@ export default {
     }
 
 
-    if (qaOrigin && url.pathname.startsWith("/api/")) return json({ error: "Not found" }, 404);
+    if (url.pathname.startsWith("/api/") && url.pathname !== "/api/contact") return json({ error: "Not found", code:"NOT_FOUND" }, 404);
     if (url.pathname !== "/api/contact") {
       return env.ASSETS.fetch(request);
     }
@@ -253,17 +262,23 @@ export default {
       return json({ ok: false, error: "Invalid JSON" }, 400);
     }
 
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return json({ ok: false, error: "Missing or invalid fields" }, 400);
+    }
+
     // Honeypot: real users never see/fill this field.
     if (body.website) {
       return json({ ok: true });
     }
 
-    const name = clean(body.name, MAX.name);
-    const contact = clean(body.contact, MAX.contact);
-    const service = clean(body.service, MAX.service);
-    const message = clean(body.message, MAX.message);
+    const name = clean(body.name);
+    const contact = clean(body.contact);
+    const service = clean(body.service);
+    const message = clean(body.message);
 
-    if (!name || !contact || !message || !ALLOWED_SERVICES.has(service)) {
+    if (!name || !contact || !message || !ALLOWED_SERVICES.has(service) ||
+        name.length > MAX.name || contact.length > MAX.contact ||
+        service.length > MAX.service || message.length > MAX.message) {
       return json({ ok: false, error: "Missing or invalid fields" }, 400);
     }
 
@@ -303,6 +318,9 @@ export default {
     const replyTo =
       /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact) ? contact : undefined;
 
+    const controller = new AbortController();
+    let timer;
+    let timedOut = false;
     try {
       const email = {
         from: env.RESEND_FROM,
@@ -313,14 +331,24 @@ export default {
       };
       if (replyTo) email.reply_to = replyTo;
 
-      const response = await fetch("https://api.resend.com/emails", {
+      // Match the existing browser HTTP boundary's 15s request convention.
+      // A deadline cannot prove non-delivery; no automatic retry is safe here.
+      const deadline = new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          timedOut = true;
+          controller.abort();
+          reject(new Error("Contact provider deadline"));
+        }, 15000);
+      });
+      const response = await Promise.race([fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${env.RESEND_API_KEY}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify(email),
-      });
+        signal: controller.signal,
+      }), deadline]);
 
       if (!response.ok) {
         console.error("Resend email failed", response.status);
@@ -328,9 +356,11 @@ export default {
       }
 
       return json({ ok: true });
-    } catch (error) {
-      console.error("Email send failed", error?.message);
-      return json({ ok: false, error: "Email delivery failed" }, 500);
+    } catch {
+      console.error(timedOut ? "Email acknowledgement timed out" : "Email outcome is unknown");
+      return json({ ok: false, error: "Email delivery outcome unknown" }, timedOut ? 504 : 502);
+    } finally {
+      clearTimeout(timer);
     }
   },
 };

@@ -15,67 +15,53 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="assets/styles.css" />
+  <link rel="stylesheet" href="assets/styles.css?v=20261018-home-trust" />
 </head>
-<body>
+<body class="home-page">
   <header class="topbar">
-    <a class="brand" href="#top" aria-label="PARROT 669 home">
-      <span class="brand-copy">
-        <strong>PARROT 669</strong>
-        <small data-i18n="brandTag">REAL-WORLD DEALS. SAFER.</small>
-      </span>
-    </a>
+    <a class="brand" href="#top" aria-label="PARROT 669 home"><strong>PARROT 669</strong></a>
 
     <nav class="nav" aria-label="Primary navigation">
-      <a href="#top" data-i18n="navHome">Home</a>
       <a href="#services" data-i18n="navServices">Services</a>
       <a href="#about" data-i18n="navAbout">About</a>
       <a href="#contact" data-i18n="navContact">Contact</a>
-      
     </nav>
 
     <button class="menu-toggle" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="mobile-menu">
-      <span></span><span></span>
+      <span data-i18n="menuLabel">Menu</span>
     </button>
-
-    <div class="lang-switcher" aria-label="Language">
-      <button type="button" data-lang="en" class="active">EN</button>
-      <button type="button" data-lang="es">ES</button>
-      <button type="button" data-lang="ca">CA</button>
-      <button type="button" data-lang="ru">RU</button>
-    </div>
 
     <div class="topbar-actions">
       <a class="housing-entry" href="/search.html">
         <span data-i18n="navHousing">Housing</span><span aria-hidden="true">↗</span>
       </a>
-      <a class="button button-small" href="#contact" data-i18n="contactUs">Contact us</a>
     </div>
   </header>
 
-  <div class="mobile-menu" id="mobile-menu" aria-hidden="true">
+  <div class="mobile-menu" id="mobile-menu" role="dialog" aria-modal="true" aria-label="Menu" aria-hidden="true">
     <nav aria-label="Mobile navigation">
       <a class="mobile-housing-primary" href="/search.html" data-i18n="navHousing">Housing</a>
-      <a href="#top" data-i18n="navHome">Home</a>
       <a href="#services" data-i18n="navServices">Services</a>
       <a href="#about" data-i18n="navAbout">About</a>
       <a href="#contact" data-i18n="navContact">Contact</a>
-      
     </nav>
-    <div class="mobile-product-actions">
-      <a class="button" href="#contact" data-i18n="contactUs">Contact us</a>
+    <div class="lang-switcher mobile-language" aria-label="Language">
+      <button type="button" data-menu-lang="en" class="active">EN</button>
+      <button type="button" data-menu-lang="es">ES</button>
+      <button type="button" data-menu-lang="ca">CA</button>
+      <button type="button" data-menu-lang="ru">RU</button>
     </div>
   </div>
 
-  <main id="top">
+  <main id="top" data-home-order="services-about-housing">
     <section class="hero">
       <div class="hero-grid">
         <div class="hero-copy">
-          <div class="hero-kicker"><span class="status-dot"></span><span data-i18n="heroStatus">Barcelona · Independent local service</span></div>
-          <p class="eyebrow" data-i18n="heroEyebrow">PROPERTY SERVICES IN BARCELONA</p>
-          <h1 data-i18n-html="heroTitle">Find. Check.<br>Move with <span>confidence.</span></h1>
+          <p class="hero-kicker" data-i18n="heroStatus">Barcelona · Independent local service</p>
+          <p class="hero-subject" data-i18n="heroSubject">Local help with property in Barcelona</p>
+          <h1 data-i18n-html="heroTitle">Local help we stand behind.</h1>
           <p class="hero-lead" data-i18n="heroLead">
-            Independent verification, property visits, document checks and local support for tenants, owners and newcomers in Barcelona.
+            We agree the work and price up front, show you the result and take responsibility for our mistakes.
           </p>
           <div class="hero-actions">
             <a class="button" href="#contact">
@@ -84,6 +70,12 @@
             </a>
             <a class="button button-ghost" href="#services" data-i18n="viewServices">View our services</a>
           </div>
+
+          <section class="trust-guarantee trust-guarantee-hero">
+            <h2 data-i18n="guaranteeTitle">Our work guarantee</h2>
+            <p class="trust-guarantee-promise" data-i18n="guaranteePromise">If we make a mistake in our work, we’ll refund you and take the next step free of charge.</p>
+            <p class="trust-guarantee-agreement" data-i18n="guaranteeAgreement">We agree the scope of work, expected result, price and guarantee terms with you before work begins.</p>
+          </section>
 
           <div class="hero-points">
             <div>
@@ -101,14 +93,25 @@
           </div>
         </div>
 
-        <div class="hero-visual" aria-label="Barcelona inspired visual">
-          <div class="city-card city-photo">
-            <div class="photo-shade"></div>
-            <div class="hero-note" data-i18n-html="heroNote">Barcelona<br>is where<br>we start.</div>
-            <a class="photo-credit" href="https://unsplash.com/photos/barcelona-cityscape-with-sagrada-familia-at-sunset-u5DXeHhcQUc" target="_blank" rel="noopener noreferrer">Photo · Salma Abdelnaby / Unsplash</a>
-          </div>
-          <div class="side-note" data-i18n-html="sideNote">REAL PEOPLE.<br>REAL PLACES.<br>SAFER DEALS.</div>
-        </div>
+        <aside class="presence-card" id="local-presence" aria-labelledby="presence-title">
+          <p class="presence-label" data-i18n="presenceLabel">3 EXAMPLES FROM OUR 6 SERVICES</p>
+          <h2 id="presence-title" data-i18n-html="presenceTitle">Practical help.<br>Clearer decisions.</h2>
+          <ol>
+            <li data-i18n="presenceVisit">Property visits</li>
+            <li data-i18n="presenceRental">Rental verification</li>
+            <li data-i18n="presenceDocs">Document checks</li>
+          </ol>
+          <a class="presence-services-link" href="#services">
+            <span data-i18n="viewAllServices">View all 6 services</span>
+            <span aria-hidden="true">↓</span>
+          </a>
+          <p class="presence-note" data-i18n="presenceNote">We agree the scope and price before paid work begins.</p>
+        </aside>
+      </div>
+      <div class="home-facts" aria-label="Company facts">
+        <span data-i18n="point1">Independent and unbiased</span>
+        <span data-i18n="point2">Local presence in Barcelona</span>
+        <span data-i18n="point3">Clear reports and documentation</span>
       </div>
     </section>
 
@@ -119,7 +122,64 @@
       <div><strong data-i18n="factIndependentTitle">Independent</strong><span data-i18n="factIndependent">Local support & verification</span></div>
     </section>
 
-    <section class="brand-feature" id="about">
+    <section class="section home-services" id="services">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow" data-i18n="servicesEyebrow">HOW CAN WE HELP?</p>
+          <h2 data-i18n="servicesTitle">Our services</h2>
+        </div>
+        <div class="services-context">
+          <p data-i18n="servicesRelation">All 6 services — including the 3 examples above.</p>
+          <p data-i18n="servicesIntro">Choose what you need or contact us with a custom request. We’ll find the best next step.</p>
+        </div>
+      </div>
+
+      <div class="service-grid">
+        <article class="service-card" data-service-card="rental">
+          <div class="service-art art-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"></circle><path d="m16 16 4 4"></path></svg></div>
+          <h3 data-i18n="service1Title">Verify a rental</h3>
+          <p data-i18n="service1Text">Check the property, owner and documents before you send a deposit.</p>
+          <a href="#contact" data-service="rental" aria-label="Request rental verification">→</a>
+        </article>
+
+        <article class="service-card" data-service-card="visit">
+          <div class="service-art art-home"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5"></path><path d="M5.5 10.5V20h13v-9.5"></path><path d="M9.5 20v-6h5v6"></path></svg></div>
+          <h3 data-i18n="service2Title">Visit a property for me</h3>
+          <p data-i18n="service2Text">We go to the property, take photos and prepare a clear report.</p>
+          <a href="#contact" data-service="visit" aria-label="Request a property visit">→</a>
+        </article>
+
+        <article class="service-card" data-service-card="documents">
+          <div class="service-art art-doc"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l4 4v14H7z"></path><path d="M14 3v5h4"></path><path d="M10 12h5M10 16h5"></path></svg></div>
+          <h3 data-i18n="service3Title">Check property documents</h3>
+          <p data-i18n="service3Text">Contracts, ownership, registrations and document consistency checks.</p>
+          <a href="#contact" data-service="documents" aria-label="Request document check">→</a>
+        </article>
+
+        <article class="service-card" data-service-card="search">
+          <div class="service-art art-city"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"></path><circle cx="12" cy="10" r="2.5"></circle></svg></div>
+          <h3 data-i18n="service4Title">Help me find a property</h3>
+          <p data-i18n="service4Text">Personalized support in your property search in Barcelona.</p>
+          <a href="#contact" data-service="search" aria-label="Request property search support">→</a>
+        </article>
+
+        <article class="service-card" data-service-card="owner">
+          <div class="service-art art-owner"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.5"></circle><path d="M5 21c.7-4 3.2-6 7-6s6.3 2 7 6"></path></svg></div>
+          <h3 data-i18n="service5Title">I’m a property owner</h3>
+          <p data-i18n="service5Text">Local support, property oversight and help coordinating practical tasks.</p>
+          <a href="#contact" data-service="owner" aria-label="Owner services">→</a>
+        </article>
+
+        <article class="service-card" data-service-card="other">
+          <div class="service-art art-more"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.3"></circle><circle cx="12" cy="12" r="1.3"></circle><circle cx="19" cy="12" r="1.3"></circle></svg></div>
+          <h3 data-i18n="service6Title">Something else</h3>
+          <p data-i18n="service6Text">Have a different request? Contact us and we’ll see what we can do.</p>
+          <a href="#contact" data-service="other" aria-label="Custom request">→</a>
+        </article>
+      </div>
+    </section>
+
+    <section class="brand-feature" id="about" aria-labelledby="about-title">
       <div class="brand-feature-art">
         <svg class="brand-feature-bird" viewBox="135 50 360 530" role="img" aria-label="Stylized PARROT 669 parrot emblem">
           <defs>
@@ -138,8 +198,8 @@
         </svg>
       </div>
       <div class="brand-feature-copy">
-        <p class="eyebrow dark" data-i18n="visionEyebrow">ABOUT PARROT 669</p>
-        <h2 data-i18n-html="visionTitle">Local presence.<br>A bigger ambition.</h2>
+        <h2 id="about-title" data-i18n="aboutTitle">About PARROT 669</h2>
+        <p class="brand-feature-kicker" data-i18n-html="visionTitle">Local presence.<br>A bigger ambition.</p>
         <p class="brand-feature-lead" data-i18n="visionText">
           PARROT 669 S.L. is a Barcelona-based company established in 2023. We started in real estate and are building practical services around verification, local presence and trust in real-world transactions.
         </p>
@@ -149,63 +209,20 @@
           <span data-i18n="aboutFact3">Barcelona first. Wider trust infrastructure later.</span>
         </div>
         <p class="vision-quote" data-i18n="visionQuote">Trust is infrastructure.</p>
+        <a class="button brand-feature-cta" href="#contact">
+          <span data-i18n="tellUs">Tell us what you need</span>
+          <span aria-hidden="true">→</span>
+        </a>
       </div>
     </section>
 
-    <section class="section section-light" id="services">
-      <div class="section-heading">
-        <div>
-          <p class="eyebrow dark" data-i18n="servicesEyebrow">HOW CAN WE HELP?</p>
-          <h2 data-i18n="servicesTitle">Our services</h2>
-        </div>
-        <p data-i18n="servicesIntro">
-          Choose what you need or contact us with a custom request. We’ll find the best next step.
-        </p>
+    <section class="housing-callout" aria-labelledby="housing-title">
+      <div>
+        <p class="presence-label" data-i18n="housingLabel">HOUSING ON PARROT</p>
+        <h2 id="housing-title" data-i18n="housingTitle">Looking for a place?</h2>
+        <p data-i18n="housingText">Explore housing separately from our local services.</p>
       </div>
-
-      <div class="service-grid">
-        <article class="service-card" data-service-card="rental" tabindex="0" role="button" aria-label="Request rental verification">
-          <div class="service-art art-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"></circle><path d="m16 16 4 4"></path></svg></div>
-          <h3 data-i18n="service1Title">Verify a rental</h3>
-          <p data-i18n="service1Text">Check the property, owner and documents before you send a deposit.</p>
-          <a href="#contact" data-service="rental" aria-label="Request rental verification">→</a>
-        </article>
-
-        <article class="service-card" data-service-card="visit" tabindex="0" role="button" aria-label="Request a property visit">
-          <div class="service-art art-home"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5"></path><path d="M5.5 10.5V20h13v-9.5"></path><path d="M9.5 20v-6h5v6"></path></svg></div>
-          <h3 data-i18n="service2Title">Visit a property for me</h3>
-          <p data-i18n="service2Text">We go to the property, take photos and prepare a clear report.</p>
-          <a href="#contact" data-service="visit" aria-label="Request a property visit">→</a>
-        </article>
-
-        <article class="service-card" data-service-card="documents" tabindex="0" role="button" aria-label="Request document check">
-          <div class="service-art art-doc"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l4 4v14H7z"></path><path d="M14 3v5h4"></path><path d="M10 12h5M10 16h5"></path></svg></div>
-          <h3 data-i18n="service3Title">Check property documents</h3>
-          <p data-i18n="service3Text">Contracts, ownership, registrations and document consistency checks.</p>
-          <a href="#contact" data-service="documents" aria-label="Request document check">→</a>
-        </article>
-
-        <article class="service-card" data-service-card="search" tabindex="0" role="button" aria-label="Request property search support">
-          <div class="service-art art-city"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"></path><circle cx="12" cy="10" r="2.5"></circle></svg></div>
-          <h3 data-i18n="service4Title">Help me find a property</h3>
-          <p data-i18n="service4Text">Personalized support in your property search in Barcelona.</p>
-          <a href="#contact" data-service="search" aria-label="Request property search support">→</a>
-        </article>
-
-        <article class="service-card" data-service-card="owner" tabindex="0" role="button" aria-label="Owner services">
-          <div class="service-art art-owner"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.5"></circle><path d="M5 21c.7-4 3.2-6 7-6s6.3 2 7 6"></path></svg></div>
-          <h3 data-i18n="service5Title">I’m a property owner</h3>
-          <p data-i18n="service5Text">Local support, property oversight and help coordinating practical tasks.</p>
-          <a href="#contact" data-service="owner" aria-label="Owner services">→</a>
-        </article>
-
-        <article class="service-card" data-service-card="other" tabindex="0" role="button" aria-label="Custom request">
-          <div class="service-art art-more"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.3"></circle><circle cx="12" cy="12" r="1.3"></circle><circle cx="19" cy="12" r="1.3"></circle></svg></div>
-          <h3 data-i18n="service6Title">Something else</h3>
-          <p data-i18n="service6Text">Have a different request? Contact us and we’ll see what we can do.</p>
-          <a href="#contact" data-service="other" aria-label="Custom request">→</a>
-        </article>
-      </div>
+      <a class="housing-cta" href="/search.html"><span data-i18n="housingCta">Explore housing</span><span aria-hidden="true">↗</span></a>
     </section>
 
     <section class="section process">
@@ -264,6 +281,11 @@
         <p data-i18n="contactText">
           Send us the details. We’ll reply with the next step, scope and price before any paid work begins.
         </p>
+        <section class="trust-guarantee trust-guarantee-contact">
+          <h3 data-i18n="guaranteeTitle">Our work guarantee</h3>
+          <p class="trust-guarantee-promise" data-i18n="guaranteePromise">If we make a mistake in our work, we’ll refund you and take the next step free of charge.</p>
+          <p class="trust-guarantee-agreement" data-i18n="guaranteeAgreement">We agree the scope of work, expected result, price and guarantee terms with you before work begins.</p>
+        </section>
         <div class="contact-note">
           <strong>PARROT 669 S.L.</strong>
           <span>Barcelona, Spain</span>
@@ -323,7 +345,7 @@
 
   <footer class="site-footer">
     <div class="footer-brand">
-      <div><strong>PARROT 669</strong><span data-i18n="footerNote">Barcelona is where we start.</span></div>
+      <div><strong>PARROT 669 S.L.</strong><span>Barcelona</span></div>
     </div>
     <nav class="footer-nav" aria-label="Footer navigation">
       <a href="#services" data-i18n="navServices">Services</a>
@@ -331,10 +353,17 @@
       <a href="#contact" data-i18n="navContact">Contact</a>
       <a href="/host.html" data-i18n="navHost">Host console</a>
     </nav>
-    <div class="footer-meta">© <span id="year"></span> PARROT 669 S.L. · Barcelona</div>
+    <div class="footer-meta">
+      <div class="lang-switcher" aria-label="Language">
+        <button type="button" data-lang="en" class="active">EN</button>
+        <button type="button" data-lang="es">ES</button>
+        <button type="button" data-lang="ca">CA</button>
+        <button type="button" data-lang="ru">RU</button>
+      </div>
+      <span>© <span id="year"></span></span>
+    </div>
   </footer>
 
-  <script src="assets/lead-form.js?v=20261003-state-machine"></script>
-  <script src="assets/script.js"></script>
+  <script type="module" src="/assets/entry-home.js"></script>
 </body>
 </html>

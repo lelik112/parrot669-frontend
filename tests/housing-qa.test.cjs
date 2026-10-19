@@ -11,6 +11,7 @@ test('BUG-024 contact route preselects a localized, non-identifying Airbnb confl
   for(const [language,expected] of [['en',/already connected to another account/],['es',/conectado a otra cuenta/],['ca',/connectat a un altre compte/],['ru',/привязано к другому аккаунту/]]){
     const dom=new JSDOM(read('index.html'),{url:'https://parrot669.com/?contact=airbnb-listing-conflict#contact',runScripts:'outside-only'});t.after(()=>dom.window.close());
     const w=dom.window;w.localStorage.setItem('parrot669-language',language);w.fetch=async()=>({ok:true,json:async()=>[]});
+    require('./helpers/core.cjs').installCore(w);
     w.eval(read('assets/lead-form.js'));
     w.eval(read('assets/script.js'));
     const form=w.document.getElementById('lead-form');
@@ -23,6 +24,7 @@ async function searchApp(t,search=()=>[item]){
   const dom=new JSDOM(read('search.html'),{url:'https://parrot669.com/search',runScripts:'outside-only'});t.after(()=>dom.window.close());
   const w=dom.window,calls=[];w.localStorage.setItem('parrot669-language','ru');
   w.fetch=async url=>{calls.push(String(url));return {ok:true,json:async()=>String(url).includes('/locations/countries')?[{code:'ES',name:'Spain'}]:String(url).includes('/locations/cities')?[{name:'Barcelona'}]:search(url)}};
+  require('./helpers/core.cjs').installCore(w);
   w.eval(read('assets/search.js'));await settle();
   const form=w.document.getElementById('availability-form');form.elements.country.value='ES';form.elements.country.dispatchEvent(new w.Event('change'));await settle();
   form.elements.from.value='2026-10-01';form.elements.to.value='2026-10-08';
@@ -61,6 +63,7 @@ async function recoveryApp(t,{hash='',handler=()=>({status:202}),language='ru'}=
   const dom=new JSDOM(read('recover.html'),{url:'https://parrot669.com/recover.html'+hash,runScripts:'outside-only'});t.after(()=>dom.window.close());
   const w=dom.window,calls=[];w.localStorage.setItem('parrot669-language',language);
   w.fetch=async (url,init)=>{const request={url,body:JSON.parse(init.body)};calls.push(request);const result=await handler(request);return {ok:result.status<400,status:result.status,json:async()=>result.body||{}}};
+  require('./helpers/core.cjs').installCore(w);
   w.eval(read('assets/recover.js'));return {w,calls,$:id=>w.document.getElementById(id),submit:async id=>{w.document.getElementById(id).dispatchEvent(new w.Event('submit',{cancelable:true}));await settle()}};
 }
 test('recovery request gives generic localized guidance and preserves form after a network failure',async t=>{
@@ -78,6 +81,6 @@ test('reset secret leaves the URL, is never persisted, mismatched passwords do n
 test('expired reset link offers a fresh request and double submit is blocked',async t=>{
   let finish;const a=await recoveryApp(t,{hash:'#token='+'y'.repeat(43),handler:()=>new Promise(resolve=>finish=resolve)});const form=a.$('recovery-confirm');
   form.elements.password.value=form.elements.repeat.value='new-test-password';await a.submit('recovery-confirm');await a.submit('recovery-confirm');assert.equal(a.calls.length,1);
-  finish({status:400,body:{error:'reset token is invalid or expired'}});await settle();assert.equal(a.$('recovery-again').hidden,false);assert.match(a.$('recovery-status').textContent,/устарела/);
+  finish({status:400,body:{error:'reset token is invalid or expired',code:'INVALID_RESET_TOKEN'}});await settle();assert.equal(a.$('recovery-again').hidden,false);assert.match(a.$('recovery-status').textContent,/устарела/);
   a.$('recovery-again').click();assert.equal(a.$('recovery-request').hidden,false);assert.equal(form.hidden,true);
 });

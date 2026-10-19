@@ -10,6 +10,8 @@
   const controls=[...form.querySelectorAll("input,select,textarea")];
   const visibleControls=controls.filter(control=>control.name!=="website");
   const serviceKeys={rental:"optionRental",visit:"optionVisit",documents:"optionDocs",search:"optionSearch",owner:"optionOwner",other:"optionOther"};
+  // Match Contact's trim-only UTF-16 limits without silently truncating a draft.
+  const limits={name:120,contact:200,service:80,message:5000};
   const messages={
     en:{initial:"We’ll use these details only to respond to your request.",submit:"Send request",sending:"Sending…",success:"Your request was accepted. We’ll reply with the next step; this is not a guarantee that a person has read it yet.",error:"The request was not accepted. Your draft is preserved; review it and try again.",uncertain:"We could not confirm whether the request was accepted. It may have arrived. Check before sending it again.",retry:"Try again",sendAgain:"Send again",receiptTitle:"Request received",summaryName:"Name",summaryContact:"Contact",summaryService:"Service",summaryMessage:"Message",newRequest:"Start a new request"},
     es:{initial:"Usaremos estos datos únicamente para responder a tu solicitud.",submit:"Enviar solicitud",sending:"Enviando…",success:"Tu solicitud ha sido aceptada. Responderemos con el siguiente paso; esto no garantiza que una persona ya la haya leído.",error:"La solicitud no fue aceptada. Tu borrador se conserva; revísalo e inténtalo de nuevo.",uncertain:"No pudimos confirmar si la solicitud fue aceptada. Puede haber llegado. Compruébalo antes de volver a enviarla.",retry:"Intentar de nuevo",sendAgain:"Enviar de nuevo",receiptTitle:"Solicitud recibida",summaryName:"Nombre",summaryContact:"Contacto",summaryService:"Servicio",summaryMessage:"Mensaje",newRequest:"Crear otra solicitud"},
@@ -28,13 +30,19 @@
   const language=()=>messages[document.documentElement.lang] ? document.documentElement.lang : "en";
   const copy=()=>messages[language()];
   const snapshot=()=>Object.freeze(Object.fromEntries(new FormData(form).entries()));
+  const normalized=(draft)=>Object.freeze({...draft,...Object.fromEntries(
+    Object.keys(limits).map(key=>[key,typeof draft[key]==="string"?draft[key].trim():""])
+  )});
+  const valid=(value)=>Object.entries(limits).every(([key,max])=>value[key]&&value[key].length<=max)
+    &&Object.hasOwn(serviceKeys,value.service);
   const serviceLabel=(value)=>{
-    const option=form.querySelector(`select[name="service"] option[value="${value}"]`);
+    const option=[...form.elements.service.options].find(option=>option.value===value);
     return option?.textContent || value;
   };
   const setText=(selector,value)=>{const node=receipt.querySelector(selector);if(node)node.textContent=value||"";};
 
   function focusReceipt(){
+    document.documentElement.scrollTop=window.scrollY;
     receipt.focus({preventScroll:true});
     const title=receipt.querySelector("h3");
     if(!title)return;
@@ -42,7 +50,21 @@
     const safeTop=Math.max(0,headerBottom)+16;
     const rect=title.getBoundingClientRect();
     if(rect.top<safeTop||rect.bottom>window.innerHeight-16){
-      window.scrollBy({top:rect.top-safeTop,left:0,behavior:"auto"});
+      window.scrollTo({top:Math.max(0,window.scrollY+rect.top-safeTop),left:0,behavior:"instant"});
+    }
+  }
+
+  function focusStatus(){
+    // Cancel in-flight focus scrolling before enabling a physical retry. With
+    // root smooth scrolling, a moving button can lose pointerup/click to a
+    // different element, so no native submit occurs at all.
+    document.documentElement.scrollTop=window.scrollY;
+    status.focus({preventScroll:true});
+    const headerBottom=document.querySelector(".topbar")?.getBoundingClientRect().bottom||0;
+    const safeTop=Math.max(0,headerBottom)+16;
+    const rect=status.getBoundingClientRect();
+    if(rect.top<safeTop||rect.bottom>window.innerHeight-16){
+      window.scrollTo({top:Math.max(0,window.scrollY+rect.top-safeTop),left:0,behavior:"instant"});
     }
   }
 
@@ -78,7 +100,7 @@
     }
     if(focus){
       if(state.kind==="success") focusReceipt();
-      else status.focus();
+      else focusStatus();
     }
   }
 
@@ -91,48 +113,62 @@
   }
   form.elements.message.addEventListener("input",()=>{hasContextDraft=false;});
 
+  async function send(submitted){
+    try{
+      // Preserve PM138's single HTTP/deadline boundary and PM141's strict ACK.
+      await window.ParrotCore.http("/api/contact",{
+        method:"POST",body:JSON.stringify(submitted),validate:ack=>ack?.ok===true
+      });
+      return "success";
+    }catch(error){
+      if(error.kind==="http" && error.status>=400 && error.status<500)return "error";
+      throw error;
+    }
+  }
+
   form.addEventListener("submit",async event=>{
     event.preventDefault();
     if(state.kind==="submitting"||state.kind==="success")return;
     if(!form.reportValidity())return;
+    const draft=snapshot(),submitted=normalized(draft);
+    if(!valid(submitted)){
+      state={kind:"error",snapshot:submitted,draft};
+      render({focus:true});
+      return;
+    }
     const attempt=++requestSequence;
-    const submitted=snapshot();
-    state={kind:"submitting",snapshot:submitted};
+    state={kind:"submitting",snapshot:submitted,draft};
     render();
     try{
-      const response=await fetch("/api/contact",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(submitted)});
+      const kind=await send(submitted);
       if(attempt!==requestSequence)return;
-      if(!response.ok){
-        const kind=response.status>=400&&response.status<500 ? "error" : "uncertain";
-        state={kind,snapshot:submitted};render({focus:true});return;
-      }
-      state={kind:"success",snapshot:submitted};
+      state={kind,snapshot:submitted,draft};
       render({focus:true});
     }catch(error){
       if(attempt!==requestSequence)return;
-      console.error("Contact form outcome is unknown:",error);
-      state={kind:"uncertain",snapshot:submitted};
+      console.error("Contact form outcome is unknown");
+      state={kind:"uncertain",snapshot:submitted,draft};
       render({focus:true});
     }
   });
 
   newRequest.addEventListener("click",()=>{
     requestSequence+=1;
+    hasContextDraft=false;
     form.reset();
     state={kind:"editing",snapshot:null};
     render();
     form.elements.name.focus();
   });
 
-  document.querySelectorAll("[data-service],[data-service-card]").forEach(node=>{
+  document.querySelectorAll("[data-service]").forEach(node=>{
     const activate=()=>{
       if(state.kind==="submitting"||state.kind==="success")return;
       const value=node.dataset.service||node.dataset.serviceCard;
       if(serviceKeys[value])form.elements.service.value=value;
       document.getElementById("contact")?.scrollIntoView({behavior:"smooth"});
     };
-    node.addEventListener("click",event=>{if(event.target.closest("a")&&node.dataset.serviceCard)return;activate();});
-    if(node.dataset.serviceCard)node.addEventListener("keydown",event=>{if(event.key==="Enter"||event.key===" "){event.preventDefault();activate();}});
+    node.addEventListener("click",activate);
   });
   document.addEventListener("parrot:language",()=>{
     if(state.kind==="editing"&&hasContextDraft)form.elements.message.value=contextMessages[language()]||contextMessages.en;

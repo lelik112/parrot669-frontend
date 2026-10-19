@@ -1,6 +1,7 @@
 {
   "name": "parrot669-frontend",
   "private": true,
+  "type": "module",
   "scripts": {
     "test": "node --test tests/*.test.cjs",
     "test:e2e": "playwright test",
