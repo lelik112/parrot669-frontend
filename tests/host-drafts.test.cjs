@@ -10,7 +10,7 @@ const source = fs.readFileSync(path.join(root, 'public/assets/host.js'), 'utf8')
 const html = fs.readFileSync(path.join(root, 'public/host.html'), 'utf8');
 const deferred = () => {let resolve, reject; const promise = new Promise((a, b) => {resolve = a; reject = b;}); return {promise, resolve, reject};};
 const user = (id = 'account-a', name = 'Owner') => ({accountId:id, email:'owner@example.test', username:'owner', profile:{id:'profile-' + id, displayName:name}});
-const property = (id, title) => ({id, title, city:'Barcelona', country:'Spain', countryCode:'ES', accommodationType:'entire_place', bedrooms:2, sleeps:4, minStayDays:1, cleaningFeeCents:null, listings:[], availability:[], unavailability:[]});
+const property = (id, title) => ({id, title, city:'Barcelona', country:'Spain', countryCode:'ES', accommodationType:'entire_place', bedrooms:2, sleeps:4, minStayDays:1, cleaningFeeCents:null, createdAt:'2026-10-01T00:00:00Z', address:null, listings:[], availability:[], unavailability:[]});
 const tick = async () => {for (let i = 0; i < 12; i++) await new Promise(resolve => setImmediate(resolve));};
 
 async function setup({verifiedCalendar = false} = {}) {
@@ -55,7 +55,7 @@ test('real Host keeps B and profile nodes, values, focus/caret and dirty state a
   const a = h.form('property-a'), b = h.form('property-b'), input = b.elements.title;
   const profile = h.w.document.getElementById('host-profile-form').elements.displayName;
   h.edit(input, 'B draft'); h.edit(profile, 'Profile draft'); input.focus(); input.setSelectionRange(2, 5);
-  h.routes.set('PUT /properties/property-a', init => ({...property('property-a', 'Saved A'), ...JSON.parse(init.body)}));
+  h.routes.set('PATCH /properties/property-a', init => ({...property('property-a', 'Saved A'), ...JSON.parse(init.body)}));
   h.edit(a.elements.title, 'Saved A'); h.submit(a); await tick();
   assert.equal(h.form('property-b'), b); assert.equal(input.value, 'B draft'); assert.equal(profile.value, 'Profile draft');
   await h.w.hostTest.syncDashboard();
@@ -80,7 +80,7 @@ test('502 refresh retains known cards and dirty profile/property fields', async 
 test('older property save completion updates baseline but cannot clear later input', async t => {
   const h = await setup(); t.after(h.close);
   const pending = deferred(), a = h.form('property-a');
-  h.routes.set('PUT /properties/property-a', () => pending.promise);
+  h.routes.set('PATCH /properties/property-a', () => pending.promise);
   h.edit(a.elements.title, 'Submitted'); h.submit(a); await tick();
   h.edit(a.elements.title, 'Later input');
   pending.resolve(property('property-a', 'Submitted')); await tick();
@@ -103,7 +103,7 @@ test('older profile completion and same-account notification preserve later draf
 test('identity change clears private drafts and stale save cannot alter the new account', async t => {
   const h = await setup(); t.after(h.close);
   const pending = deferred(), a = h.form('property-a');
-  h.routes.set('PUT /properties/property-a', () => pending.promise);
+  h.routes.set('PATCH /properties/property-a', () => pending.promise);
   h.edit(a.elements.title, 'Private old input'); h.submit(a); await tick();
   h.setProperties([property('property-c', 'New account property')]);
   h.routes.set('/dashboard', () => ({profile:user('account-b', 'New owner').profile, properties:[property('property-c', 'New account property')]}));
@@ -126,21 +126,70 @@ test('unknown period create keeps draft and is never automatically resent by ref
   assert.equal(h.calls.filter(c => c.route === '/properties/property-a/availability' && c.method === 'POST').length, 1);
 });
 
-test('settings and stay writes serialize per property, retain sibling drafts and keep current full PUT/null semantics', async t => {
+test('settings and stay writes serialize per property, retain sibling drafts and send only dirty PATCH fields', async t => {
   const h = await setup(); t.after(h.close);
   const pending = deferred(), a = h.form('property-a');
   const stay = h.w.document.querySelector('[data-property-id="property-a"] .host-stay-settings');
-  h.routes.set('PUT /properties/property-a', () => pending.promise);
+  h.routes.set('PATCH /properties/property-a', () => pending.promise);
   h.edit(stay.elements.minStayDays, '7'); h.edit(stay.elements.cleaningFee, '');
   h.edit(a.elements.title, 'Saved settings'); h.submit(a); await tick(); h.submit(stay); await tick();
-  const writes = h.calls.filter(c => c.route === '/properties/property-a' && c.method === 'PUT');
+  const writes = h.calls.filter(c => c.route === '/properties/property-a' && c.method === 'PATCH');
   assert.equal(writes.length, 1);
-  assert.deepEqual(writes[0].body, {title:'Saved settings', accommodationType:'entire_place', bedrooms:2, sleeps:4, minStayDays:1, cleaningFeeCents:null});
+  assert.deepEqual(writes[0].body, {title:'Saved settings'});
   pending.resolve(property('property-a', 'Saved settings')); await tick();
   assert.equal(stay.elements.minStayDays.value, '7'); assert.equal(stay.elements.cleaningFee.value, '');
 });
 
-test('period save 204 followed by502 retains known periods, accepted local dates and later draft', async t => {
+test('PM144 property PATCH captures only dirty fields, preserves title whitespace and clears only an edited fee', async t => {
+  const h=await setup();t.after(h.close);
+  const form=h.form('property-a');
+  h.routes.set('PATCH /properties/property-a',init=>({...property('property-a','A'),...JSON.parse(init.body)}));
+  h.edit(form.elements.title,'  Exact title 🏠  ');h.submit(form);await tick();
+  const first=h.calls.filter(c=>c.method==='PATCH' && c.route==='/properties/property-a');
+  assert.equal(first.length,1);assert.deepEqual(first[0].body,{title:'  Exact title 🏠  '});
+  assert.equal(h.w.hostTest.getState().properties[0].title,'  Exact title 🏠  ');
+  const stay=h.w.document.querySelector('[data-property-id="property-a"] .host-stay-settings');
+  h.edit(stay.elements.cleaningFee,'7.50');h.submit(stay);await tick();
+  assert.deepEqual(h.calls.filter(c=>c.method==='PATCH').at(-1).body,{cleaningFeeCents:750});
+  h.edit(stay.elements.cleaningFee,'');h.submit(stay);await tick();
+  assert.deepEqual(h.calls.filter(c=>c.method==='PATCH').at(-1).body,{cleaningFeeCents:null});
+  assert.equal(h.calls.some(c=>c.method==='PUT' && c.route==='/properties/property-a'),false);
+});
+
+for(const [name,mutate] of [
+  ['wrong identity',v=>({...v,id:'property-b'})],['missing required field',v=>{delete v.bedrooms;return v;}],
+  ['missing fee',v=>{delete v.cleaningFeeCents;return v;}],['invalid fee',v=>({...v,cleaningFeeCents:-1})],
+  ['invalid accommodation',v=>({...v,accommodationType:'invented'})],['missing address',v=>{delete v.address;return v;}],
+  ['partial address',v=>({...v,address:{address:'incomplete'}})],
+  ['invalid timestamp',v=>({...v,createdAt:'not-a-date'})]
+])test(`PM144 ${name} property ACK retains the draft, baseline and unknown outcome without retry`,async t=>{
+  const h=await setup();t.after(h.close);const form=h.form('property-a');
+  h.routes.set('PATCH /properties/property-a',()=>mutate(property('property-a','Submitted')));
+  h.edit(form.elements.title,'Submitted');h.submit(form);await tick();
+  assert.equal(h.w.hostTest.getState().properties[0].title,'A');
+  assert.equal(form.elements.title.value,'Submitted');assert.equal(form.dataset.hostOperation,'unknown');
+  assert.equal(h.w.hostTest.getDirty(),true);assert.equal(h.calls.filter(c=>c.method==='PATCH').length,1);
+});
+
+for(const [name,mutate] of [
+  ['wrong period identity',v=>({...v,id:'period-other'})],['wrong property',v=>({...v,propertyId:'property-b'})],
+  ['flat legacy ACK',v=>({...v,period:undefined,from:'2026-11-10',to:'2026-11-13'})],
+  ['zero range',v=>({...v,period:{from:'2026-11-10',to:'2026-11-10'}})],
+  ['invalid date',v=>({...v,period:{from:'2026-02-30',to:'2026-03-04'}})],
+  ['missing price',v=>{delete v.nightlyPriceCents;return v;}],['invalid price',v=>({...v,nightlyPriceCents:0})]
+])test(`PM144 ${name} availability ACK cannot replace the saved row or clear a draft`,async t=>{
+  const h=await setup();t.after(h.close);
+  h.setProperties([{...property('property-a','A'),availability:[{id:'period-a',from:'2026-11-10',to:'2026-11-13',nightlyPriceCents:null}]}]);
+  await h.w.hostTest.syncDashboard();const form=h.w.document.querySelector('.host-period');
+  h.routes.set('PUT /availability/period-a',()=>mutate({id:'period-a',propertyId:'property-a',
+    period:{from:'2026-11-11',to:'2026-11-13'},nightlyPriceCents:null,createdAt:'2026-10-01T00:00:00Z'}));
+  h.edit(form.elements.from,'2026-11-11');h.submit(form);await tick();
+  assert.equal(form.dataset.hostOperation,'unknown');assert.equal(form.elements.from.value,'2026-11-11');
+  assert.equal(h.w.hostTest.getState().properties[0].availability[0].from,'2026-11-10');
+  assert.equal(h.calls.filter(c=>c.route==='/availability/period-a').length,1);
+});
+
+test('period canonical200 followed by502 retains known periods, accepted local dates and later draft', async t => {
   const h = await setup(); t.after(h.close);
   h.setProperties([{...property('property-a', 'A'), availability:[{id:'period-a', from:'2026-11-10', to:'2026-11-13', nightlyPriceCents:10000}]}]);
   await h.w.hostTest.syncDashboard();
@@ -148,7 +197,7 @@ test('period save 204 followed by502 retains known periods, accepted local dates
   h.routes.set('PUT /availability/period-a', () => pending.promise);
   h.routes.set('/properties/property-a/availability', () => new Response('{"error":"refresh failed"}', {status:502}));
   h.edit(form.elements.from, '2026-11-11'); h.submit(form); await tick();
-  h.edit(form.elements.nightlyPrice, '175'); pending.resolve(new Response(null, {status:204})); await tick();
+  h.edit(form.elements.nightlyPrice, '175'); pending.resolve({id:'period-a',propertyId:'property-a',period:{from:'2026-11-11',to:'2026-11-13'},nightlyPriceCents:10000,createdAt:'2026-10-01T00:00:00Z'}); await tick();
   assert.equal(h.w.document.querySelector('.host-availability-panel .host-period'), form);
   assert.equal(form.elements.from.value, '2026-11-11'); assert.equal(form.elements.to.value, '2026-11-12');
   assert.equal(form.elements.nightlyPrice.value, '175'); assert.equal(form.dataset.hostOperation, 'saved_refresh_failed');
@@ -159,7 +208,7 @@ test('period save 204 followed by502 retains known periods, accepted local dates
 test('same-account removed resource ignores an earlier write even when an id is subsequently reused', async t => {
   const h = await setup(); t.after(h.close);
   const pending = deferred(), a = h.form('property-a');
-  h.routes.set('PUT /properties/property-a', () => pending.promise);
+  h.routes.set('PATCH /properties/property-a', () => pending.promise);
   h.edit(a.elements.title, 'Old pending'); h.submit(a); await tick();
   h.setProperties([]); await h.w.hostTest.syncDashboard();
   h.setProperties([property('property-a', 'Recreated')]); await h.w.hostTest.syncDashboard();
@@ -212,7 +261,7 @@ test('dashboard read started before an acknowledged write cannot roll back that 
   const h=await setup();t.after(h.close);
   const pending=deferred();h.routes.set('/dashboard',()=>pending.promise);
   const refresh=h.w.hostTest.syncDashboard();await tick();
-  h.routes.set('PUT /properties/property-a',()=>property('property-a','Acknowledged'));
+  h.routes.set('PATCH /properties/property-a',()=>property('property-a','Acknowledged'));
   const form=h.form('property-a');h.edit(form.elements.title,'Acknowledged');h.submit(form);await tick();
   pending.resolve({profile:user().profile,properties:[property('property-a','Old read'),property('property-b','B')]});
   await refresh;

@@ -9,7 +9,7 @@ test('Host retains B/profile drafts and physical focus/caret through save A, fai
   const calendar='33333333-3333-4333-8333-333333333333';
   let failRefresh=false,puts=0,dashboards=0,verifications=0;
   const properties=[a,b].map((id,index)=>({id,title:index?'B':'A',city:'Barcelona',country:'Spain',countryCode:'ES',
-    accommodationType:'entire_place',bedrooms:2,sleeps:4,minStayDays:1,cleaningFeeCents:null,
+    accommodationType:'entire_place',bedrooms:2,sleeps:4,minStayDays:1,cleaningFeeCents:null,createdAt:'2026-10-01T00:00:00Z',address:null,
     listings:index?[]:[{id:'listing-a',url:'https://www.airbnb.com/rooms/123'}],availability:[],unavailability:[]}));
   await page.route('**/api/host/dashboard',route=>{
     dashboards++;
@@ -17,7 +17,7 @@ test('Host retains B/profile drafts and physical focus/caret through save A, fai
       :route.fulfill({json:{profile:{displayName:'Owner'},properties}});
   });
   await page.route(`**/api/host/properties/${a}`,route=>{
-    expect(route.request().method()).toBe('PUT');puts++;
+    expect(route.request().method()).toBe('PATCH');puts++;
     Object.assign(properties[0],route.request().postDataJSON());
     return route.fulfill({json:properties[0]});
   });

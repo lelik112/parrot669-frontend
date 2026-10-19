@@ -323,7 +323,7 @@ function beginHostSave(form, property = null){
   const draft = captureHostDraft(form);
   if (draft.operation || (property && hostPropertyWrites.has(property.id))) return null;
   const operation = {form, draft, values:{...draft.values}, versions:{...draft.versions},
-    addressVersion:draft.addressVersion || 0, addressValues:hostAddressSnapshot(form),
+    dirty:new Set(draft.dirty), addressVersion:draft.addressVersion || 0, addressValues:hostAddressSnapshot(form),
     epoch:hostCore.session.epoch, account:accountId, property};
   draft.operation = operation;
   form.dataset.hostOperation = "saving";
@@ -570,7 +570,7 @@ async function api(path, options = {}){
     // Explicit producer contracts; a 204 from any other operation is a protocol error.
     const method = options.method || "GET";
     const empty = method === "DELETE" && /^\/(properties|listings|calendars|availability|unavailability)\/[^/]+$/.test(path)
-      || method === "PUT" && /^\/(availability|calendars)\/[^/]+$/.test(path)
+      || method === "PUT" && /^\/calendars\/[^/]+$/.test(path)
       || method === "PUT" && /^\/properties\/[^/]+\/public-links$/.test(path)
       || method === "POST" && /^\/calendars\/[^/]+\/(sync|activate)$/.test(path);
     epoch = hostCore.session.epoch;
@@ -1110,50 +1110,75 @@ function centsToEuros(value){
   return (Number(value)/100).toFixed(2).replace(/\.00$/,"");
 }
 
+function housingAckError(){
+  return Object.assign(new Error("Invalid housing acknowledgement"), {kind:"protocol"});
+}
+
+function propertyAck(value, id){
+  const integer=(field,min,max)=>Number.isInteger(value?.[field]) && value[field]>=min && value[field]<=max;
+  const address=a=>a===null || a && ["address","countryCode","country","city","placeId"].every(key=>typeof a[key]==="string")
+    && Number.isFinite(a.latitude) && a.latitude>=-90 && a.latitude<=90
+    && Number.isFinite(a.longitude) && a.longitude>=-180 && a.longitude<=180
+    && ["street","houseNumber","resultType"].every(key=>a[key]===null || typeof a[key]==="string");
+  if (!value || value.id!==id || !["title","city","country","countryCode","createdAt"].every(key=>typeof value[key]==="string")
+    || !["entire_place","private_room"].includes(value.accommodationType)
+    || !integer("bedrooms",1,20) || !integer("sleeps",1,40) || !integer("minStayDays",1,365)
+    || !(value.cleaningFeeCents===null || Number.isSafeInteger(value.cleaningFeeCents) && value.cleaningFeeCents>=0 && value.cleaningFeeCents<=10000000)
+    || !Object.hasOwn(value,"address") || !address(value.address)
+    || !Number.isFinite(Date.parse(value.createdAt))) throw housingAckError();
+  return value;
+}
+
+function availabilityAck(value, id, propertyId){
+  const iso=value=>typeof value==="string" && /^\d{4}-\d{2}-\d{2}$/.test(value)
+    && Number.isFinite(Date.parse(value+"T00:00:00Z")) && new Date(value+"T00:00:00Z").toISOString().slice(0,10)===value;
+  if (!value || value.id!==id || value.propertyId!==propertyId || !iso(value.period?.from) || !iso(value.period?.to)
+    || value.period.to<=value.period.from || typeof value.createdAt!=="string" || !Number.isFinite(Date.parse(value.createdAt))
+    || !(value.nightlyPriceCents===null || Number.isSafeInteger(value.nightlyPriceCents)
+      && value.nightlyPriceCents>=1 && value.nightlyPriceCents<=10000000)) throw housingAckError();
+  return {...value,from:value.period.from,to:value.period.to};
+}
+
 async function updatePropertySettings(property, form){
   const operation = beginHostSave(form, property);
   if (!operation) return;
   setFormError(form);
-  const data=new FormData(form);
-  const payload={
-    accommodationType:data.has("accommodationType") ? String(data.get("accommodationType")||"entire_place") : property.accommodationType,
-    bedrooms:data.has("bedrooms") ? Number(data.get("bedrooms")) : Number(property.bedrooms),
-    sleeps:data.has("sleeps") ? Number(data.get("sleeps")) : Number(property.sleeps),
-    minStayDays:data.has("minStayDays") ? Number(data.get("minStayDays")) : Number(property.minStayDays||1),
-    cleaningFeeCents:data.has("cleaningFee") ? eurosToCents(data.get("cleaningFee")) : property.cleaningFeeCents
-  };
-  if(data.has("title")) payload.title=String(data.get("title")||"").trim();
+  const fields={title:"title",accommodationType:"accommodationType",bedrooms:"bedrooms",sleeps:"sleeps",
+    minStayDays:"minStayDays",cleaningFee:"cleaningFeeCents"};
+  const payload={};
+  for(const name of operation.dirty){
+    const field=fields[name];
+    if(!field)continue;
+    const value=operation.values[name];
+    payload[field]=name==="cleaningFee" ? eurosToCents(value)
+      : ["bedrooms","sleeps","minStayDays"].includes(name) ? Number(value) : String(value??"");
+  }
   try{
-    const addressEditor = propertyAddressEditors.get(form);
-    if (addressEditor) payload.address = addressEditor.getValue();
+    const address=propertyAddressEditors.get(form)?.getValue();
+    if(address!==undefined)payload.address=address;
     setBusy(form,true);
     message(tr("loading"));
-    const updated=await api(`/properties/${property.id}`,{
-      hostOperation:operation,
-      method:"PUT",
-      body:JSON.stringify(payload)
-    });
+    const updated=propertyAck(await api(`/properties/${property.id}`,{
+      hostOperation:operation,method:"PATCH",body:JSON.stringify(payload)
+    }),property.id);
     if (!currentHostSave(operation)) return;
-    finishHostSave(operation, {
-      ...(data.has("title") ? {title:updated.title, accommodationType:updated.accommodationType,
-        bedrooms:String(updated.bedrooms), sleeps:String(updated.sleeps)} : {}),
-      ...(data.has("minStayDays") ? {minStayDays:String(updated.minStayDays), cleaningFee:centsToEuros(updated.cleaningFeeCents)} : {})
-    });
-    property.title=updated.title;
-    property.accommodationType=updated.accommodationType;
-    property.bedrooms=updated.bedrooms;
-    property.sleeps=updated.sleeps;
-    property.minStayDays=updated.minStayDays;
-    property.cleaningFeeCents=updated.cleaningFeeCents;
-    property.city=updated.city;
-    property.countryCode=updated.countryCode;
-    property.country=updated.country;
-    property.address=updated.address;
+    const acknowledged={};
+    for(const name of Object.keys(operation.values)){
+      const field=fields[name];
+      if(field)acknowledged[name]=name==="cleaningFee" ? centsToEuros(updated[field]) : String(updated[field]);
+    }
+    finishHostSave(operation,acknowledged);
+    for(const key of ["title","accommodationType","bedrooms","sleeps","minStayDays","cleaningFeeCents",
+      "city","countryCode","country","address","createdAt"])property[key]=updated[key];
     saveState();
     message(tr("propertySettingsSaved"),"success");
     renderProperties();
-  }catch(error){if(currentHostSave(operation) && error.kind !== "stale"){setFormError(form,error.message);message(error.message,"error")}}
-  finally{releaseHostSave(operation);setBusy(form,false)}
+  }catch(error){
+    if(currentHostSave(operation) && error.kind !== "stale"){
+      form.dataset.hostOperation=error.status && error.status<500 ? "failed" : "unknown";
+      setFormError(form,error.message);message(error.message,"error");
+    }
+  }finally{releaseHostSave(operation);if(currentHostSave(operation))setBusy(form,false)}
 }
 
 async function addListing(property, form){
@@ -1300,16 +1325,14 @@ async function updateAvailability(property, period, form){
   setBusy(form, true);
   message(tr("updatingAvailability"));
   try {
-    await api(`/availability/${period.id}`, {
+    const saved=availabilityAck(await api(`/availability/${period.id}`, {
       hostOperation:operation,
       method:"PUT",
       body:JSON.stringify({...hostPeriodDates(data), nightlyPriceCents:eurosToCents(data.get("nightlyPrice"))})
-    });
+    }),period.id,property.id);
     if (!currentHostSave(operation)) return;
-    finishHostSave(operation, {from:data.get("from"), to:data.get("to"), nightlyPrice:data.get("nightlyPrice")});
-    // PUT still acknowledges with204. Keep its accepted local view if GET fails;
-    // a later successful GET replaces this with the server's canonical record.
-    Object.assign(period, {...hostPeriodDates(data), nightlyPriceCents:eurosToCents(data.get("nightlyPrice"))});
+    finishHostSave(operation, {from:saved.from, to:plusDays(saved.to,-1), nightlyPrice:centsToEuros(saved.nightlyPriceCents)});
+    Object.assign(period,saved);
     message(tr("availabilityUpdated"), "success");
     if (!await refreshAvailability(property, true) && currentHostSave(operation)) form.dataset.hostOperation="saved_refresh_failed";
   } catch (error) {
