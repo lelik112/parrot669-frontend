@@ -13,7 +13,7 @@ const user = (id = 'account-a', name = 'Owner') => ({accountId:id, email:'owner@
 const property = (id, title) => ({id, title, city:'Barcelona', country:'Spain', countryCode:'ES', accommodationType:'entire_place', bedrooms:2, sleeps:4, minStayDays:1, cleaningFeeCents:null, createdAt:'2026-10-01T00:00:00Z', address:null, listings:[], availability:[], unavailability:[]});
 const tick = async () => {for (let i = 0; i < 12; i++) await new Promise(resolve => setImmediate(resolve));};
 
-async function setup({verifiedCalendar = false} = {}) {
+async function setup({verifiedCalendar = false, address = false} = {}) {
   const dom = new JSDOM(html, {url:'https://offline.test/host.html', runScripts:'outside-only', pretendToBeVisual:true});
   const w = dom.window, calls = [], routes = new Map();
   let properties = [property('property-a', 'A'), property('property-b', 'B')];
@@ -25,7 +25,7 @@ async function setup({verifiedCalendar = false} = {}) {
   }
   routes.set('/auth/me', () => user());
   routes.set('/dashboard', () => ({profile:user().profile, properties:structuredClone(properties)}));
-  routes.set('/geocode/countries', () => []);
+  routes.set('/geocode/countries', () => address ? [{code:'ES',name:'Spain'}] : []);
   w.AbortController = AbortController;
   w.confirm = () => true; w.scrollTo = () => {}; w.HTMLElement.prototype.scrollIntoView = () => {};
   w.fetch = async (url, init = {}) => {
@@ -40,7 +40,7 @@ async function setup({verifiedCalendar = false} = {}) {
   w.ParrotCore = createCore(w);
   w.eval(fs.readFileSync(path.join(root, 'public/assets/host-address.js'), 'utf8'));
   if(verifiedCalendar)w.eval(fs.readFileSync(path.join(root, 'public/assets/calendar-verification.js'), 'utf8'));
-  w.eval(source + '\nwindow.hostTest = {syncDashboard, renderProperties, getState:()=>state, getDirty:()=>unsavedHostChanges, getVerification:id=>hostVerificationViews.get(id)};');
+  w.eval(source + '\nwindow.hostTest = {syncDashboard, renderProperties, getState:()=>state, getDirty:()=>unsavedHostChanges, getVerification:id=>hostVerificationViews.get(id), getEditor:form=>propertyAddressEditors.get(form), getDraft:hostDraft};');
   await tick();
   for (const toggle of [...w.document.querySelectorAll('.host-property-toggle')]) toggle.click();
   await tick();
@@ -49,6 +49,97 @@ async function setup({verifiedCalendar = false} = {}) {
   const submit = node => node.dispatchEvent(new w.Event('submit', {bubbles:true, cancelable:true}));
   return {w, calls, routes, form, edit, submit, setProperties:next => {properties = next;}, close:() => dom.window.close()};
 }
+
+async function selectAddress(h, form) {
+  const editor=h.w.hostTest.getEditor(form);
+  const city={countryCode:'ES',country:'Spain',city:'Barcelona',placeId:'city-a',latitude:41.4,longitude:2.1,
+    resultType:'city',bounds:{west:2,south:41,east:3,north:42},address:'Barcelona, Spain'};
+  const street={...city,placeId:'street-a',street:'Main Street',houseNumber:'1',resultType:'street'};
+  editor.change.click();editor.country.value='ES';editor.country.dispatchEvent(new h.w.Event('change',{bubbles:true}));
+  h.routes.set('/geocode/autocomplete?'+new URLSearchParams({type:'city',country:'ES',q:'bar'}),()=>[city]);
+  h.edit(editor.city.input,'bar');await editor.city.search();editor.city.node.querySelector('[role=option]').click();
+  h.routes.set('/geocode/autocomplete?'+new URLSearchParams({type:'street',country:'ES',q:'main',cityId:'city-a',city:'Barcelona',bounds:'2,41,3,42'}),()=>[street]);
+  h.edit(editor.street.input,'main');await editor.street.search();editor.street.node.querySelector('[role=option]').click();
+  h.edit(editor.house,'1');
+  return editor;
+}
+
+const propertyWrites=h=>h.calls.filter(c=>c.method==='PATCH' && c.route==='/properties/property-a');
+
+test('PM144 R1 actual address ACK retires only submitted selection; later title-only PATCH omits address',async t=>{
+  const h=await setup({address:true});t.after(h.close);const form=h.form('property-a');
+  const editor=await selectAddress(h,form);
+  h.routes.set('PATCH /properties/property-a',init=>({...property('property-a','A'),...JSON.parse(init.body)}));
+  h.submit(form);await tick();
+  assert.deepEqual(Object.keys(propertyWrites(h)[0].body),['address']);
+  assert.equal(form.dataset.hostOperation,'saved');assert.equal(h.w.hostTest.getDraft(form).addressDirty,false);
+  const nodes=[editor.city.input,editor.street.input,editor.house];
+  h.edit(form.elements.title,'Title only');h.submit(form);await tick();
+  assert.deepEqual(Object.keys(propertyWrites(h)[1].body),['title']);
+  assert.equal(propertyWrites(h)[1].body.title,'Title only');
+  assert.deepEqual([editor.city.input,editor.street.input,editor.house],nodes);
+  assert.equal(editor.house.value,'1');assert.equal(h.w.hostTest.getDirty(),false);
+});
+
+test('PM144 R1 late address generation survives earlier valid ACK and is sent once on explicit save',async t=>{
+  const h=await setup({address:true});t.after(h.close);const form=h.form('property-a');
+  const editor=await selectAddress(h,form),pending=deferred();
+  h.routes.set('PATCH /properties/property-a',()=>pending.promise);
+  h.submit(form);await tick();const submitted=propertyWrites(h)[0].body.address;
+  h.edit(editor.house,'2');h.edit(form.elements.title,'Later title');
+  pending.resolve({...property('property-a','A'),address:submitted});await tick();
+  assert.equal(editor.house.value,'2');assert.equal(h.w.hostTest.getDraft(form).addressDirty,true);
+  assert.equal(form.elements.title.value,'Later title');assert.equal(h.w.hostTest.getDirty(),true);
+  h.routes.set('PATCH /properties/property-a',init=>({...property('property-a','A'),...JSON.parse(init.body)}));
+  h.submit(form);await tick();
+  assert.equal(propertyWrites(h)[1].body.address.houseNumber,'2');assert.equal(propertyWrites(h)[1].body.title,'Later title');
+  h.edit(form.elements.title,'Third title');h.submit(form);await tick();
+  assert.deepEqual(Object.keys(propertyWrites(h)[2].body),['title']);
+});
+
+test('PM144 R1 later same-value address generation is not retired by the earlier ACK',async t=>{
+  const h=await setup({address:true});t.after(h.close);const form=h.form('property-a');
+  const editor=await selectAddress(h,form),pending=deferred();
+  h.routes.set('PATCH /properties/property-a',()=>pending.promise);h.submit(form);await tick();
+  const address=propertyWrites(h)[0].body.address;
+  h.edit(editor.house,'2');h.edit(editor.house,'1');
+  pending.resolve({...property('property-a','A'),address});await tick();
+  assert.equal(h.w.hostTest.getDraft(form).addressDirty,true);
+  h.routes.set('PATCH /properties/property-a',init=>({...property('property-a','A'),...JSON.parse(init.body)}));
+  h.submit(form);await tick();assert.deepEqual(Object.keys(propertyWrites(h)[1].body),['address']);
+  assert.equal(h.w.hostTest.getDraft(form).addressDirty,false);
+});
+
+test('PM144 R1 address snapshot detects autofill without an input event after a valid ACK',async t=>{
+  const h=await setup({address:true});t.after(h.close);const form=h.form('property-a');
+  const editor=await selectAddress(h,form);
+  h.routes.set('PATCH /properties/property-a',init=>({...property('property-a','A'),...JSON.parse(init.body)}));
+  h.submit(form);await tick();assert.equal(h.w.hostTest.getDraft(form).addressDirty,false);
+  editor.house.value='2';h.edit(form.elements.title,'Title with later address');h.submit(form);await tick();
+  assert.equal(propertyWrites(h)[1].body.address.houseNumber,'2');
+  h.edit(form.elements.title,'Title only again');h.submit(form);await tick();
+  assert.deepEqual(Object.keys(propertyWrites(h)[2].body),['title']);
+});
+
+for(const outcome of ['invalid ACK','lost ACK','HTTP failure'])test(`PM144 R1 ${outcome} preserves pending address without automatic retry`,async t=>{
+  const h=await setup({address:true});t.after(h.close);const form=h.form('property-a');
+  const editor=await selectAddress(h,form);
+  h.routes.set('PATCH /properties/property-a',()=>{
+    if(outcome==='lost ACK')throw new TypeError('synthetic transport loss');
+    if(outcome==='HTTP failure')return new Response('{"error":"Rejected"}',{status:400});
+    return {...property('property-a','A'),id:'wrong-property'};
+  });
+  h.submit(form);await tick();
+  assert.equal(form.dataset.hostOperation,outcome==='HTTP failure'?'failed':'unknown');
+  assert.equal(h.w.hostTest.getDraft(form).addressDirty,true);assert.equal(editor.house.value,'1');
+  assert.equal(h.w.hostTest.getState().properties[0].address,null);
+  await h.w.hostTest.syncDashboard();h.w.document.querySelector('[data-host-lang="ru"]').click();await tick();
+  assert.equal(propertyWrites(h).length,1);assert.equal(h.w.hostTest.getDirty(),true);
+  h.routes.set('PATCH /properties/property-a',init=>({...property('property-a','A'),...JSON.parse(init.body)}));
+  h.submit(form);await tick();assert.equal(propertyWrites(h)[1].body.address.houseNumber,'1');
+  h.edit(form.elements.title,'After confirmed retry');h.submit(form);await tick();
+  assert.deepEqual(Object.keys(propertyWrites(h)[2].body),['title']);
+});
 
 test('real Host keeps B and profile nodes, values, focus/caret and dirty state across save A, refresh and language', async t => {
   const h = await setup(); t.after(h.close);

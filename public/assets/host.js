@@ -323,7 +323,8 @@ function beginHostSave(form, property = null){
   const draft = captureHostDraft(form);
   if (draft.operation || (property && hostPropertyWrites.has(property.id))) return null;
   const operation = {form, draft, values:{...draft.values}, versions:{...draft.versions},
-    dirty:new Set(draft.dirty), addressVersion:draft.addressVersion || 0, addressValues:hostAddressSnapshot(form),
+    dirty:new Set(draft.dirty), addressDirty:!!draft.addressDirty,
+    addressVersion:draft.addressVersion || 0, addressValues:hostAddressSnapshot(form),
     epoch:hostCore.session.epoch, account:accountId, property};
   draft.operation = operation;
   form.dataset.hostOperation = "saving";
@@ -1154,7 +1155,9 @@ async function updatePropertySettings(property, form){
       : ["bedrooms","sleeps","minStayDays"].includes(name) ? Number(value) : String(value??"");
   }
   try{
-    const address=propertyAddressEditors.get(form)?.getValue();
+    // Retire only an acknowledged selection, not the editor or a later address generation.
+    const address=operation.addressDirty || operation.draft.addressAcknowledgedValues!==operation.addressValues
+      ? propertyAddressEditors.get(form)?.getValue() : undefined;
     if(address!==undefined)payload.address=address;
     setBusy(form,true);
     message(tr("loading"));
@@ -1167,6 +1170,7 @@ async function updatePropertySettings(property, form){
       const field=fields[name];
       if(field)acknowledged[name]=name==="cleaningFee" ? centsToEuros(updated[field]) : String(updated[field]);
     }
+    if(address!==undefined)operation.draft.addressAcknowledgedValues=operation.addressValues;
     finishHostSave(operation,acknowledged);
     for(const key of ["title","accommodationType","bedrooms","sleeps","minStayDays","cleaningFeeCents",
       "city","countryCode","country","address","createdAt"])property[key]=updated[key];
