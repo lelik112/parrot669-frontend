@@ -422,10 +422,17 @@ const menuToggle = document.querySelector(".menu-toggle");
 const mobileMenu = document.getElementById("mobile-menu");
 let menuReturnFocus = null;
 let menuInitialFocus = null;
+let homeAnchorPendingReturn = null;
 
 function cancelMenuInitialFocus(){
   const pending = menuInitialFocus;
   menuInitialFocus = null;
+  if (pending?.frame != null) cancelAnimationFrame(pending.frame);
+}
+
+function cancelHomeAnchorReturn(){
+  const pending = homeAnchorPendingReturn;
+  homeAnchorPendingReturn = null;
   if (pending?.frame != null) cancelAnimationFrame(pending.frame);
 }
 
@@ -444,6 +451,7 @@ function mobileMenuFocusables(){
 
 function setMobileMenu(open,{restoreFocus=false}={}){
   if (!menuToggle || !mobileMenu) return;
+  cancelHomeAnchorReturn();
   cancelMenuInitialFocus();
   const wasOpen = menuToggle.getAttribute("aria-expanded") === "true";
   if (open && !wasOpen) menuReturnFocus = document.activeElement;
@@ -469,8 +477,10 @@ function setMobileMenu(open,{restoreFocus=false}={}){
 }
 
 document.addEventListener("focusin", event => {
+  if (homeAnchorPendingReturn && event.target !== homeAnchorPendingReturn.origin) cancelHomeAnchorReturn();
   if (menuInitialFocus && event.target !== menuInitialFocus.origin) cancelMenuInitialFocus();
 });
+document.addEventListener("pointerdown", cancelHomeAnchorReturn);
 mobileMenu?.addEventListener("pointerdown", cancelMenuInitialFocus);
 
 menuToggle?.addEventListener("click", () => {
@@ -502,6 +512,7 @@ function rememberHomeAnchorActivator(source){
 }
 
 function navigateHomeAnchor({source,target,hash,scroll=true}){
+  cancelHomeAnchorReturn();
   rememberHomeAnchorActivator(source);
   history.pushState(null, "", hash);
   if (scroll) target.scrollIntoView({block:"start", behavior:"instant"});
@@ -527,6 +538,7 @@ document.addEventListener("click", event => {
 });
 
 document.addEventListener("keydown", event => {
+  cancelHomeAnchorReturn();
   const open = menuToggle?.getAttribute("aria-expanded") === "true";
   if (!open) return;
   cancelMenuInitialFocus();
@@ -553,16 +565,24 @@ document.addEventListener("keydown", event => {
 });
 
 window.addEventListener("popstate", () => {
+  cancelHomeAnchorReturn();
   cancelMenuInitialFocus();
   const returnTarget = homeAnchorReturnFocus;
   homeAnchorReturnFocus = null;
   if (!(returnTarget instanceof HTMLElement)) return;
-  requestAnimationFrame(() => {
-    if (returnTarget.getClientRects().length) returnTarget.focus({preventScroll:true});
+  // This return owns only its frame, and yields permanently to newer intent.
+  const pending = {origin:document.activeElement,frame:null};
+  homeAnchorPendingReturn = pending;
+  pending.frame = requestAnimationFrame(() => {
+    if (homeAnchorPendingReturn !== pending) return;
+    homeAnchorPendingReturn = null;
+    if (document.activeElement === pending.origin && returnTarget.isConnected && returnTarget.getClientRects().length)
+      returnTarget.focus({preventScroll:true});
   });
 });
 
 window.addEventListener("resize", () => {
+  cancelHomeAnchorReturn();
   cancelMenuInitialFocus();
   if (window.innerWidth > 980) setMobileMenu(false);
 });

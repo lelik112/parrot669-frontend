@@ -568,5 +568,10 @@
     M.setLanguage(button.dataset.msgLang);
   }));
   try { M.setLanguage(window.ParrotCore.storage.local.getItem("parrot669-language") || navigator.language.slice(0,2)); } catch { M.setLanguage("en"); }
-  M.onSession(activateSession); void boot();
+  M.onSession(activateSession);
+  // Markup keeps language controls inert while this module graph loads.
+  // Bindings and the stored initial locale are now applied synchronously.
+  document.querySelectorAll("[data-msg-lang]").forEach(button => { button.disabled = false; });
+  document.body.dataset.messagesLanguageReady = "true";
+  void boot();
 })();

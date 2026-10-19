@@ -311,6 +311,72 @@ test('Menu pending initialization yields to compact resize and Back lifecycle',(
   }
 });
 
+function queuedBackReturn(){
+  const app=queuedMenuHome();
+  app.open();app.flush();app.contact.focus();activatePointer(app.window,app.contact);
+  const heading=app.document.querySelector('#contact h2');
+  assert.equal(app.document.activeElement,heading);
+  app.window.dispatchEvent(new app.window.PopStateEvent('popstate'));
+  const frame=[...app.pending.keys()].at(-1);
+  assert.equal(typeof frame,'number');
+  return {...app,heading,frame};
+}
+
+test('Back queued return preserves normal trigger focus without another history entry or scroll',()=>{
+  const app=queuedBackReturn();
+  try{
+    assert.equal(app.document.activeElement,app.heading);
+    app.flush();
+    assert.equal(app.document.activeElement,app.toggle);
+    assert.deepEqual(app.counts,{history:1,scroll:1});
+  }finally{app.dom.window.close();}
+});
+
+test('Back canceled return callback cannot steal newer reopened Menu Contact intent',()=>{
+  const app=queuedBackReturn();
+  try{
+    const opening=app.open();app.contact.focus();
+    app.callbacks.get(app.frame)();app.callbacks.get(opening)();app.flush();
+    assert.equal(app.document.activeElement,app.contact);
+    assert(app.cancelled.includes(app.frame));
+    assert.deepEqual(app.counts,{history:1,scroll:1});
+  }finally{app.dom.window.close();}
+});
+
+test('Back return ownership stays canceled when newer focus returns to its origin',()=>{
+  const app=queuedBackReturn();
+  try{
+    app.toggle.focus();app.heading.focus();
+    app.callbacks.get(app.frame)();app.flush();
+    assert.equal(app.document.activeElement,app.heading);
+    assert(app.cancelled.includes(app.frame));
+  }finally{app.dom.window.close();}
+});
+
+for(const intent of ['keyboard','pointer','resize','Back'])test(`Back queued return yields to newer ${intent} without a focus change`,()=>{
+  const app=queuedBackReturn();
+  try{
+    if(intent==='keyboard')activateKey(app.window,app.heading,'ArrowDown');
+    else if(intent==='pointer')app.heading.dispatchEvent(new app.window.Event('pointerdown',{bubbles:true}));
+    else app.window.dispatchEvent(new app.window.Event(intent==='Back'?'popstate':'resize'));
+    assert(app.cancelled.includes(app.frame),intent);
+    app.callbacks.get(app.frame)();app.flush();
+    assert.equal(app.document.activeElement,app.heading,intent);
+    assert.deepEqual(app.counts,{history:1,scroll:1});
+  }finally{app.dom.window.close();}
+});
+
+test('Back invalidation cancels only its own frame and leaves unrelated frame work intact',()=>{
+  const app=queuedBackReturn();
+  try{
+    let ran=false;const unrelated=app.window.requestAnimationFrame(()=>{ran=true;});
+    activateKey(app.window,app.heading,'ArrowDown');
+    assert(app.pending.has(unrelated));app.flush();app.callbacks.get(app.frame)();
+    assert.equal(ran,true);assert.equal(app.document.activeElement,app.heading);
+    assert(!app.cancelled.includes(unrelated));
+  }finally{app.dom.window.close();}
+});
+
 function activateKey(window,node,key){
   const event=new window.KeyboardEvent('keydown',{key,bubbles:true,cancelable:true});
   node.dispatchEvent(event);
