@@ -3,6 +3,8 @@ const {installHostFixture}=require('./public-fixture.cjs');
 
 test('Host retains B/profile drafts and physical focus/caret through save A, failed dashboard refresh and relabel',async({page})=>{
   await installHostFixture(page);
+  // Exercise native focus/caret behavior without smooth-scroll target movement.
+  await page.emulateMedia({reducedMotion:'reduce'});
   const a='11111111-1111-4111-8111-111111111111',b='22222222-2222-4222-8222-222222222222';
   const calendar='33333333-3333-4333-8333-333333333333';
   let failRefresh=false,puts=0,dashboards=0,verifications=0;
