@@ -421,6 +421,13 @@ if (availabilityForm) {
 const menuToggle = document.querySelector(".menu-toggle");
 const mobileMenu = document.getElementById("mobile-menu");
 let menuReturnFocus = null;
+let menuInitialFocus = null;
+
+function cancelMenuInitialFocus(){
+  const pending = menuInitialFocus;
+  menuInitialFocus = null;
+  if (pending?.frame != null) cancelAnimationFrame(pending.frame);
+}
 
 function updateMenuToggleLabel(){
   if (!menuToggle) return;
@@ -437,6 +444,7 @@ function mobileMenuFocusables(){
 
 function setMobileMenu(open,{restoreFocus=false}={}){
   if (!menuToggle || !mobileMenu) return;
+  cancelMenuInitialFocus();
   const wasOpen = menuToggle.getAttribute("aria-expanded") === "true";
   if (open && !wasOpen) menuReturnFocus = document.activeElement;
   menuToggle.setAttribute("aria-expanded", String(open));
@@ -444,12 +452,26 @@ function setMobileMenu(open,{restoreFocus=false}={}){
   mobileMenu.classList.toggle("open", open);
   document.body.classList.toggle("menu-open", open);
   updateMenuToggleLabel();
-  if (open) {
-    requestAnimationFrame(() => mobileMenuFocusables()[0]?.focus());
+  if (open && !wasOpen) {
+    // A unique ticket owns this opening even if a canceled frame is delivered.
+    // Initialization yields permanently to any newer focus or input intent.
+    const pending = {origin:document.activeElement,frame:null};
+    menuInitialFocus = pending;
+    pending.frame = requestAnimationFrame(() => {
+      if (menuInitialFocus !== pending) return;
+      menuInitialFocus = null;
+      if (menuToggle.getAttribute("aria-expanded") !== "true" || document.activeElement !== pending.origin) return;
+      mobileMenuFocusables()[0]?.focus();
+    });
   } else if (restoreFocus && wasOpen) {
     (menuReturnFocus instanceof HTMLElement ? menuReturnFocus : menuToggle).focus();
   }
 }
+
+document.addEventListener("focusin", event => {
+  if (menuInitialFocus && event.target !== menuInitialFocus.origin) cancelMenuInitialFocus();
+});
+mobileMenu?.addEventListener("pointerdown", cancelMenuInitialFocus);
 
 menuToggle?.addEventListener("click", () => {
   const open = menuToggle.getAttribute("aria-expanded") !== "true";
@@ -507,6 +529,7 @@ document.addEventListener("click", event => {
 document.addEventListener("keydown", event => {
   const open = menuToggle?.getAttribute("aria-expanded") === "true";
   if (!open) return;
+  cancelMenuInitialFocus();
   if (event.key === "Escape") {
     event.preventDefault();
     setMobileMenu(false,{restoreFocus:true});
@@ -530,6 +553,7 @@ document.addEventListener("keydown", event => {
 });
 
 window.addEventListener("popstate", () => {
+  cancelMenuInitialFocus();
   const returnTarget = homeAnchorReturnFocus;
   homeAnchorReturnFocus = null;
   if (!(returnTarget instanceof HTMLElement)) return;
@@ -539,6 +563,7 @@ window.addEventListener("popstate", () => {
 });
 
 window.addEventListener("resize", () => {
+  cancelMenuInitialFocus();
   if (window.innerWidth > 980) setMobileMenu(false);
 });
 

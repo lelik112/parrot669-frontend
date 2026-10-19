@@ -167,6 +167,150 @@ function activatePointer(window,node){
   node.dispatchEvent(new window.MouseEvent('click',{bubbles:true,cancelable:true,button:0}));
 }
 
+// Queue actual component frames; canceled callbacks may still be delivered to
+// exercise opening ownership independently of the cancellation mechanism.
+function queuedMenuHome(){
+  const app=integratedHome(),{window,document}=app;
+  const pending=new Map(),callbacks=new Map(),cancelled=[];let serial=0;
+  window.requestAnimationFrame=callback=>{
+    const id=++serial;pending.set(id,callback);callbacks.set(id,callback);return id;
+  };
+  window.cancelAnimationFrame=id=>{cancelled.push(id);pending.delete(id);};
+  window.HTMLElement.prototype.getClientRects=function(){
+    const menu=this.closest('#mobile-menu');
+    // Closed-menu descendants are not visible/focusable in this model. The
+    // ownership assertions below use an OPEN menu, not hidden-focus behavior.
+    return menu && !menu.classList.contains('open') ? [] : [{width:1,height:1}];
+  };
+  Object.defineProperty(window,'innerWidth',{value:390,writable:true});
+  const toggle=document.querySelector('.menu-toggle');
+  const menu=document.getElementById('mobile-menu');
+  const contact=menu.querySelector('a[href="#contact"]');
+  const search=menu.querySelector('a[href="/search.html"]');
+  const open=()=>{toggle.focus();activatePointer(window,toggle);return [...pending.keys()].at(-1);};
+  const flush=()=>{
+    for(const [id,callback] of [...pending]){pending.delete(id);callback();}
+  };
+  return {...app,toggle,menu,contact,search,open,flush,pending,callbacks,cancelled};
+}
+
+test('Menu queued initial focus defaults to Search and keeps Tab trap and Escape return',()=>{
+  const app=queuedMenuHome();
+  try{
+    app.open();assert.equal(app.document.activeElement,app.toggle);app.flush();
+    assert.equal(app.document.activeElement,app.search);
+    const last=app.menu.querySelector('[data-menu-lang="ru"]');
+    last.focus();activateKey(app.window,last,'Tab');
+    assert.equal(app.document.activeElement,app.search);
+    activateKey(app.window,app.search,'Escape');
+    assert.equal(app.toggle.getAttribute('aria-expanded'),'false');
+    assert.equal(app.document.activeElement,app.toggle);
+  }finally{app.dom.window.close();}
+});
+
+test('Menu queued initial focus never overrides newer Contact focus',()=>{
+  const app=queuedMenuHome();
+  try{
+    const initial=app.open();app.contact.focus();
+    app.flush();app.callbacks.get(initial)();
+    assert.equal(app.document.activeElement,app.contact);
+    assert(app.cancelled.includes(initial));
+    assert.deepEqual(app.counts,{history:0,scroll:0});
+  }finally{app.dom.window.close();}
+});
+
+test('Menu initial focus yields to newer keyboard intent even without a focus change',()=>{
+  const app=queuedMenuHome();
+  try{
+    const initial=app.open();activateKey(app.window,app.toggle,'ArrowDown');
+    app.flush();app.callbacks.get(initial)();
+    assert.equal(app.document.activeElement,app.toggle);
+    assert(app.cancelled.includes(initial));
+  }finally{app.dom.window.close();}
+});
+
+test('Menu initial focus ownership is not reclaimed when focus returns or a pointer chooses an item',()=>{
+  for(const intent of ['focus-return','pointer']){
+    const app=queuedMenuHome();
+    try{
+      const initial=app.open();
+      if(intent==='focus-return'){app.contact.focus();app.toggle.focus();}
+      else app.contact.dispatchEvent(new app.window.Event('pointerdown',{bubbles:true}));
+      app.callbacks.get(initial)();app.flush();
+      assert.equal(app.document.activeElement,app.toggle,intent);
+      assert(app.cancelled.includes(initial),intent);
+    }finally{app.dom.window.close();}
+  }
+});
+
+test('Menu old opening callback cannot initialize a reopened menu',()=>{
+  const app=queuedMenuHome();
+  try{
+    const old=app.open();activatePointer(app.window,app.toggle);
+    const current=app.open();assert.notEqual(old,current);
+    app.callbacks.get(old)();
+    assert.equal(app.document.activeElement,app.toggle);
+    assert(app.pending.has(current));app.flush();
+    assert.equal(app.document.activeElement,app.search);
+    assert(app.cancelled.includes(old));
+  }finally{app.dom.window.close();}
+});
+
+test('Menu close and reopen cannot let an old callback steal new Contact intent',()=>{
+  const app=queuedMenuHome();
+  try{
+    const old=app.open();activatePointer(app.window,app.toggle);
+    const current=app.open();app.contact.focus();
+    app.callbacks.get(old)();app.callbacks.get(current)();app.flush();
+    assert.equal(app.document.activeElement,app.contact);
+    assert(app.cancelled.includes(old));assert(app.cancelled.includes(current));
+  }finally{app.dom.window.close();}
+});
+
+test('Menu Escape and desktop resize cancel initial focus with closed-menu visibility',()=>{
+  for(const close of ['Escape','resize']){
+    const app=queuedMenuHome();
+    try{
+      const initial=app.open();
+      if(close==='Escape')activateKey(app.window,app.toggle,'Escape');
+      else{app.window.innerWidth=1200;app.window.dispatchEvent(new app.window.Event('resize'));}
+      assert(app.cancelled.includes(initial),close);
+      assert.equal(app.pending.size,0);app.callbacks.get(initial)();
+      assert.equal(app.toggle.getAttribute('aria-expanded'),'false');
+      assert.equal(app.contact.getClientRects().length,0);
+      assert.equal(app.document.activeElement,app.toggle);
+    }finally{app.dom.window.close();}
+  }
+});
+
+test('Menu navigation cancels initial focus and preserves one history entry and heading focus',()=>{
+  const app=queuedMenuHome();
+  try{
+    const initial=app.open();activatePointer(app.window,app.contact);
+    app.callbacks.get(initial)();app.flush();
+    assert.equal(app.document.activeElement,app.document.querySelector('#contact h2'));
+    assert.equal(app.window.location.hash,'#contact');
+    assert.deepEqual(app.counts,{history:1,scroll:1});
+    assert(app.cancelled.includes(initial));
+    app.window.dispatchEvent(new app.window.PopStateEvent('popstate'));app.flush();
+    assert.equal(app.document.activeElement,app.toggle);
+    assert.deepEqual(app.counts,{history:1,scroll:1});
+  }finally{app.dom.window.close();}
+});
+
+test('Menu pending initialization yields to compact resize and Back lifecycle',()=>{
+  for(const event of ['resize','popstate']){
+    const app=queuedMenuHome();
+    try{
+      const initial=app.open();app.window.dispatchEvent(new app.window.Event(event));
+      app.callbacks.get(initial)();app.flush();
+      assert.equal(app.document.activeElement,app.toggle,event);
+      assert(app.cancelled.includes(initial),event);
+      assert.equal(app.toggle.getAttribute('aria-expanded'),'true');
+    }finally{app.dom.window.close();}
+  }
+});
+
 function activateKey(window,node,key){
   const event=new window.KeyboardEvent('keydown',{key,bubbles:true,cancelable:true});
   node.dispatchEvent(event);
