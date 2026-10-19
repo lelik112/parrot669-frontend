@@ -1810,6 +1810,7 @@ function renderProperties(blockFeedback = null){
     if(externalCalendar){
       syncPanel.dataset.calendarRevision=String(externalCalendar.revision);
       const status=document.createElement("div");
+      status.dataset.hostKey=`calendar-status:${externalCalendar.id}`;
       status.className=`host-calendar-status ${externalCalendar.enabled===false ? "disabled" : (externalCalendar.status||"")}`;
 
       const statusTop=document.createElement("div");
@@ -1832,20 +1833,29 @@ function renderProperties(blockFeedback = null){
 
       const actions=document.createElement("div");
       actions.className="host-calendar-actions";
+      actions.dataset.hostKey=`calendar-actions:${externalCalendar.id}`;
+      const currentCalendar=control=>propertiesNode.contains(control) && state.properties.includes(property)
+        ? property.calendars.find(value=>value.id===externalCalendar.id) : null;
       const controlGroup=document.createElement("div");
       controlGroup.className="host-calendar-control-group";
       const syncButton=document.createElement("button");
       syncButton.type="button";syncButton.className="button button-small";syncButton.textContent=tr("syncNow");syncButton.disabled=externalCalendar.enabled===false;
-      syncButton.addEventListener("click",()=>syncCalendar(property.calendars.find(value=>value.id===externalCalendar.id)));
+      syncButton.addEventListener("click",()=>{
+        const current=currentCalendar(syncButton);
+        if(current)syncCalendar(current);
+      });
       const toggleButton=document.createElement("button");
       toggleButton.type="button";toggleButton.className="text-button";toggleButton.textContent=tr(externalCalendar.enabled===false ? "enableCalendar" : "disableCalendar");
       toggleButton.addEventListener("click",()=>{
-        const current=property.calendars.find(value=>value.id===externalCalendar.id);
-        setCalendarEnabled(current,current?.enabled===false);
+        const current=currentCalendar(toggleButton);
+        if(current)setCalendarEnabled(current,current.enabled===false);
       });
       const disconnectButton=document.createElement("button");
       disconnectButton.type="button";disconnectButton.className="text-button danger host-calendar-delete";disconnectButton.textContent=tr("disconnectCalendar");
-      disconnectButton.addEventListener("click",()=>disconnectCalendar(property.calendars.find(value=>value.id===externalCalendar.id)));
+      disconnectButton.addEventListener("click",()=>{
+        const current=currentCalendar(disconnectButton);
+        if(current)disconnectCalendar(current);
+      });
       controlGroup.append(syncButton,toggleButton);
       actions.append(controlGroup,disconnectButton);
 

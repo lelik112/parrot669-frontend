@@ -40,7 +40,7 @@ async function setup({verifiedCalendar = false} = {}) {
   w.ParrotCore = createCore(w);
   w.eval(fs.readFileSync(path.join(root, 'public/assets/host-address.js'), 'utf8'));
   if(verifiedCalendar)w.eval(fs.readFileSync(path.join(root, 'public/assets/calendar-verification.js'), 'utf8'));
-  w.eval(source + '\nwindow.hostTest = {syncDashboard, renderProperties, getState:()=>state, getDirty:()=>unsavedHostChanges};');
+  w.eval(source + '\nwindow.hostTest = {syncDashboard, renderProperties, getState:()=>state, getDirty:()=>unsavedHostChanges, getVerification:id=>hostVerificationViews.get(id)};');
   await tick();
   for (const toggle of [...w.document.querySelectorAll('.host-property-toggle')]) toggle.click();
   await tick();
@@ -243,4 +243,85 @@ test('listing removed during a visibility write ignores its late response and up
   assert.equal(h.w.hostTest.getState().properties[0].listing,null);
   assert.equal(h.w.document.querySelector('.host-listing-visibility'),null);
   assert.equal(h.w.document.getElementById('host-status').textContent.includes('saved'),false);
+});
+
+test('F1: Disable and Enable retain the real verification island, controller and dates with usable Start',async t=>{
+  const h=await setup({verifiedCalendar:true});t.after(h.close);
+  const id='11111111-1111-4111-8111-111111111111';
+  const controller=h.w.hostTest.getVerification(id),panel=controller.node;
+  const inputs=[...panel.querySelectorAll('input')],start=panel.querySelector('button');
+  let enabled=true,revision=1,disposed=0;
+  const dispose=controller.dispose;controller.dispose=()=>{disposed++;dispose();};
+  h.edit(inputs[0],'2026-11-10');h.edit(inputs[1],'2026-11-12');
+  h.routes.set('/properties/property-a/calendars',()=>({calendars:[{id,provider:'Airbnb',mode:enabled?'Active':'Disabled',enabled,revision,status:'Connected'}]}));
+  h.routes.set('PUT /calendars/'+id,()=>{enabled=false;revision++;return new Response(null,{status:204});});
+  h.routes.set('POST /calendars/'+id+'/activate',()=>{enabled=true;revision++;return new Response(null,{status:204});});
+  const toggle=()=>h.w.document.querySelectorAll('.host-calendar-control-group button')[1];
+  toggle().click();await tick();
+  assert.equal(h.w.document.querySelector('.calendar-verification'),panel);
+  assert.equal(panel.isConnected,true);assert.equal(start.hidden,true);
+  assert.equal(panel.querySelector('.calendar-verification-dates').hidden,true);
+  toggle().click();await tick();
+  assert.equal(h.w.document.querySelector('.calendar-verification'),panel);
+  assert.equal(panel.isConnected,true);assert.equal(h.w.hostTest.getVerification(id),controller);
+  assert.deepEqual([...panel.querySelectorAll('input')],inputs);
+  assert.equal(inputs[0].value,'2026-11-10');assert.equal(inputs[1].value,'2026-11-12');
+  assert.equal(panel.querySelector('.calendar-verification-dates').hidden,false);
+  assert.equal(start.hidden,false);assert.equal(start.disabled,false);assert.equal(disposed,0);
+  assert.equal(h.calls.filter(c=>c.route.endsWith('/verification')).length,1);
+  h.routes.set('POST /calendars/'+id+'/verification/start',()=>({status:'Pending',baselineReady:false,canCheck:false}));
+  start.click();await tick();
+  assert.deepEqual(h.calls.filter(c=>c.method!=='GET'&&c.route.includes('/calendars/')).map(({route,method,body})=>({route,method,body})),[
+    {route:'/calendars/'+id,method:'PUT',body:{mode:'Disabled',expectedRevision:1}},
+    {route:'/calendars/'+id+'/activate',method:'POST',body:{expectedRevision:2}},
+    {route:'/calendars/'+id+'/verification/start',method:'POST',body:{from:'2026-11-10',to:'2026-11-12'}}
+  ]);
+});
+
+test('F2: calendar replacement binds current actions to B revisions and rejects detached A and B controls',async t=>{
+  const h=await setup({verifiedCalendar:true});t.after(h.close);
+  const a='11111111-1111-4111-8111-111111111111',b='22222222-2222-4222-8222-222222222222';
+  const oldActions=[...h.w.document.querySelectorAll('.host-calendar-actions button')];
+  let enabled=true,revision=2,removed=false;
+  h.routes.set('/properties/property-a/calendars',()=>({calendars:removed?[]:[{id:b,provider:'Airbnb',mode:enabled?'Active':'Disabled',enabled,revision,status:'Connected'}]}));
+  h.routes.set('/calendars/'+b+'/verification',()=>({status:'Required',canStart:true,canCheck:false,minSelectableDate:'2026-11-01',maxSelectableDate:'2027-04-01'}));
+  h.routes.set('POST /calendars/'+b+'/sync',()=>{revision++;return new Response(null,{status:204});});
+  h.routes.set('PUT /calendars/'+b,()=>{enabled=false;revision++;return new Response(null,{status:204});});
+  h.routes.set('POST /calendars/'+b+'/activate',()=>{enabled=true;revision++;return new Response(null,{status:204});});
+  h.routes.set('DELETE /calendars/'+b,()=>{removed=true;return new Response(null,{status:204});});
+  await h.w.hostTest.syncDashboard();await tick();
+  const current=()=>[...h.w.document.querySelectorAll('.host-calendar-actions button')];
+  assert.equal(h.w.hostTest.getState().properties[0].calendars[0].id,b);
+  assert.equal(h.w.hostTest.getVerification(a),undefined);
+  assert.equal(current().every(button=>!oldActions.includes(button)),true);
+  let confirmations=0;h.w.confirm=()=>{confirmations++;return true;};
+  const status=h.w.document.getElementById('host-status').textContent;
+  for(const button of oldActions)button.click();await tick();
+  assert.equal(confirmations,0);assert.equal(h.w.document.getElementById('host-status').textContent,status);
+  assert.equal(h.calls.filter(c=>c.method!=='GET'&&c.route.includes('/calendars/')).length,0);
+  current()[0].click();await tick();
+  current()[1].click();await tick();
+  current()[1].click();await tick();
+  const removedActions=current();current()[2].click();await tick();
+  const afterDelete=h.w.document.getElementById('host-status').textContent;
+  for(const button of [...oldActions,...removedActions])button.click();await tick();
+  assert.equal(confirmations,1);assert.equal(h.w.document.getElementById('host-status').textContent,afterDelete);
+  assert.deepEqual(h.calls.filter(c=>c.method!=='GET'&&c.route.includes('/calendars/')).map(({route,method,body})=>({route,method,body})),[
+    {route:'/calendars/'+b+'/sync',method:'POST',body:{expectedRevision:2}},
+    {route:'/calendars/'+b,method:'PUT',body:{mode:'Disabled',expectedRevision:3}},
+    {route:'/calendars/'+b+'/activate',method:'POST',body:{expectedRevision:4}},
+    {route:'/calendars/'+b,method:'DELETE',body:{expectedRevision:5}}
+  ]);
+});
+
+test('F2: detached actions cannot command a calendar that still exists in the current snapshot',async t=>{
+  const h=await setup({verifiedCalendar:true});t.after(h.close);
+  const actions=h.w.document.querySelector('.host-calendar-actions'),buttons=[...actions.querySelectorAll('button')];
+  actions.remove();
+  let confirmations=0;h.w.confirm=()=>{confirmations++;return true;};
+  const status=h.w.document.getElementById('host-status').textContent;
+  for(const button of buttons)button.click();await tick();
+  assert.equal(h.w.hostTest.getState().properties[0].calendars.length,1);
+  assert.equal(confirmations,0);assert.equal(h.w.document.getElementById('host-status').textContent,status);
+  assert.equal(h.calls.filter(c=>c.method!=='GET'&&c.route.includes('/calendars/')).length,0);
 });
