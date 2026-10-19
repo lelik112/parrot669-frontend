@@ -9,20 +9,27 @@ async function login(page, username) {
   await expect(page.locator('#msg-account-name')).toHaveText(username);
 }
 
-test('invalid structured first-send/reply ACK retains text and same-key manual retry after commit',async({page})=>{
+test('invalid structured first-send/reply ACK retains text and same-key manual retry after commit',async({page,browser},testInfo)=>{
+  const diagnostic=await require('./pm142-reply-diagnostic.cjs').installReplyDiagnostic({page,browser,testInfo});
+  diagnostic.mark('test-body-begin');
   const attempts={start:[],reply:[]};
   const fixture=createAuthMessagingFixture({acknowledge:(value,{firstSend,input})=>{
     const calls=firstSend?attempts.start:attempts.reply;calls.push({...input});
     if(calls.length===1)return firstSend?{conversationId:'not-a-uuid',message:value.message}:{...value,id:123};
     return value;
   }});
-  await fixture.install(page,'a');
   try {
+    await fixture.install(page,'a');
     await page.goto(`/messages.html?property=${fixture.ids.property}`);
     await login(page,fixture.identities.a.username);
     const body=page.locator('#msg-compose textarea[name="body"]');
     for(const [name,text] of [['start','Synthetic first ACK'],['reply','Synthetic reply ACK']]) {
-      await expect(body).toBeEnabled();await body.fill(text);await page.locator('#msg-send').click();
+      await expect(body).toBeEnabled();
+      if(name==='reply')diagnostic.beginReply();
+      await body.fill(text);
+      if(name==='reply')diagnostic.clickBegin();
+      await page.locator('#msg-send').click();
+      if(name==='reply')diagnostic.clickComplete();
       await expect(body).toHaveValue(text);await expect(body).toBeDisabled();
       await expect(page.locator('#msg-send')).toContainText('Retry');
       expect(attempts[name]).toHaveLength(1);
@@ -32,7 +39,10 @@ test('invalid structured first-send/reply ACK retains text and same-key manual r
       await expect(page.locator('#msg-history')).toContainText(text);
     }
     expect(fixture.snapshot().messages).toHaveLength(2);
-  } finally {fixture.cleanup();}
+  } finally {
+    diagnostic.finish();diagnostic.mark('fixture-cleanup-begin');
+    try {fixture.cleanup();} finally {diagnostic.mark('fixture-cleanup-end');}
+  }
 });
 
 test('isolated A/B auth contexts exchange, read and survive independent logout', async ({browser,baseURL}) => {
