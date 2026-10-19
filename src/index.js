@@ -23,8 +23,8 @@ const json = (data, status = 200) =>
     },
   });
 
-const clean = (value, max) =>
-  typeof value === "string" ? value.trim().slice(0, max) : "";
+// Contact limits count UTF-16 code units after trim; never silently truncate.
+const clean = (value) => typeof value === "string" ? value.trim() : "";
 
 const escapeHtml = (value) =>
   value.replace(/[&<>"']/g, (c) => ({
@@ -253,17 +253,23 @@ export default {
       return json({ ok: false, error: "Invalid JSON" }, 400);
     }
 
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return json({ ok: false, error: "Missing or invalid fields" }, 400);
+    }
+
     // Honeypot: real users never see/fill this field.
     if (body.website) {
       return json({ ok: true });
     }
 
-    const name = clean(body.name, MAX.name);
-    const contact = clean(body.contact, MAX.contact);
-    const service = clean(body.service, MAX.service);
-    const message = clean(body.message, MAX.message);
+    const name = clean(body.name);
+    const contact = clean(body.contact);
+    const service = clean(body.service);
+    const message = clean(body.message);
 
-    if (!name || !contact || !message || !ALLOWED_SERVICES.has(service)) {
+    if (!name || !contact || !message || !ALLOWED_SERVICES.has(service) ||
+        name.length > MAX.name || contact.length > MAX.contact ||
+        service.length > MAX.service || message.length > MAX.message) {
       return json({ ok: false, error: "Missing or invalid fields" }, 400);
     }
 
@@ -303,6 +309,9 @@ export default {
     const replyTo =
       /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact) ? contact : undefined;
 
+    const controller = new AbortController();
+    let timer;
+    let timedOut = false;
     try {
       const email = {
         from: env.RESEND_FROM,
@@ -313,14 +322,24 @@ export default {
       };
       if (replyTo) email.reply_to = replyTo;
 
-      const response = await fetch("https://api.resend.com/emails", {
+      // Match the existing browser HTTP boundary's 15s request convention.
+      // A deadline cannot prove non-delivery; no automatic retry is safe here.
+      const deadline = new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          timedOut = true;
+          controller.abort();
+          reject(new Error("Contact provider deadline"));
+        }, 15000);
+      });
+      const response = await Promise.race([fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${env.RESEND_API_KEY}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify(email),
-      });
+        signal: controller.signal,
+      }), deadline]);
 
       if (!response.ok) {
         console.error("Resend email failed", response.status);
@@ -328,9 +347,11 @@ export default {
       }
 
       return json({ ok: true });
-    } catch (error) {
-      console.error("Email send failed", error?.message);
-      return json({ ok: false, error: "Email delivery failed" }, 500);
+    } catch {
+      console.error(timedOut ? "Email acknowledgement timed out" : "Email outcome is unknown");
+      return json({ ok: false, error: "Email delivery outcome unknown" }, timedOut ? 504 : 502);
+    } finally {
+      clearTimeout(timer);
     }
   },
 };

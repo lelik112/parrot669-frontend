@@ -492,8 +492,7 @@ document.addEventListener("click", event => {
   if (!document.body.classList.contains("home-page")) return;
   if (!(event.target instanceof Element)) return;
   const link = event.target.closest('a[href^="#"]');
-  const serviceCard = event.target.closest("[data-service-card]");
-  const source = link || serviceCard;
+  const source = link;
   if (!source || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
   const hash = link?.getAttribute("href") || "#contact";
   if (!hash || hash === "#") return;
@@ -508,13 +507,6 @@ document.addEventListener("click", event => {
 });
 
 document.addEventListener("keydown", event => {
-  if (event.target instanceof Element && event.target.matches("[data-service-card]") && (event.key === "Enter" || event.key === " ")) {
-    event.preventDefault();
-    if (leadServiceNavigationBlocked()) return;
-    const target = document.getElementById("contact");
-    if (target) navigateHomeAnchor({source:event.target,target,hash:"#contact",scroll:false});
-    return;
-  }
   const open = menuToggle?.getAttribute("aria-expanded") === "true";
   if (!open) return;
   if (event.key === "Escape") {
