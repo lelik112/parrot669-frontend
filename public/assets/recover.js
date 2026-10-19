@@ -10,7 +10,7 @@
   const requestForm=$("recovery-request"), confirmForm=$("recovery-confirm"), status=$("recovery-status"), again=$("recovery-again");
   let token=new URLSearchParams(location.hash.slice(1)).get("token"), busy=false, completed=false, statusKey="", statusKind="";
   if(location.hash) history.replaceState(null,"",location.pathname+location.search);
-  const initial=new URLSearchParams(location.search).get("lang")||localStorage.getItem("parrot669-language")||(navigator.language||"en").slice(0,2);
+  const initial=new URLSearchParams(location.search).get("lang")||window.ParrotCore.storage.local.getItem("parrot669-language")||(navigator.language||"en").slice(0,2);
   let lang=copy[initial]?initial:"en";
   const t=key=>copy[lang][key];
   function render(){
@@ -25,11 +25,7 @@
   function message(key,kind=""){statusKey=key;statusKind=kind;render()}
   function setBusy(value){busy=value;document.querySelectorAll("form input,form button,#recovery-again").forEach(el=>el.disabled=value)}
   async function post(action,body){
-    const response=await fetch(`/api/host/auth/password-reset/${action}`,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json",Accept:"application/json"},body:JSON.stringify(body)});
-    if(!response.ok){
-      const detail=await response.json().catch(()=>({}));
-      const error=new Error(detail.error||"request failed");error.status=response.status;throw error;
-    }
+    return window.ParrotCore.auth(`/password-reset/${action}`,{method:"POST",body:JSON.stringify(body)});
   }
   requestForm.addEventListener("submit",async event=>{
     event.preventDefault();if(busy||!requestForm.reportValidity()) return;
@@ -46,12 +42,12 @@
       await post("confirm",{token,password:confirmForm.elements.password.value,language:lang});
       token=null;completed=true;confirmForm.reset();again.hidden=true;message("done","success");
     }catch(error){
-      const invalid=error.message==="reset token is invalid or expired";
-      message(invalid?"invalid":error.message.includes("password must")?"passwordError":"error","error");
+      const invalid=error.code==="INVALID_RESET_TOKEN";
+      message(invalid?"invalid":error.code==="INVALID_PASSWORD"?"passwordError":"error","error");
       again.hidden=!invalid;
     }finally{setBusy(false)}
   });
   again.addEventListener("click",()=>{if(busy)return;token=null;confirmForm.reset();again.hidden=true;message("")});
-  document.querySelectorAll("[data-recovery-lang]").forEach(button=>button.addEventListener("click",()=>{lang=button.dataset.recoveryLang;localStorage.setItem("parrot669-language",lang);render()}));
+  document.querySelectorAll("[data-recovery-lang]").forEach(button=>button.addEventListener("click",()=>{lang=button.dataset.recoveryLang;window.ParrotCore.storage.local.setItem("parrot669-language",lang);render()}));
   if(token&&!/^[A-Za-z0-9_-]{43}$/.test(token)){token=null;message("invalid","error")}else render();
 })();

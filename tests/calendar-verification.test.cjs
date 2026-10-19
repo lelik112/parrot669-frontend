@@ -8,7 +8,7 @@ const id='11111111-1111-4111-8111-111111111111';
 const required={status:'Required',attemptsCount:0,maxAttempts:3,canStart:true,canCheck:false,
   minSelectableDate:'2030-09-23',maxSelectableDate:'2031-03-23'};
 const ready={...required,status:'Pending',attemptId:'attempt-1',attemptsCount:1,baselineReady:true,canStart:false,canCheck:true,canCancel:true,
-  selectedFrom:'2030-11-01',selectedTo:'2030-11-02',expectedAction:'Close',expiresAt:'2030-09-23T12:30:00Z'};
+  selectedFrom:'2030-11-01',selectedTo:'2030-11-03',expectedAction:'Close',expiresAt:'2030-09-23T12:30:00Z'};
 const waiting={...ready,canCheck:false,checksCount:1,nextCheckAt:'2030-09-23T12:05:00Z'};
 const verified={...waiting,status:'Verified',verifiedAt:'2030-09-23T12:05:00Z',nextCheckAt:null};
 const cancelled={...ready,status:'Cancelled',canStart:true,canCheck:false,canCancel:false,nextCheckAt:null};
@@ -58,7 +58,7 @@ test('start captures the baseline before Check; double click sends once and veri
   assert.equal(h.timers.size,0);
   assert.deepEqual(h.calls.filter(c=>c.method==='POST').map(c=>c.path),[
     `/calendars/${id}/verification/start`,`/calendars/${id}/verification/check`]);
-  assert.deepEqual(JSON.parse(h.calls.find(c=>c.path.endsWith('/start')).body),{from:'2030-11-01',to:'2030-11-02'});
+  assert.deepEqual(JSON.parse(h.calls.find(c=>c.path.endsWith('/start')).body),{from:'2030-11-01',to:'2030-11-03'});
 });
 
 test('pending verification can be cancelled and returns to a clear start-ready state',async t=>{
@@ -172,7 +172,7 @@ test('verification and cancellation states are translated in EN, ES, CA and RU',
   }
 });
 
-test('old backend responses remain usable but never expose unsupported cancellation',async t=>{
+test('enum spelling does not affect half-open periods or expose unsupported cancellation',async t=>{
   const {canCancel,...legacyReady}=ready;
   const legacy={...legacyReady,status:'pending',expectedAction:'close'};
   const h=await harness(t,{handler:()=>legacy});
@@ -209,7 +209,7 @@ test('changing the first night resets the last-night picker and submits the newl
   to.value='2031-02-18';
   await h.click();
   const start=h.calls.find(c=>c.path.endsWith('/start'));
-  assert.deepEqual(JSON.parse(start.body),{from:'2031-02-17',to:'2031-02-18'});
+  assert.deepEqual(JSON.parse(start.body),{from:'2031-02-17',to:'2031-02-19'});
 
   // Clearing the first night also removes the obsolete selected end date.
   from.value='';from.dispatchEvent(new h.w.Event('change',{bubbles:true}));
@@ -251,4 +251,28 @@ test('server bounds drive picker min/max, localized copy and inclusive boundary 
   }
   assert.equal(invalid.calls.filter(c=>c.method==='POST').length,0);
   assert.match(invalid.text(),/2030-09-23/);assert.match(invalid.text(),/2031-03-23/);
+});
+
+test('inclusive UI dates submit once as half-open periods and reload with the original last night',async t=>{
+  for(const [first,last,end] of [
+    ['2030-10-10','2030-10-12','2030-10-13'],
+    ['2030-12-31','2030-12-31','2031-01-01'],
+    ['2031-01-31','2031-02-01','2031-02-02'],
+    ['2031-03-23','2031-03-23','2031-03-24']
+  ]){
+    let state=required;
+    const handler=call=>{
+      if(call.path.endsWith('/start'))state={...ready,selectedFrom:first,selectedTo:end};
+      return state;
+    };
+    const h=await harness(t,{handler});h.choose(first,last);await h.click();
+    assert.deepEqual(JSON.parse(h.calls.find(c=>c.method==='POST').body),{from:first,to:end});
+    assert.match(h.text(),new RegExp(`${first} – ${last}`));
+    const reload=await harness(t,{handler});
+    assert.match(reload.text(),new RegExp(`${first} – ${last}`));
+    assert.deepEqual([...reload.panel.node.querySelectorAll('input')].map(i=>i.value),[first,last]);
+    await reload.tick();
+    assert.match(reload.text(),new RegExp(`${first} – ${last}`));
+    assert.equal(reload.calls.some(c=>c.method==='POST'),false);
+  }
 });

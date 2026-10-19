@@ -1,3 +1,4 @@
+const hostCore = window.ParrotCore;
 const LANG_KEY = "parrot669-language";
 
 const copy = {
@@ -91,13 +92,14 @@ let sessionLoading = true;
 let authBusy = false;
 const expandedPropertyIds = new Set();
 let accountId = null;
+let dashboardLoad = Promise.resolve();
 let unsavedHostChanges = false;
 let confirmedExit = false;
 const returnKey = id => `parrot669-host-return:${id}`;
 const propertyNavigationParams = new URLSearchParams(window.location.search);
 const propertyNavigationUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const propertyNavigationId = propertyNavigationUuid.test(propertyNavigationParams.get("property") || "") ? propertyNavigationParams.get("property") : null;
-const propertyConversationId = propertyNavigationId && propertyNavigationUuid.test(propertyNavigationParams.get("conversation") || "") ? propertyNavigationParams.get("conversation") : null;
+let propertyNavigationId = propertyNavigationUuid.test(propertyNavigationParams.get("property") || "") ? propertyNavigationParams.get("property") : null;
+let propertyConversationId = propertyNavigationId && propertyNavigationUuid.test(propertyNavigationParams.get("conversation") || "") ? propertyNavigationParams.get("conversation") : null;
 let propertyNavigationPending = Boolean(propertyNavigationId);
 const navCopy = {
   en:{navProperties:"My properties",navTools:"Host tools",discardChanges:"Discard unsaved changes and leave this page?"},
@@ -122,7 +124,7 @@ document.addEventListener("click",event=>{
   if(unsavedHostChanges && !confirm(tr("discardChanges"))){event.preventDefault();return;}
   confirmedExit=true;
   if(link.pathname==="/messages.html" && state.authenticated && accountId){
-    try{sessionStorage.setItem(returnKey(accountId),JSON.stringify({ids:[...expandedPropertyIds],scrollY:window.scrollY}));}catch{}
+    try{hostCore.storage.session.setItem(returnKey(accountId),JSON.stringify({ids:[...expandedPropertyIds],scrollY:window.scrollY}));}catch{}
   }
 });
 window.addEventListener("beforeunload",event=>{
@@ -131,8 +133,8 @@ window.addEventListener("beforeunload",event=>{
 function restoreHostContext(){
   if(!accountId)return;
   try{
-    const key=returnKey(accountId),saved=JSON.parse(sessionStorage.getItem(key)||"null");
-    sessionStorage.removeItem(key);
+    const key=returnKey(accountId),saved=JSON.parse(hostCore.storage.session.getItem(key)||"null");
+    hostCore.storage.session.removeItem(key);
     if(!saved || !Array.isArray(saved.ids))return;
     const owned=new Set(state.properties.map(property=>property.id));
     saved.ids.filter(id=>typeof id==="string" && owned.has(id)).forEach(id=>expandedPropertyIds.add(id));
@@ -243,7 +245,7 @@ const profileReturnId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-
 function profileReturnContext(){
   if (!state.authenticated || new URLSearchParams(window.location.search).get("fromMessages") !== "1" || window.location.hash !== "#host-profile") return null;
   try {
-    const saved=JSON.parse(sessionStorage.getItem(profileReturnKey)||"null");
+    const saved=JSON.parse(hostCore.storage.session.getItem(profileReturnKey)||"null");
     return saved?.accountId === accountId && profileReturnId.test(saved.conversationId || "") &&
       saved.savedAt > Date.now()-86400000 ? saved : null;
   } catch { return null; }
@@ -256,9 +258,241 @@ const langButtons = document.querySelectorAll("[data-host-lang]");
 const authModeButtons = document.querySelectorAll("[data-auth-mode]");
 const propertyAddressEditors = new Map();
 const calendarVerificationPanels = [];
+// Only Host owns these private, in-memory drafts. Identity changes discard them.
+const hostDrafts = new Map();
+const hostViews = new Map();
+const hostPropertyWrites = new Map();
+const hostAddressViews = new Map();
+const hostVerificationViews = new Map();
+const hostResourceVersions = new WeakMap();
+const hostAvailabilityLoads = new WeakMap();
+
+function hostFields(form){
+  return Object.fromEntries([...form.querySelectorAll("input,select,textarea")]
+    .filter(node => node.name && !node.closest?.("[data-host-island]"))
+    .map(node => [node.name, node.type === "checkbox" ? node.checked : node.value]));
+}
+
+function hostDraft(form){
+  const key = `${accountId}:${form.dataset.hostDraftKey || form.id}`;
+  if (!hostDrafts.has(key)) {
+    const values = hostFields(form);
+    hostDrafts.set(key, {server:{...values}, values:{...values}, dirty:new Set(), versions:{}, operation:null});
+  }
+  return hostDrafts.get(key);
+}
+
+function hostAddressSnapshot(form){
+  return JSON.stringify([...form.querySelectorAll("input,select,textarea")]
+    .filter(node=>node.closest?.("[data-host-island]"))
+    .map(node=>[node.id,node.name,node.value]));
+}
+
+function captureHostDraft(form){
+  const draft = hostDraft(form);
+  for (const [name, value] of Object.entries(hostFields(form))) {
+    if (draft.values[name] !== value) draft.versions[name] = (draft.versions[name] || 0) + 1;
+    draft.values[name] = value;
+    if (value === draft.server[name]) draft.dirty.delete(name);
+    else draft.dirty.add(name);
+  }
+  return draft;
+}
+
+function hostDirtyState(){
+  unsavedHostChanges = [...hostDrafts.values()].some(draft => draft.dirty.size || draft.addressDirty);
+}
+
+function syncHostForm(form, server){
+  const draft = captureHostDraft(form);
+  draft.server = {...server};
+  for (const node of form.querySelectorAll("input,select,textarea")) {
+    if (!node.name || node.closest?.("[data-host-island]")) continue;
+    if (!draft.dirty.has(node.name)) draft.values[node.name] = server[node.name] ?? "";
+    const value = draft.values[node.name];
+    if (node.type === "checkbox") { if (node.checked !== value) node.checked = value; }
+    else if (node.value !== String(value ?? "")) node.value = value ?? "";
+    if (value === server[node.name]) draft.dirty.delete(node.name);
+    node.refreshDateHint?.();
+  }
+  form.hostRefresh?.();
+  hostDirtyState();
+}
+
+function beginHostSave(form, property = null){
+  const draft = captureHostDraft(form);
+  if (draft.operation || (property && hostPropertyWrites.has(property.id))) return null;
+  const operation = {form, draft, values:{...draft.values}, versions:{...draft.versions},
+    addressVersion:draft.addressVersion || 0, addressValues:hostAddressSnapshot(form),
+    epoch:hostCore.session.epoch, account:accountId, property};
+  draft.operation = operation;
+  form.dataset.hostOperation = "saving";
+  if (property) hostPropertyWrites.set(property.id, operation);
+  return operation;
+}
+
+function currentHostSave(operation){
+  return operation && operation.epoch === hostCore.session.epoch && operation.account === accountId
+    && (!operation.property || state.properties.includes(operation.property));
+}
+
+function finishHostSave(operation, server){
+  if (!currentHostSave(operation)) return;
+  const draft = captureHostDraft(operation.form);
+  operation.form.dataset.hostOperation = "saved";
+  draft.addressDirty=(draft.addressVersion || 0)!==operation.addressVersion
+    || hostAddressSnapshot(operation.form)!==operation.addressValues;
+  for (const [name, value] of Object.entries(server)) {
+    draft.server[name] = value;
+    if (draft.versions[name] === operation.versions[name] && draft.values[name] === operation.values[name]) {
+      draft.dirty.delete(name);
+      draft.values[name] = value;
+    }
+  }
+  // Apply without treating an acknowledged value as another user edit.
+  for (const node of operation.form.querySelectorAll("input,select,textarea")) {
+    if (node.name && !node.closest?.("[data-host-island]") && !draft.dirty.has(node.name)) {
+      if (node.type === "checkbox") node.checked = draft.values[node.name];
+      else if (node.value !== String(draft.values[node.name] ?? "")) node.value = draft.values[node.name] ?? "";
+      node.refreshDateHint?.();
+    }
+  }
+  hostDirtyState();
+}
+
+function releaseHostSave(operation){
+  if (!operation) return;
+  if (operation.draft.operation === operation) operation.draft.operation = null;
+  if (operation.property && hostPropertyWrites.get(operation.property.id) === operation)
+    hostPropertyWrites.delete(operation.property.id);
+}
+
+function hostInput(event){
+  const form = event.target.closest?.("form");
+  if (!form || (!form.dataset.hostDraftKey && form !== hostProfileForm && form !== propertyForm)) return;
+  const draft = captureHostDraft(form);
+  if (event.target.closest?.("[data-host-island]")) {draft.addressDirty = true; draft.addressVersion=(draft.addressVersion || 0)+1;}
+  hostDirtyState();
+}
+propertyPanel.addEventListener("input", hostInput);
+propertyPanel.addEventListener("change", hostInput);
+hostProfileForm.addEventListener("input", hostInput);
+hostProfileForm.addEventListener("change", hostInput);
+
+function hostMergeRows(previous, rows){
+  return rows.map(row => {
+    const current = previous?.find(item => item.id === row.id);
+    if (!current) return row;
+    Object.assign(current, row);
+    return current;
+  });
+}
+
+function hostMergeProperties(properties){
+  return properties.map(property => {
+    const previous = state.properties.find(item => item.id === property.id);
+    if (!previous) return property;
+    const availability = hostMergeRows(previous.availability, property.availability);
+    const unavailability = hostMergeRows(previous.unavailability, property.unavailability);
+    const calendars = property.calendars;
+    return Object.assign(previous, property, {availability, unavailability, calendars});
+  });
+}
+
+// Reconcile only the existing Host card template. Address/verification controllers
+// are opaque islands; their input nodes, listeners and async lifecycle stay owned there.
+function hostNodeKey(node){
+  return node.dataset?.hostKey || `${node.tagName}:${node.name || node.className || ""}`;
+}
+
+function patchHostView(current, next){
+  if (current.dataset?.hostIsland) return current;
+  const server = current.tagName === "FORM" ? hostFields(next) : null;
+  if (server) captureHostDraft(current);
+  const protectedControl = current.closest?.("form") && /^(INPUT|SELECT|TEXTAREA)$/.test(current.tagName);
+  const busy = current.closest?.("form") && hostDraft(current.closest("form")).operation;
+  const retainedAttribute = name => (protectedControl && name === "value")
+    || (busy && name === "disabled") || (server && ["aria-busy","data-host-operation"].includes(name));
+  for (const name of current.getAttributeNames()) {
+    if (!retainedAttribute(name) && !next.hasAttribute(name)) current.removeAttribute(name);
+  }
+  for (const name of next.getAttributeNames()) {
+    if (!retainedAttribute(name) && current.getAttribute(name) !== next.getAttribute(name))
+      current.setAttribute(name, next.getAttribute(name));
+  }
+  if (!next.children.length) {
+    if (!protectedControl && current.textContent !== next.textContent) current.textContent = next.textContent;
+    if(current.tagName === "INPUT" && current.type === "checkbox" && !current.closest?.("form"))
+      current.checked=next.checked;
+  } else {
+    const children = [...current.children], used = new Set();
+    let position = 0;
+    for (const child of [...next.children]) {
+      const existing = children.find(node => !used.has(node) && hostNodeKey(node) === hostNodeKey(child));
+      const node = existing ? patchHostView(existing, child) : child;
+      used.add(node);
+      if (current.children[position] !== node) current.insertBefore(node, current.children[position] || null);
+      position++;
+    }
+    for (const child of children) if (!used.has(child) && !child.classList.contains("host-form-error")) child.remove();
+  }
+  if (server) syncHostForm(current, server);
+  return current;
+}
+
+function disposeHostProperty(id){
+  hostViews.get(id)?.node.remove();
+  hostViews.delete(id);
+  const address = hostAddressViews.get(id);
+  if (address) {address.editor.dispose(); propertyAddressEditors.delete(address.form); hostAddressViews.delete(id);}
+  for (const [key, panel] of hostVerificationViews) if (panel.propertyId === id) {
+    panel.dispose(); hostVerificationViews.delete(key);
+    const index = calendarVerificationPanels.indexOf(panel);
+    if (index >= 0) calendarVerificationPanels.splice(index, 1);
+  }
+  for (const key of hostDrafts.keys()) if (key.startsWith(`${accountId}:property:${id}:`)) hostDrafts.delete(key);
+}
+
+function commitHostCard(property, card, expanded){
+  const previous = hostViews.get(property.id);
+  const node = previous ? patchHostView(previous.node, card) : card;
+  if (!previous) {
+    propertiesNode.append(node);
+    for (const form of node.querySelectorAll("form")) captureHostDraft(form);
+  }
+  const position=state.properties.indexOf(property);
+  if(propertiesNode.children[position]!==node){
+    const active=document.activeElement;
+    const selection=active && node.contains(active) ? {node:active,from:active.selectionStart,to:active.selectionEnd} : null;
+    propertiesNode.insertBefore(node,propertiesNode.children[position] || null);
+    if(selection && selection.node.isConnected){
+      selection.node.focus({preventScroll:true});
+      if(selection.from!=null && selection.to!=null)selection.node.setSelectionRange(selection.from,selection.to);
+    }
+  }
+  for (const child of node.children) if (!child.classList.contains("host-property-head")) child.hidden = !expanded;
+  hostViews.set(property.id, {node, expandedOnce:expanded || previous?.expandedOnce});
+  const address = hostAddressViews.get(property.id);
+  if (address) {
+    const saved=address.editor.node.querySelector(".host-address-saved")?.querySelector("p");
+    const text=property.address?.address || [property.city,property.country].filter(Boolean).join(", ");
+    if(saved && saved.textContent!==text)saved.textContent=text;
+    if(address.editor.node.querySelector(".host-address-fields")?.hidden && property.countryCode)
+      address.editor.country.value=property.countryCode;
+    address.editor.updateLanguage();
+  }
+  for (const panel of hostVerificationViews.values()) if(panel.propertyId===property.id){
+    panel.updateLanguage?.(lang);
+    const title=node.querySelector(".host-calendar-sync")?.querySelector("h3");
+    if(title)title.textContent=panel.name;
+  }
+  for (const form of node.querySelectorAll("form")) {captureHostDraft(form); form.hostRefresh?.();}
+  hostDirtyState();
+}
 const newPropertyAddress = window.ParrotAddress.create({
   id:"new-property-address", tr, request:api, required:true, onUnauthorized:addressSessionExpired
 });
+newPropertyAddress.node.dataset.hostIsland="new-address";
 document.getElementById("property-address").append(newPropertyAddress.node);
 
 function addressSessionExpired(){
@@ -268,7 +502,7 @@ function addressSessionExpired(){
 }
 
 function loadLanguage(){
-  const saved = localStorage.getItem(LANG_KEY);
+  const saved = hostCore.storage.local.getItem(LANG_KEY);
   if (saved && copy[saved]) return saved;
   const browser = (navigator.language || "en").slice(0,2);
   return copy[browser] ? browser : "en";
@@ -281,7 +515,7 @@ function tr(key, ...args){
 
 function applyLanguage(next){
   lang = copy[next] ? next : "en";
-  localStorage.setItem(LANG_KEY, lang);
+  hostCore.storage.local.setItem(LANG_KEY, lang);
   document.documentElement.lang = lang;
   document.title = tr("title");
 
@@ -323,44 +557,73 @@ function message(text, kind = ""){
 }
 
 async function api(path, options = {}){
-  const headers = new Headers(options.headers || {});
-  headers.set("Accept", "application/json");
-  if (options.body) headers.set("Content-Type", "application/json");
-
-  // Browser host API is namespaced under /api/host; the Worker strips /api/host
-  // and forwards the same request to the backend under /api.
-  const response = await fetch(`/api/host${path}`, {
-    ...options,
-    headers,
-    credentials:"same-origin"
-  });
-  if (response.status === 204) return null;
-
-  let data = null;
-  try { data = await response.json(); } catch {}
-  if (!response.ok) {
-    const detail = data?.error || data?.message || `HTTP ${response.status}`;
-    const knownErrors = {
-      "email verification required":"verifyFirst",
-      "title is required":"titleRequired",
-      "title is too long":"titleTooLong",
-      "select an address with a country and city":"addressChoose",
-      "select a full address with a street and house number":"addressChoose",
-      "availability period overlaps an existing period":"overlapError",
-      "unavailability period overlaps an existing block":"blockOverlap",
-      "to must be after from; checkout date is exclusive":"blockDateError",
-      "to must be after from; end date is exclusive":"blockDateError"
-    };
-    const error = new Error(knownErrors[detail] ? tr(knownErrors[detail]) : detail);
-    error.status = response.status;
-    error.code = typeof data?.code === "string" ? data.code : "";
+  const {hostOperation, ...requestOptions}=options;
+  options=requestOptions;
+  let ownedWrite, resource, epoch, currentResource=()=>true;
+  try {
+    if (path === "/auth/me") {
+      const user = await hostCore.session.refresh();
+      if (!user) throw Object.assign(new Error(tr("signIn")), {status:401, code:"AUTHENTICATION_REQUIRED"});
+      return user;
+    }
+    if (path.startsWith("/auth/")) return await hostCore.auth(path.slice(5), options);
+    // Explicit producer contracts; a 204 from any other operation is a protocol error.
+    const method = options.method || "GET";
+    const empty = method === "DELETE" && /^\/(properties|listings|calendars|availability|unavailability)\/[^/]+$/.test(path)
+      || method === "PUT" && /^\/(availability|calendars)\/[^/]+$/.test(path)
+      || method === "PUT" && /^\/properties\/[^/]+\/public-links$/.test(path)
+      || method === "POST" && /^\/calendars\/[^/]+\/(sync|activate)$/.test(path);
+    epoch = hostCore.session.epoch;
+    resource = state.properties.find(property => path === `/properties/${property.id}` || path.startsWith(`/properties/${property.id}/`)
+      || path === `/listings/${property.listing?.id}`
+      || property.availability?.some(period => path === `/availability/${period.id}`)
+      || property.unavailability?.some(period => path === `/unavailability/${period.id}`)
+      || property.calendars?.some(calendar => path.startsWith(`/calendars/${calendar.id}`)));
+    if (resource && method !== "GET") {
+      const active=hostPropertyWrites.get(resource.id);
+      if (active && active !== hostOperation) throw Object.assign(new Error(tr("loading")),{kind:"busy"});
+      if (!active) {
+        ownedWrite={propertyId:resource.id};
+        hostPropertyWrites.set(resource.id,ownedWrite);
+      }
+      hostResourceVersions.set(resource,(hostResourceVersions.get(resource) || 0)+1);
+    }
+    const resourceVersion=hostResourceVersions.get(resource) || 0;
+    const period=resource?.availability?.find(value=>path===`/availability/${value.id}`)
+      || resource?.unavailability?.find(value=>path===`/unavailability/${value.id}`);
+    const listingId=resource && path===`/listings/${resource.listing?.id}` ? resource.listing.id : null;
+    const calendarId=resource?.calendars?.find(calendar=>path===`/calendars/${calendar.id}` || path.startsWith(`/calendars/${calendar.id}/`))?.id;
+    currentResource=()=>!resource || (epoch===hostCore.session.epoch && state.properties.includes(resource)
+      && (method!=="GET" || resourceVersion===(hostResourceVersions.get(resource) || 0))
+      && (!period || [...(resource.availability || []),...(resource.unavailability || [])].includes(period))
+      && (!listingId || resource.listing?.id===listingId)
+      && (!calendarId || resource.calendars?.some(calendar=>calendar.id===calendarId)));
+    const value = await hostCore.session.request(`/api/host${path}`, {...options, authenticated:true,
+      ...(empty ? {expected:"empty"} : {}),
+      ...(path === "/dashboard" ? {validate:value => value && typeof value === "object" && Array.isArray(value.properties)} : {})});
+    if (!currentResource()) throw Object.assign(new Error("Stale Host resource"), {kind:"stale"});
+    if (method !== "GET") dashboardVersion++;
+    return value;
+  } catch (error) {
+    if (!currentResource())
+      throw Object.assign(new Error("Stale Host resource"), {kind:"stale"});
+    const keys = {EMAIL_VERIFICATION_REQUIRED:"verifyFirst", TITLE_REQUIRED:"titleRequired", TITLE_TOO_LONG:"titleTooLong",
+      ADDRESS_REQUIRED:"addressChoose", FULL_ADDRESS_REQUIRED:"addressChoose", AVAILABILITY_OVERLAP:"overlapError",
+      UNAVAILABILITY_OVERLAP:"blockOverlap"};
+    if(keys[error.code]) error.message = tr(keys[error.code]);
+    // INVALID_REQUEST is contextual in PM120; retain these two existing date
+    // explanations until the backend has a field-specific validation contract.
+    if(error.code === "INVALID_REQUEST" && ["to must be after from; checkout date is exclusive",
+      "to must be after from; end date is exclusive"].includes(error.message)) error.message=tr("blockDateError");
     throw error;
+  } finally {
+    if (ownedWrite && hostPropertyWrites.get(ownedWrite.propertyId) === ownedWrite)
+      hostPropertyWrites.delete(ownedWrite.propertyId);
   }
-  return data;
 }
 
 function setBusy(form, busy){
-  form?.querySelectorAll("button,input,select").forEach(node => node.disabled = busy);
+  form?.querySelectorAll("button").forEach(node => node.disabled = busy);
   if (!busy) {
     if (form === propertyForm) newPropertyAddress.refreshDisabled();
     propertyAddressEditors.get(form)?.refreshDisabled();
@@ -382,10 +645,10 @@ function setFormError(form, text = ""){
 }
 
 const listingConflictKeys={
-  airbnb_listing_already_connected_to_this_property:"listingConflictThisProperty",
-  airbnb_listing_already_connected_to_your_account:"listingConflictYourAccount",
-  airbnb_listing_connected_to_another_account:"listingConflictOtherAccount",
-  airbnb_listing_already_connected:"listingConflictNeutral"
+  AIRBNB_LISTING_ALREADY_CONNECTED_TO_THIS_PROPERTY:"listingConflictThisProperty",
+  AIRBNB_LISTING_ALREADY_CONNECTED_TO_YOUR_ACCOUNT:"listingConflictYourAccount",
+  AIRBNB_LISTING_CONNECTED_TO_ANOTHER_ACCOUNT:"listingConflictOtherAccount",
+  AIRBNB_LISTING_ALREADY_CONNECTED:"listingConflictNeutral"
 };
 
 function setListingFormError(form,error){
@@ -393,7 +656,7 @@ function setListingFormError(form,error){
   if(!key){setFormError(form,error.message);return error.message;}
   const text=tr(key);
   setFormError(form,text);
-  if(error.code==="airbnb_listing_connected_to_another_account"||error.code==="airbnb_listing_already_connected"){
+  if(error.code==="AIRBNB_LISTING_CONNECTED_TO_ANOTHER_ACCOUNT"||error.code==="AIRBNB_LISTING_ALREADY_CONNECTED"){
     const node=form.querySelector(".host-form-error");
     const link=document.createElement("a");
     link.className="host-form-support-link";
@@ -405,20 +668,37 @@ function setListingFormError(form,error){
 }
 
 function setAuthenticated(user){
-  accountId=user?.accountId || null;
-  window.ParrotMessaging?.setUser(user);
-  state = {
-    ...emptyState(),
-    authenticated:true,
-    accountEmail:String(user?.email || ""),
-    username:String(user?.username || ""),
-    profile:user?.profile || null
-  };
+  hostCore.session.setUser(user);
+}
+
+function clearPrivatePresentation(){
+  langButtons.forEach(button=>{button.hostFocus=null;});
+  for (const id of [...hostViews.keys()]) disposeHostProperty(id);
+  calendarVerificationPanels.splice(0).forEach(panel=>panel.dispose());
+  propertyAddressEditors.forEach(editor=>editor.dispose());
+  propertyAddressEditors.clear();
+  hostDrafts.clear();
+  hostPropertyWrites.clear();
+  setBusy(hostProfileForm,false);
+  setBusy(propertyForm,false);
+  delete hostProfileForm.dataset.hostOperation;
+  delete propertyForm.dataset.hostOperation;
+  state = emptyState();
+  renderAuthState();
+  renderProperties(); // Disposes property address/verification controllers and detached closures.
+  expandedPropertyIds.clear();
+  unsavedHostChanges = false;
+  propertyForm.reset?.();
+  newPropertyAddress.reset();
+  loginForm.elements.password.value = "";
+  registerForm.elements.password.value = "";
+  setFormError(propertyForm);
+  setFormError(hostProfileForm);
+  message("");
 }
 
 function renderAuthState(){
   const ready = Boolean(state.authenticated);
-  if (!ready && !sessionLoading) window.ParrotMessaging?.setUser(null);
   hostAuthLinks.hidden = sessionLoading || ready;
   hostAccountSession.hidden = !ready;
   hostHero.hidden = !ready;
@@ -433,7 +713,7 @@ function renderAuthState(){
   hostAccountEmail.removeAttribute("title");
   document.getElementById("host-profile-email").textContent = ready ? state.accountEmail : "";
   document.getElementById("host-profile-username").textContent = ready ? state.username : "";
-  if (ready && state.profile) hostProfileForm.elements.displayName.value = state.profile.displayName || "";
+  if (ready && state.profile) syncHostForm(hostProfileForm, {displayName:state.profile.displayName || ""});
   else hostProfileForm.elements.displayName.value = "";
 }
 
@@ -463,21 +743,65 @@ function setAuthBusy(form, busy){
   authDialog.setAttribute("aria-busy", String(busy));
 }
 
+const calendarSnapshots = new WeakMap();
+let dashboardVersion = 0;
+function calendarSnapshot(value){
+  if(!value || !Array.isArray(value.calendars)) return false;
+  const ids = new Set();
+  return value.calendars.every(calendar => {
+    if(!calendar || typeof calendar.id !== "string"
+      || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(calendar.id)
+      || ids.has(calendar.id.toLowerCase()) || typeof calendar.provider !== "string"
+      || typeof calendar.enabled !== "boolean" || !["Active","Frozen","Disabled"].includes(calendar.mode)
+      || !Number.isSafeInteger(calendar.revision) || calendar.revision < 0) return false;
+    ids.add(calendar.id.toLowerCase());
+    return true;
+  });
+}
+
+function calendarRevision(calendar){
+  const snapshot = calendar && calendarSnapshots.get(calendar);
+  if(!snapshot || snapshot.epoch !== hostCore.session.epoch || !state.authenticated
+    || !state.properties.some(property => property.id === snapshot.propertyId && property.calendars.includes(calendar)))
+    throw new Error("Invalid server response");
+  return snapshot.revision;
+}
+
 async function syncDashboard(){
+  const epoch = hostCore.session.epoch, version = ++dashboardVersion;
   message(tr("loading"));
   try {
     const dashboard = await api("/dashboard");
+    if(epoch !== hostCore.session.epoch || version !== dashboardVersion) return;
+    let calendarError;
+    const properties = await Promise.all(dashboard.properties.map(async property => {
+      let calendars = [];
+      try {
+        // Dashboard does not contain calendar mode/revision. Only the
+        // authenticated property snapshot is a command source.
+        const snapshot = await api(`/properties/${property.id}/calendars`, {validate:calendarSnapshot});
+        calendars = snapshot.calendars.map(calendar => {
+          const view = {...calendar, status:String(calendar.status || "").toLowerCase()};
+          calendarSnapshots.set(view, {propertyId:property.id, epoch, revision:calendar.revision});
+          return view;
+        });
+      } catch(error) {
+        if(error.kind === "stale" || error.status === 401) throw error;
+        calendarError ||= error;
+        calendars = state.properties.find(item=>item.id===property.id)?.calendars || [];
+      }
+      return {...property,
+        listing:Array.isArray(property.listings) ? (property.listings[0] || null) : null,
+        availability:Array.isArray(property.availability) ? property.availability : [],
+        unavailability:Array.isArray(property.unavailability) ? property.unavailability : [],
+        calendars};
+    }));
+    if(epoch !== hostCore.session.epoch || version !== dashboardVersion) return;
     if (dashboard.profile) {
       state.profile = dashboard.profile;
-      hostProfileForm.elements.displayName.value = dashboard.profile.displayName || "";
+      syncHostForm(hostProfileForm, {displayName:dashboard.profile.displayName || ""});
     }
-    state.properties = (dashboard.properties || []).map(property => ({
-      ...property,
-      listing: Array.isArray(property.listings) ? (property.listings[0] || null) : null,
-      availability: Array.isArray(property.availability) ? property.availability : [],
-      unavailability: Array.isArray(property.unavailability) ? property.unavailability : [],
-      calendars: Array.isArray(property.calendars) ? property.calendars : []
-    }));
+    state.properties = hostMergeProperties(properties);
     const navigateToProperty = propertyNavigationPending;
     const returningFromMessages = !navigateToProperty && profileReturnContext();
     let previousScroll = null;
@@ -485,7 +809,7 @@ async function syncDashboard(){
       propertyNavigationPending = false;
       expandedPropertyIds.clear();
       if(state.properties.some(property=>property.id===propertyNavigationId)) expandedPropertyIds.add(propertyNavigationId);
-      try { sessionStorage.removeItem(returnKey(accountId)); } catch {}
+      try { hostCore.storage.session.removeItem(returnKey(accountId)); } catch {}
     }else if(!returningFromMessages) previousScroll=restoreHostContext();
     renderProperties();
     if(navigateToProperty) requestAnimationFrame(()=>{
@@ -497,15 +821,16 @@ async function syncDashboard(){
       requestAnimationFrame(()=>hostProfilePanel.scrollIntoView?.({block:"start"}));
     else if(previousScroll!==null && previousScroll!==undefined)
       restoreHostScroll(previousScroll);
-    message("");
+    message(calendarError?.message || "", calendarError ? "error" : "");
   } catch (error) {
+    if(error.kind === "stale" || epoch !== hostCore.session.epoch || version !== dashboardVersion) return;
     if (error.status === 401) {
       state = emptyState();
       state.properties = [];
       renderAuthState();
     }
     message(error.message, "error");
-    state.properties = [];
+    if (error.status === 401) state.properties = [];
     renderProperties();
   }
 }
@@ -527,6 +852,8 @@ async function revalidateRestoredPage(){
   // BFCache restores the previous DOM verbatim. Clear every auth-sensitive
   // value synchronously, then rebuild it only from a fresh server session.
   sessionLoading = true;
+  hostDrafts.clear();
+  hostPropertyWrites.clear();
   state = emptyState();
   accountId = null;
   expandedPropertyIds.clear();
@@ -559,7 +886,7 @@ async function restoreSession(){
       });
       setAuthenticated(user);
       renderAuthState();
-      await syncDashboard();
+      await dashboardLoad;
       params.delete("verifyEmail");
       const query = params.toString();
       history.replaceState(null, "", window.location.pathname + (query ? `?${query}` : "") + window.location.hash);
@@ -582,7 +909,7 @@ async function restoreSession(){
     const user = await api("/auth/me");
     setAuthenticated(user);
     renderAuthState();
-    await syncDashboard();
+    await dashboardLoad;
   } catch (error) {
     state = emptyState();
     renderAuthState();
@@ -596,6 +923,8 @@ openLoginButton.addEventListener("click", () => openAuth("login"));
 hostProfileForm.addEventListener("submit", async event => {
   event.preventDefault();
   if (!state.authenticated) return;
+  const operation = beginHostSave(hostProfileForm);
+  if (!operation) return;
   setFormError(hostProfileForm);
   setBusy(hostProfileForm, true);
   try {
@@ -603,17 +932,22 @@ hostProfileForm.addEventListener("submit", async event => {
       method:"PATCH",
       body:JSON.stringify({displayName:hostProfileForm.elements.displayName.value.trim()})
     });
+    if (!currentHostSave(operation)) return;
+    finishHostSave(operation, {displayName:profile.displayName});
     state.profile = profile;
-    hostProfileForm.elements.displayName.value = profile.displayName;
+    hostCore.session.updateProfile(profile);
+    syncHostForm(hostProfileForm, {displayName:profile.displayName});
     message(tr("profileSaved"), "success");
   } catch (error) {
+    if (!currentHostSave(operation) || error.kind === "stale") return;
     setFormError(hostProfileForm, error.message);
     if (error.status === 401) {
       state = emptyState();
       renderAuthState();
     }
   } finally {
-    setBusy(hostProfileForm, false);
+    releaseHostSave(operation);
+    if(currentHostSave(operation))setBusy(hostProfileForm, false);
   }
 });
 openRegisterButton.addEventListener("click", () => openAuth("register"));
@@ -637,7 +971,7 @@ loginForm.addEventListener("submit", async event => {
     });
     setAuthenticated(user);
     renderAuthState();
-    await syncDashboard();
+    await dashboardLoad;
     loginForm.elements.password.value = "";
     message(tr("loggedIn"), "success");
   } catch (error) {
@@ -683,6 +1017,8 @@ registerForm.addEventListener("submit", async event => {
 
 propertyForm.addEventListener("submit", async event => {
   event.preventDefault();
+  const operation=beginHostSave(propertyForm);
+  if (!operation) return;
 
   const form = new FormData(propertyForm);
   setFormError(propertyForm);
@@ -703,6 +1039,8 @@ propertyForm.addEventListener("submit", async event => {
       })
     });
 
+    if (!currentHostSave(operation)) return;
+    finishHostSave(operation,{title:""});
     state.properties.push({
       id:created.id,
       title:created.title,
@@ -721,15 +1059,17 @@ propertyForm.addEventListener("submit", async event => {
       calendars:[]
     });
     expandedPropertyIds.add(created.id);
-    propertyForm.elements.title.value = "";
-    newPropertyAddress.reset();
+    if (!operation.draft.addressDirty) newPropertyAddress.reset();
     message(tr("propertyAdded"), "success");
     renderProperties();
   } catch (error) {
+    if (!currentHostSave(operation) || error.kind === "stale") return;
+    propertyForm.dataset.hostOperation=error.status && error.status < 500 ? "failed" : "unknown";
     setFormError(propertyForm, error.message);
     message(error.message, "error");
   } finally {
-    setBusy(propertyForm, false);
+    releaseHostSave(operation);
+    if(currentHostSave(operation))setBusy(propertyForm, false);
   }
 });
 
@@ -747,8 +1087,8 @@ resetButton.addEventListener("click", async () => {
     }
   }
   state = emptyState();
-  if(accountId){try{sessionStorage.removeItem(returnKey(accountId));}catch{}}
-  try{sessionStorage.removeItem(profileReturnKey);}catch{}
+  if(accountId){try{hostCore.storage.session.removeItem(returnKey(accountId));}catch{}}
+  try{hostCore.storage.session.removeItem(profileReturnKey);}catch{}
   accountId=null;
     newPropertyAddress.reset();
     unsavedHostChanges=false;
@@ -771,6 +1111,8 @@ function centsToEuros(value){
 }
 
 async function updatePropertySettings(property, form){
+  const operation = beginHostSave(form, property);
+  if (!operation) return;
   setFormError(form);
   const data=new FormData(form);
   const payload={
@@ -787,8 +1129,15 @@ async function updatePropertySettings(property, form){
     setBusy(form,true);
     message(tr("loading"));
     const updated=await api(`/properties/${property.id}`,{
+      hostOperation:operation,
       method:"PUT",
       body:JSON.stringify(payload)
+    });
+    if (!currentHostSave(operation)) return;
+    finishHostSave(operation, {
+      ...(data.has("title") ? {title:updated.title, accommodationType:updated.accommodationType,
+        bedrooms:String(updated.bedrooms), sleeps:String(updated.sleeps)} : {}),
+      ...(data.has("minStayDays") ? {minStayDays:String(updated.minStayDays), cleaningFee:centsToEuros(updated.cleaningFeeCents)} : {})
     });
     property.title=updated.title;
     property.accommodationType=updated.accommodationType;
@@ -803,8 +1152,8 @@ async function updatePropertySettings(property, form){
     saveState();
     message(tr("propertySettingsSaved"),"success");
     renderProperties();
-  }catch(error){setFormError(form,error.message);message(error.message,"error")}
-  finally{setBusy(form,false)}
+  }catch(error){if(currentHostSave(operation) && error.kind !== "stale"){setFormError(form,error.message);message(error.message,"error")}}
+  finally{releaseHostSave(operation);setBusy(form,false)}
 }
 
 async function addListing(property, form){
@@ -826,6 +1175,7 @@ async function addListing(property, form){
     message(tr("listingSaved"), "success");
     renderProperties();
   } catch (error) {
+    if(error.kind === "stale") return;
     const text=setListingFormError(form,error);
     message(text, "error");
   } finally {
@@ -890,6 +1240,8 @@ function periodHeading(form, key){
 
 async function addAvailability(property, form){
   if (form.getAttribute("aria-busy") === "true") return;
+  const operation = beginHostSave(form, property);
+  if (!operation) return;
   const data = new FormData(form);
   setFormError(form);
   form.setAttribute("aria-busy", "true");
@@ -898,33 +1250,50 @@ async function addAvailability(property, form){
 
   try {
     await api(`/properties/${property.id}/availability`, {
+      hostOperation:operation,
       method:"POST",
       body:JSON.stringify({...hostPeriodDates(data), nightlyPriceCents:eurosToCents(data.get("nightlyPrice"))})
     });
+    if (!currentHostSave(operation)) return;
+    finishHostSave(operation, {from:"", to:"", nightlyPrice:""});
     message(tr("availabilityAdded"), "success");
-    await refreshAvailability(property, true);
+    if (!await refreshAvailability(property, true) && currentHostSave(operation)) form.dataset.hostOperation="saved_refresh_failed";
   } catch (error) {
+    if (!currentHostSave(operation) || error.kind === "stale") return;
+    form.dataset.hostOperation=error.status && error.status < 500 ? "failed" : "unknown";
     setFormError(form, error.message);
     message(error.message, "error");
   } finally {
+    releaseHostSave(operation);
     form.removeAttribute("aria-busy");
     setBusy(form, false);
   }
 }
 
 async function refreshAvailability(property, rerender = false){
+  const epoch = hostCore.session.epoch;
+  const version=(hostAvailabilityLoads.get(property) || 0)+1;
+  hostAvailabilityLoads.set(property,version);
   try {
-    property.availability = await api(`/properties/${property.id}/availability`);
+    const periods = await api(`/properties/${property.id}/availability`);
+    if (epoch !== hostCore.session.epoch || !state.properties.includes(property) || hostAvailabilityLoads.get(property)!==version) return;
+    property.availability = hostMergeRows(property.availability, periods);
     property.availabilityError = "";
     if (rerender) renderProperties();
+    return true;
   } catch (error) {
+    if (error.kind === "stale" || epoch !== hostCore.session.epoch || !state.properties.includes(property)
+      || hostAvailabilityLoads.get(property)!==version) return;
     property.availabilityError = error.message;
     if (rerender) renderProperties();
+    return false;
   }
 }
 
 async function updateAvailability(property, period, form){
   if (form.getAttribute("aria-busy") === "true") return;
+  const operation = beginHostSave(form, property);
+  if (!operation) return;
   const data = new FormData(form);
   setFormError(form);
   form.setAttribute("aria-busy", "true");
@@ -932,15 +1301,24 @@ async function updateAvailability(property, period, form){
   message(tr("updatingAvailability"));
   try {
     await api(`/availability/${period.id}`, {
+      hostOperation:operation,
       method:"PUT",
       body:JSON.stringify({...hostPeriodDates(data), nightlyPriceCents:eurosToCents(data.get("nightlyPrice"))})
     });
+    if (!currentHostSave(operation)) return;
+    finishHostSave(operation, {from:data.get("from"), to:data.get("to"), nightlyPrice:data.get("nightlyPrice")});
+    // PUT still acknowledges with204. Keep its accepted local view if GET fails;
+    // a later successful GET replaces this with the server's canonical record.
+    Object.assign(period, {...hostPeriodDates(data), nightlyPriceCents:eurosToCents(data.get("nightlyPrice"))});
     message(tr("availabilityUpdated"), "success");
-    await refreshAvailability(property, true);
+    if (!await refreshAvailability(property, true) && currentHostSave(operation)) form.dataset.hostOperation="saved_refresh_failed";
   } catch (error) {
+    if (!currentHostSave(operation) || error.kind === "stale") return;
+    form.dataset.hostOperation=error.status && error.status < 500 ? "failed" : "unknown";
     setFormError(form, error.message);
     message(error.message, "error");
   } finally {
+    releaseHostSave(operation);
     form.removeAttribute("aria-busy");
     setBusy(form, false);
   }
@@ -954,6 +1332,7 @@ async function deleteAvailability(property, period){
     message(tr("availabilityDeleted"), "success");
     await refreshAvailability(property, true);
   } catch (error) {
+    if(error.kind === "stale") return;
     message(error.message, "error");
   }
 }
@@ -969,6 +1348,7 @@ async function deleteProperty(property){
     message(tr("propertyDeleted"), "success");
     renderProperties();
   } catch (error) {
+    if(error.kind === "stale") return;
     message(error.message, "error");
   }
 }
@@ -985,6 +1365,7 @@ async function updateListingVisibility(property, checkbox){
     checkbox.checked=property.listing.showInSearch;
     message(tr("listingVisibilitySaved"),"success");
   }catch(error){
+    if(error.kind === "stale") return;
     checkbox.checked=property.listing.showInSearch!==false;
     message(error.message,"error");
   }finally{
@@ -1003,23 +1384,29 @@ async function deleteListing(property){
     message(tr("listingDeleted"), "success");
     renderProperties();
   } catch (error) {
+    if(error.kind === "stale") return;
     message(error.message, "error");
   }
 }
 
 async function connectCalendar(property, form){
+  const epoch = hostCore.session.epoch;
+  const current = () => epoch === hostCore.session.epoch && state.authenticated && state.properties.includes(property);
+  if (!current()) return;
   const data=new FormData(form);
   setFormError(form);
   setBusy(form,true);
   message(tr("loading"));
   try{
-    await api(`/properties/${property.id}/calendars`,{
-      method:"POST",
+    await api(`/properties/${property.id}/public-links`,{
+      method:"PUT",
       body:JSON.stringify({provider:"Airbnb",icalUrl:String(data.get("icalUrl")||"").trim()})
     });
+    if (!current()) return;
     message(tr("calendarConnected"),"success");
     await syncDashboard();
   }catch(error){
+    if (!current() || error.kind === "stale") return;
     setFormError(form,error.message);
     message(error.message,"error");
   }
@@ -1029,29 +1416,33 @@ async function connectCalendar(property, form){
 async function syncCalendar(calendar){
   message(tr("loading"));
   try{
-    await api(`/calendars/${calendar.id}/sync`,{method:"POST"});
+    const expectedRevision = calendarRevision(calendar);
+    await api(`/calendars/${calendar.id}/sync`,{method:"POST",body:JSON.stringify({expectedRevision})});
     message(tr("calendarSynced"),"success");
     await syncDashboard();
-  }catch(error){message(error.message,"error")}
+  }catch(error){if(error.kind !== "stale")message(error.message,"error")}
 }
 
 async function setCalendarEnabled(calendar, enabled){
   message(tr("loading"));
   try{
-    await api(`/calendars/${calendar.id}`,{method:"PUT",body:JSON.stringify({enabled})});
+    const expectedRevision = calendarRevision(calendar);
+    await api(`/calendars/${calendar.id}${enabled ? "/activate" : ""}`,{
+      method:enabled ? "POST" : "PUT",body:JSON.stringify(enabled ? {expectedRevision} : {mode:"Disabled",expectedRevision})});
     message(tr(enabled ? "calendarEnabled" : "calendarDisabled"),"success");
     await syncDashboard();
-  }catch(error){message(error.message,"error")}
+  }catch(error){if(error.kind !== "stale")message(error.message,"error")}
 }
 
 async function disconnectCalendar(calendar){
   if(!confirm(tr("disconnectCalendarConfirm"))) return;
   message(tr("loading"));
   try{
-    await api(`/calendars/${calendar.id}`,{method:"DELETE"});
+    const expectedRevision = calendarRevision(calendar);
+    await api(`/calendars/${calendar.id}`,{method:"DELETE",body:JSON.stringify({expectedRevision})});
     message(tr("calendarDisconnected"),"success");
     await syncDashboard();
-  }catch(error){message(error.message,"error")}
+  }catch(error){if(error.kind !== "stale")message(error.message,"error")}
 }
 
 function formatSyncTime(value){
@@ -1063,6 +1454,8 @@ function formatSyncTime(value){
 
 async function saveUnavailability(property, form, period = null){
   if (form.getAttribute("aria-busy") === "true") return;
+  const operation = beginHostSave(form, property);
+  if (!operation) return;
   const data = new FormData(form);
   setFormError(form);
   form.setAttribute("aria-busy", "true");
@@ -1070,17 +1463,25 @@ async function saveUnavailability(property, form, period = null){
   message(tr("loading"));
   try {
     const saved = await api(period ? `/unavailability/${period.id}` : `/properties/${property.id}/unavailability`, {
+      hostOperation:operation,
       method:period ? "PUT" : "POST",
       body:JSON.stringify(hostPeriodDates(data))
     });
-    property.unavailability = [...(property.unavailability || []).filter(item => item.id !== saved.id), saved]
+    if (!currentHostSave(operation)) return;
+    finishHostSave(operation, {from:period ? saved.from : "", to:period ? plusDays(saved.to,-1) : ""});
+    const previous=(property.unavailability || []).find(item=>item.id===saved.id);
+    const record=previous ? Object.assign(previous,saved) : saved;
+    property.unavailability = [...(property.unavailability || []).filter(item => item.id !== saved.id), record]
       .sort((a,b) => a.from.localeCompare(b.from) || a.to.localeCompare(b.to));
     renderProperties({propertyId:property.id,key:"blockSaved"});
     message(tr("blockSaved"), "success");
   } catch (error) {
+    if (!currentHostSave(operation) || error.kind === "stale") return;
+    form.dataset.hostOperation=error.status && error.status < 500 ? "failed" : "unknown";
     setFormError(form, error.message);
     message(error.message, "error");
   } finally {
+    releaseHostSave(operation);
     form.removeAttribute("aria-busy");
     setBusy(form, false);
   }
@@ -1098,6 +1499,7 @@ async function deleteUnavailability(property, period, form){
     renderProperties({propertyId:property.id,key:"blockDeleted"});
     message(tr("blockDeleted"), "success");
   } catch (error) {
+    if(error.kind === "stale") return;
     setFormError(form, error.message);
     message(error.message, "error");
   } finally {
@@ -1124,6 +1526,8 @@ function renderUnavailability(property, feedbackKey = null){
   function dateForm(period = null){
     const form = document.createElement("form");
     form.className = period ? "host-period host-unavailability-period" : "host-inline-form host-unavailability-add";
+    form.dataset.hostKey=period ? `unavailability:${period.id}` : "unavailability-add";
+    form.dataset.hostDraftKey=`property:${property.id}:${form.dataset.hostKey}`;
     if (period) periodHeading(form, "savedBlock");
     else if(property.unavailability?.length) periodHeading(form, "newBlock");
     function dateField(name, text, value){
@@ -1147,7 +1551,8 @@ function renderUnavailability(property, feedbackKey = null){
     save.textContent = tr(period ? "save" : "addBlock");
     save.hidden = Boolean(period);
     if (period) {
-      const changed = () => { save.hidden = from.value === period.from && to.value === lastNight; };
+      const changed = () => { save.hidden = from.value === period.from && to.value === plusDays(period.to, -1); };
+      form.hostRefresh=changed;
       [from, to].forEach(input => {
         input.addEventListener("input", changed);
         input.addEventListener("change", changed);
@@ -1183,7 +1588,12 @@ function renderUnavailability(property, feedbackKey = null){
 function renderPropertyNavigation(){
   const visible=Boolean(state.authenticated && propertyNavigationId);
   propertyNavigationNode.hidden=!visible;
-  if(!visible)return;
+  if(!visible){
+    document.getElementById("host-property-context-status").textContent="";
+    const back=document.getElementById("host-property-return");
+    back.removeAttribute("href");back.textContent="";back.hidden=true;
+    return;
+  }
   const owned=state.properties.some(property=>property.id===propertyNavigationId);
   document.getElementById("host-property-context-status").textContent=tr(owned?"propertyFromConversation":"propertyUnavailableHere");
   const back=document.getElementById("host-property-return");
@@ -1195,15 +1605,20 @@ function renderPropertyNavigation(){
 }
 
 function renderProperties(blockFeedback = null){
-  unsavedHostChanges=false;
   if (!propertiesNode) return;
   renderPropertyNavigation();
-  calendarVerificationPanels.splice(0).forEach(panel=>panel.dispose());
-  propertyAddressEditors.forEach(editor => editor.dispose());
-  propertyAddressEditors.clear();
-  propertiesNode.replaceChildren();
-
-  if (!state.authenticated) return;
+  for (const id of [...hostViews.keys()]) {
+    if (!state.authenticated || !state.properties.some(property => property.id === id)) disposeHostProperty(id);
+  }
+  for (const [id, panel] of hostVerificationViews) {
+    if (!state.properties.some(property => property.calendars?.some(calendar => calendar.id === id))) {
+      panel.dispose(); hostVerificationViews.delete(id);
+      const index=calendarVerificationPanels.indexOf(panel);
+      if(index>=0)calendarVerificationPanels.splice(index,1);
+    }
+  }
+  if (!state.authenticated) {propertiesNode.replaceChildren(); return;}
+  propertiesNode.querySelector(".host-empty")?.remove();
 
   if (!state.properties.length) {
     const empty = document.createElement("div");
@@ -1239,16 +1654,15 @@ function renderProperties(blockFeedback = null){
     togglePropertyButton.setAttribute("aria-label",tr(expanded?"collapseProperty":"expandProperty"));
     togglePropertyButton.setAttribute("aria-expanded",String(expanded));
     togglePropertyButton.addEventListener("click",()=>{
-      if(unsavedHostChanges && !confirm(tr("discardChanges")))return;
-      if(expanded) expandedPropertyIds.delete(property.id);
+      if(expandedPropertyIds.has(property.id)) expandedPropertyIds.delete(property.id);
       else expandedPropertyIds.add(property.id);
       renderProperties();
     });
     headActions.append(togglePropertyButton);
     head.append(title, headActions);
     card.append(head);
-    if(!expanded){
-      propertiesNode.append(card);
+    if(!expanded && !hostViews.get(property.id)?.expandedOnce){
+      commitHostCard(property, card, expanded);
       return;
     }
 
@@ -1256,6 +1670,8 @@ function renderProperties(blockFeedback = null){
     settings.className="host-subpanel host-property-settings";
     const settingsForm=document.createElement("form");
     settingsForm.className="host-settings-form";
+    settingsForm.dataset.hostDraftKey=`property:${property.id}:settings`;
+    settingsForm.dataset.hostKey="settings";
     const titleLabel=document.createElement("label");
     titleLabel.className="host-property-title-field";
     const titleText=document.createElement("span");
@@ -1263,11 +1679,24 @@ function renderProperties(blockFeedback = null){
     const titleInput=document.createElement("input");
     titleInput.type="text";titleInput.name="title";titleInput.required=true;titleInput.maxLength=160;titleInput.value=property.title;
     titleLabel.append(titleText,titleInput);
-    const addressEditor = window.ParrotAddress.create({
+    const existingAddress = hostAddressViews.get(property.id);
+    const addressEditor = existingAddress?.editor || window.ParrotAddress.create({
       id:`property-address-${property.id}`, tr, request:api,
       initial:property.address || null, location:property, onUnauthorized:addressSessionExpired
     });
-    propertyAddressEditors.set(settingsForm, addressEditor);
+    const addressNode = existingAddress ? document.createElement("div") : addressEditor.node;
+    addressNode.dataset.hostKey="address";
+    addressNode.dataset.hostIsland="address";
+    if (!existingAddress) {
+      hostAddressViews.set(property.id, {editor:addressEditor, form:settingsForm});
+      propertyAddressEditors.set(settingsForm, addressEditor);
+      addressEditor.change.addEventListener("click",()=>{
+        if(addressEditor.node.querySelector(".host-address-fields")?.hidden){
+          hostDraft(settingsForm).addressDirty=false;
+          hostDirtyState();
+        }
+      });
+    }
     const accommodationLabel=document.createElement("label");
     const accommodationText=document.createElement("span");
     accommodationText.textContent=tr("accommodationTypeLabel");
@@ -1294,7 +1723,7 @@ function renderProperties(blockFeedback = null){
     sleepsLabel.append(sleepsText,sleepsInput);
     const saveSettings=document.createElement("button");
     saveSettings.className="button button-small";saveSettings.type="submit";saveSettings.textContent=tr("savePropertySettings");
-    settingsForm.append(titleLabel,addressEditor.node,accommodationLabel,bedroomsLabel,sleepsLabel,saveSettings);
+    settingsForm.append(titleLabel,addressNode,accommodationLabel,bedroomsLabel,sleepsLabel,saveSettings);
     settingsForm.addEventListener("submit",event=>{event.preventDefault();updatePropertySettings(property,settingsForm)});
     settings.append(settingsForm);
 
@@ -1346,6 +1775,8 @@ function renderProperties(blockFeedback = null){
     } else {
       const form = document.createElement("form");
       form.className = "host-inline-form";
+      form.dataset.hostKey="listing";
+      form.dataset.hostDraftKey=`property:${property.id}:listing`;
       const help = document.createElement("p");
       help.className = "host-inline-muted host-listing-help";
       help.textContent = tr("airbnbIdHelp");
@@ -1377,7 +1808,9 @@ function renderProperties(blockFeedback = null){
     syncPanel.append(syncTitle);
 
     if(externalCalendar){
+      syncPanel.dataset.calendarRevision=String(externalCalendar.revision);
       const status=document.createElement("div");
+      status.dataset.hostKey=`calendar-status:${externalCalendar.id}`;
       status.className=`host-calendar-status ${externalCalendar.enabled===false ? "disabled" : (externalCalendar.status||"")}`;
 
       const statusTop=document.createElement("div");
@@ -1400,27 +1833,54 @@ function renderProperties(blockFeedback = null){
 
       const actions=document.createElement("div");
       actions.className="host-calendar-actions";
+      actions.dataset.hostKey=`calendar-actions:${externalCalendar.id}`;
+      const currentCalendar=control=>propertiesNode.contains(control) && state.properties.includes(property)
+        ? property.calendars.find(value=>value.id===externalCalendar.id) : null;
       const controlGroup=document.createElement("div");
       controlGroup.className="host-calendar-control-group";
       const syncButton=document.createElement("button");
       syncButton.type="button";syncButton.className="button button-small";syncButton.textContent=tr("syncNow");syncButton.disabled=externalCalendar.enabled===false;
-      syncButton.addEventListener("click",()=>syncCalendar(externalCalendar));
+      syncButton.addEventListener("click",()=>{
+        const current=currentCalendar(syncButton);
+        if(current)syncCalendar(current);
+      });
       const toggleButton=document.createElement("button");
       toggleButton.type="button";toggleButton.className="text-button";toggleButton.textContent=tr(externalCalendar.enabled===false ? "enableCalendar" : "disableCalendar");
-      toggleButton.addEventListener("click",()=>setCalendarEnabled(externalCalendar,externalCalendar.enabled===false));
+      toggleButton.addEventListener("click",()=>{
+        const current=currentCalendar(toggleButton);
+        if(current)setCalendarEnabled(current,current.enabled===false);
+      });
       const disconnectButton=document.createElement("button");
       disconnectButton.type="button";disconnectButton.className="text-button danger host-calendar-delete";disconnectButton.textContent=tr("disconnectCalendar");
-      disconnectButton.addEventListener("click",()=>disconnectCalendar(externalCalendar));
+      disconnectButton.addEventListener("click",()=>{
+        const current=currentCalendar(disconnectButton);
+        if(current)disconnectCalendar(current);
+      });
       controlGroup.append(syncButton,toggleButton);
       actions.append(controlGroup,disconnectButton);
 
       status.append(statusTop);
       if(window.ParrotCalendarVerification){
-        const verification=window.ParrotCalendarVerification.create({calendar:externalCalendar,request:api,language:lang,onUnauthorized:addressSessionExpired,
-          onStatus:value=>{statusLabel.hidden=String(value.status||"").toLowerCase()==="verified" && externalCalendar.enabled!==false && externalCalendar.status==="connected";}});
-        calendarVerificationPanels.push(verification);
+        const cachedVerification=hostVerificationViews.get(externalCalendar.id);
+        const verification=cachedVerification || window.ParrotCalendarVerification.create({calendar:externalCalendar,request:api,language:lang,onUnauthorized:addressSessionExpired,
+          onStatus:value=>{
+            verification.controlStatus=value;
+            statusLabel.hidden=String(value.status||"").toLowerCase()==="verified" && externalCalendar.enabled!==false && externalCalendar.status==="connected";
+          }});
+        if (!cachedVerification) {
+          verification.propertyId=property.id;
+          verification.calendar=externalCalendar;
+          hostVerificationViews.set(externalCalendar.id,verification);
+          calendarVerificationPanels.push(verification);
+        }
+        if (cachedVerification) Object.assign(verification.calendar, externalCalendar);
+        statusLabel.hidden=String(verification.controlStatus?.status || "").toLowerCase()==="verified"
+          && externalCalendar.enabled!==false && externalCalendar.status==="connected";
         syncTitle.textContent=verification.name;
-        status.append(verification.node);
+        const verificationNode=cachedVerification ? document.createElement("section") : verification.node;
+        verificationNode.dataset.hostKey=`verification:${externalCalendar.id}`;
+        verificationNode.dataset.hostIsland="verification";
+        status.append(verificationNode);
       }
       status.append(stats);
       if(externalCalendar.lastError){
@@ -1453,6 +1913,8 @@ function renderProperties(blockFeedback = null){
       help.textContent=tr("calendarHelp");
       const form=document.createElement("form");
       form.className="host-inline-form host-calendar-form";
+      form.dataset.hostKey="calendar-connect";
+      form.dataset.hostDraftKey=`property:${property.id}:calendar-connect`;
       const input=document.createElement("input");
       input.type="url";input.name="icalUrl";input.required=true;input.autocomplete="off";input.placeholder=tr("calendarUrl");
       const button=document.createElement("button");
@@ -1474,6 +1936,8 @@ function renderProperties(blockFeedback = null){
 
     const staySettingsForm=document.createElement("form");
     staySettingsForm.className="host-settings-form host-stay-settings";
+    staySettingsForm.dataset.hostKey="stay-settings";
+    staySettingsForm.dataset.hostDraftKey=`property:${property.id}:stay-settings`;
     const minStayLabel=document.createElement("label");
     const minStayText=document.createElement("span");
     minStayText.textContent=tr("minStayLabel");
@@ -1494,6 +1958,8 @@ function renderProperties(blockFeedback = null){
 
     const addForm = document.createElement("form");
     addForm.className = "host-inline-form host-dates";
+    addForm.dataset.hostKey="availability-add";
+    addForm.dataset.hostDraftKey=`property:${property.id}:availability-add`;
     periodHeading(addForm, "newPeriod");
     const fromInput = document.createElement("input");
     fromInput.type = "date";
@@ -1532,7 +1998,8 @@ function renderProperties(blockFeedback = null){
       err.className = "host-inline-error";
       err.textContent = property.availabilityError;
       periods.append(err);
-    } else if (!Array.isArray(property.availability)) {
+    }
+    if (!Array.isArray(property.availability)) {
       const loading = document.createElement("p");
       loading.className = "host-inline-muted";
       loading.textContent = tr("loading");
@@ -1547,6 +2014,8 @@ function renderProperties(blockFeedback = null){
       property.availability.forEach(period => {
         const row = document.createElement("form");
         row.className = "host-period";
+        row.dataset.hostKey=`availability:${period.id}`;
+        row.dataset.hostDraftKey=`property:${property.id}:availability:${period.id}`;
         periodHeading(row, "savedPeriod");
 
         const from = document.createElement("input");
@@ -1580,9 +2049,10 @@ function renderProperties(blockFeedback = null){
         const syncSaveVisibility = () => {
           save.hidden =
             from.value === period.from &&
-            to.value === lastNight &&
-            nightly.value === originalNightly;
+            to.value === plusDays(period.to, -1) &&
+            nightly.value === centsToEuros(period.nightlyPriceCents);
         };
+        row.hostRefresh=syncSaveVisibility;
         [from,to,nightly].forEach(input => {
           input.addEventListener("input", syncSaveVisibility);
           input.addEventListener("change", syncSaveVisibility);
@@ -1620,15 +2090,56 @@ function renderProperties(blockFeedback = null){
     deletePropertyButton.addEventListener("click", () => deleteProperty(property));
     footer.append(deletePropertyButton);
     card.append(footer);
-    propertiesNode.append(card);
+    commitHostCard(property, card, expanded);
   });
+  const liveKeys=new Set([hostProfileForm.id,propertyForm.id,
+    ...[...propertiesNode.querySelectorAll("form")].map(form=>form.dataset.hostDraftKey)]);
+  for(const key of hostDrafts.keys()) if(key.startsWith(`${accountId}:`) && !liveKeys.has(key.slice(String(accountId).length+1)))
+    hostDrafts.delete(key);
+  hostDirtyState();
 }
 
+langButtons.forEach(btn => btn.addEventListener("pointerdown", () => {
+  const node=document.activeElement;
+  btn.hostFocus=node && /^(INPUT|TEXTAREA)$/.test(node.tagName)
+    ? {node,from:node.selectionStart,to:node.selectionEnd,epoch:hostCore.session.epoch} : null;
+}));
 langButtons.forEach(btn => btn.addEventListener("click", () => {
+  const previous=btn.hostFocus;
+  btn.hostFocus=null;
   if(btn.dataset.hostLang===lang)return;
-  if(unsavedHostChanges && !confirm(tr("discardChanges")))return;
   applyLanguage(btn.dataset.hostLang);
+  if(previous && previous.epoch===hostCore.session.epoch && previous.node.isConnected){
+    previous.node.focus({preventScroll:true});
+    if(previous.from!==null && previous.to!==null)previous.node.setSelectionRange(previous.from,previous.to);
+  }
 }));
 
+hostCore.session.subscribe(({user, reason}) => {
+  if(user) {
+    const changed = accountId !== user.accountId;
+    if(changed) {
+      const previous = accountId;
+      clearPrivatePresentation();
+      if(previous) {
+        propertyNavigationPending = false;
+        propertyNavigationId = null; propertyConversationId = null;
+        hostCore.storage.session.removeItem(profileReturnKey);
+        hostCore.storage.session.removeItem(returnKey(previous));
+      }
+    }
+    accountId = user.accountId;
+    state = {...(changed ? emptyState() : state), authenticated:true,
+      accountEmail:String(user.email || ""), username:String(user.username || ""), profile:user.profile || null};
+    renderAuthState();
+    if(changed) dashboardLoad = syncDashboard();
+  } else {
+    clearPrivatePresentation(); accountId = null;
+    if(reason === "revalidate" || reason === "expired") {
+      loginForm.elements.password.value = "";
+      registerForm.elements.password.value = "";
+    }
+  }
+});
 applyLanguage(lang);
 boot();

@@ -1,4 +1,4 @@
-const {test, expect} = require('@playwright/test');
+const {test, expect} = require('./isolated-fixture.cjs');
 const {installHostFixture, assertNoHorizontalOverflow} = require('./public-fixture.cjs');
 
 test('PM-026/PM-020: signed-in Host has one keyboard reachable Messages link and returns to Host', async ({page}) => {

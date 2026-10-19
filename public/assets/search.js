@@ -1,3 +1,4 @@
+const searchCore = window.ParrotCore;
 const LANG_KEY = "parrot669-language";
 const SEARCH_STATE_KEY = "parrot669-search-state";
 
@@ -25,7 +26,7 @@ Object.assign(housingCopy.es,{calendarUnverified:"Control del calendario sin con
 Object.assign(housingCopy.ca,{calendarUnverified:"Control del calendari sense confirmar",calendarPending:"El propietari encara no ha acabat la verificació",calendarVerified:"Control del calendari confirmat ✓",calendarRecheck:"Cal repetir la verificació del calendari"});
 Object.assign(housingCopy.ru,{calendarUnverified:"Контроль календаря не подтверждён",calendarPending:"Владелец ещё не завершил проверку",calendarVerified:"Контроль календаря подтверждён ✓",calendarRecheck:"Требуется повторная проверка"});
 
-let lang=(()=>{const saved=localStorage.getItem(LANG_KEY);if(saved&&copy[saved])return saved;const b=(navigator.language||"en").slice(0,2);return copy[b]?b:"en"})();
+let lang=(()=>{const saved=searchCore.storage.local.getItem(LANG_KEY);if(saved&&copy[saved])return saved;const b=(navigator.language||"en").slice(0,2);return copy[b]?b:"en"})();
 const form=document.getElementById("availability-form");
 const results=document.getElementById("availability-results");
 const countrySelect=form.elements.country;
@@ -47,6 +48,13 @@ let searchSequence=0;
 let hasSearched=false;
 let renderedItems=null;
 let resultState=null;
+let locationGeneration=0;
+let locationController=null;
+let locationPending=true;
+let locationFailed=false;
+let locationCountry="";
+let formRevision=0;
+let restoreIntentPending=false;
 
 function ruPlural(n,one,few,many){return `${n} ${n%100>=11&&n%100<=14?many:n%10===1?one:n%10>=2&&n%10<=4?few:many}`}
 
@@ -69,7 +77,7 @@ const dateRangeCopy={
 Object.entries(dateRangeCopy).forEach(([language,values])=>Object.assign(housingCopy[language],values));
 
 function t(key,...args){const v=(housingCopy[lang]||housingCopy.en)[key]??(copy[lang]||copy.en)[key];return typeof v==="function"?v(...args):v}
-function renderAccountIndicator(user=window.ParrotMessaging?.user){
+function renderAccountIndicator(user=searchCore.session.user){
   const username=String(user?.username||"").trim();
   accountSession.hidden=!user;
   accountLogin.hidden=Boolean(user) || user===undefined;
@@ -80,16 +88,15 @@ accountLogout.addEventListener("click",async()=>{
   accountLogout.disabled=true;
   accountFeedback.textContent="";
   try {
-    await window.ParrotMessaging.auth("/logout",{method:"POST"});
-    window.ParrotMessaging.setUser(null);
+    await searchCore.auth("/logout",{method:"POST"});
   } catch(error) {
-    if(error.status===401) window.ParrotMessaging.setUser(null);
+    if(error.status===401) searchCore.session.setUser(null,{reason:"logout"});
     else accountFeedback.textContent=t("logoutError");
   } finally { accountLogout.disabled=false; }
 });
 function applyLanguage(next){
   lang=copy[next]?next:"en";
-  localStorage.setItem(LANG_KEY,lang);
+  searchCore.storage.local.setItem(LANG_KEY,lang);
   document.documentElement.lang=lang;
   document.title=t("page");
   document.querySelectorAll("[data-search-i18n]").forEach(n=>n.textContent=t(n.dataset.searchI18n));
@@ -127,7 +134,7 @@ function eurosToCents(value){
 }
 function saveSearchState(){
   const fd=new FormData(form);
-  localStorage.setItem(SEARCH_STATE_KEY,JSON.stringify({
+  searchCore.storage.local.setItem(SEARCH_STATE_KEY,JSON.stringify({
     country:String(fd.get("country")||""),
     city:String(fd.get("city")||""),
     accommodationType:String(accommodationTypeFilter?.value||"any"),
@@ -143,7 +150,7 @@ function saveSearchState(){
 }
 function restoreSearchState(){
   try{
-    const saved=JSON.parse(localStorage.getItem(SEARCH_STATE_KEY)||"null");
+    const saved=JSON.parse(searchCore.storage.local.getItem(SEARCH_STATE_KEY)||"null");
     if(!saved||typeof saved!=="object") return null;
     if(saved.accommodationType&&accommodationTypeFilter) accommodationTypeFilter.value=saved.accommodationType;
     if(saved.from) form.elements.from.value=saved.from;
@@ -162,7 +169,16 @@ function restoreSearchState(){
   }
 }
 function updateSearchSubmitState(){
-  submitButton.disabled=!(countrySelect.value&&citySelect.value);
+  submitButton.disabled=!locationIsReady();
+}
+function locationIsReady(country=countrySelect.value,city=citySelect.value){
+  return !locationPending&&!locationFailed&&Boolean(country&&city)&&locationCountry===country;
+}
+function clearLocationError(){
+  if(resultState?.key!=="locationError") return;
+  resultState=null;
+  renderedItems=null;
+  results.replaceChildren();
 }
 function countryDisplayName(code,fallback){
   try{
@@ -189,41 +205,62 @@ function refreshLocationLabels(){
   });
 }
 async function loadCities(countryCode,preferredCity=""){
+  const operation={generation:++locationGeneration,country:String(countryCode||"")};
+  locationController?.abort();
+  const controller=new AbortController();
+  locationController=controller;
+  locationPending=Boolean(operation.country);
+  locationFailed=false;
+  locationCountry="";
   resetLocationSelect(citySelect,"chooseCity");
   citySelect.disabled=true;
   updateSearchSubmitState();
-  if(!countryCode) return;
-
-  const response=await fetch("/api/locations/cities?country="+encodeURIComponent(countryCode),{headers:{Accept:"application/json"}});
-  if(!response.ok) throw new Error("HTTP "+response.status);
-  const cities=await response.json();
-  if(!Array.isArray(cities)) throw new Error("Invalid cities response");
-
-  cities.forEach(item=>{
-    const option=document.createElement("option");
-    option.value=String(item.name||"");
-    option.textContent=String(item.name||"");
-    citySelect.append(option);
-  });
-
-  const preferred=[...citySelect.options].find(option=>option.value&&option.value.toLowerCase()===String(preferredCity||"").toLowerCase());
-  if(preferred) citySelect.value=preferred.value;
-  else if(cities.length===1) citySelect.value=String(cities[0].name||"");
-
-  citySelect.disabled=cities.length===0;
-  updateSearchSubmitState();
+  if(!operation.country) return {status:"empty",operation};
+  const ownsOperation=()=>operation.generation===locationGeneration&&countrySelect.value===operation.country;
+  try{
+    const cities=await searchCore.http("/api/locations/cities?country="+encodeURIComponent(operation.country),
+      {validate:Array.isArray,signal:controller.signal});
+    if(!ownsOperation()) return {status:"stale",operation};
+    cities.forEach(item=>{
+      const option=document.createElement("option");
+      option.value=String(item.name||"");
+      option.textContent=String(item.name||"");
+      citySelect.append(option);
+    });
+    const preferred=[...citySelect.options].find(option=>option.value&&option.value.toLowerCase()===String(preferredCity||"").toLowerCase());
+    if(preferred) citySelect.value=preferred.value;
+    else if(cities.length===1) citySelect.value=String(cities[0].name||"");
+    locationPending=false;
+    locationCountry=operation.country;
+    citySelect.disabled=cities.length===0;
+    clearLocationError();
+    updateSearchSubmitState();
+    return {status:"committed",operation};
+  }catch(error){
+    if(!ownsOperation()) return {status:"stale",operation};
+    locationPending=false;
+    locationFailed=true;
+    updateSearchSubmitState();
+    console.error(error);
+    state("locationError","error");
+    return {status:"failed",operation};
+  }finally{
+    if(locationController===controller) locationController=null;
+  }
 }
 async function loadLocations(saved){
+  const bootstrapGeneration=++locationGeneration;
+  locationPending=true;
+  locationFailed=false;
+  locationCountry="";
   countrySelect.disabled=true;
   citySelect.disabled=true;
   resetLocationSelect(countrySelect,"chooseCountry");
   resetLocationSelect(citySelect,"chooseCity");
 
   try{
-    const response=await fetch("/api/locations/countries",{headers:{Accept:"application/json"}});
-    if(!response.ok) throw new Error("HTTP "+response.status);
-    const countries=await response.json();
-    if(!Array.isArray(countries)) throw new Error("Invalid countries response");
+    const countries=await searchCore.http("/api/locations/countries",{validate:Array.isArray});
+    if(bootstrapGeneration!==locationGeneration) return {status:"stale"};
 
     countries.forEach(item=>{
       const option=document.createElement("option");
@@ -239,12 +276,18 @@ async function loadLocations(saved){
     if(preferred) countrySelect.value=preferred.value;
     else if(countries.length===1) countrySelect.value=String(countries[0].code||"");
 
-    await loadCities(countrySelect.value,String(saved&&saved.city||""));
-    updateSearchSubmitState();
-    saveSearchState();
+    const result=await loadCities(countrySelect.value,String(saved&&saved.city||""));
+    if(result.operation.generation!==locationGeneration) return {status:"stale"};
+    if(result.status!=="stale") saveSearchState();
+    return result;
   }catch(error){
+    if(bootstrapGeneration!==locationGeneration) return {status:"stale"};
+    locationPending=false;
+    locationFailed=true;
+    updateSearchSubmitState();
     console.error(error);
     state("locationError","error");
+    return {status:"failed"};
   }
 }
 function render(items){
@@ -406,20 +449,11 @@ async function runSearch(baseParams,{disableSubmit=false}={}){
   if(pricedOnlyFilter) pricedOnlyFilter.disabled=true;
   state("loading","loading");
   try{
-    const response=await fetch(`/api/search?${params}`,{headers:{Accept:"application/json"}});
-    if(!response.ok){
-      const body=await response.json().catch(()=>null);
-      if(response.status===400&&body?.error==="A search request can cover at most 366 nights"){
-        if(requestId===searchSequence) state("searchRangeTooLong","error");
-        return;
-      }
-      throw new Error(`HTTP ${response.status}`);
-    }
-    const items=await response.json();
-    if(requestId===searchSequence) render(Array.isArray(items)?items:[]);
+    const items=await searchCore.http(`/api/search?${params}`,{validate:Array.isArray});
+    if(requestId===searchSequence) render(items);
   }catch(error){
     console.error(error);
-    if(requestId===searchSequence) state("error","error");
+    if(requestId===searchSequence) state(error.code==="SEARCH_RANGE_TOO_LONG" ? "searchRangeTooLong" : "error","error");
   }finally{
     if(requestId===searchSequence){
       updateSearchSubmitState();
@@ -429,13 +463,24 @@ async function runSearch(baseParams,{disableSubmit=false}={}){
 }
 form.addEventListener("submit",async e=>{
   e.preventDefault();
+  if(!locationIsReady()) return;
   if(!form.reportValidity()) return;
   hasSearched=true;
   lastSearchParams=currentSearchParams();
   saveSearchState();
   await runSearch(lastSearchParams,{disableSubmit:true});
 });
+function markSearchIntentChanged(){
+  formRevision++;
+  if(restoreIntentPending){
+    restoreIntentPending=false;
+    hasSearched=false;
+    lastSearchParams=null;
+    saveSearchState();
+  }
+}
 function searchDetailsChanged(){
+  markSearchIntentChanged();
   if(lastSearchParams && lastSearchParams.toString()!==currentSearchParams().toString()){
     // Ignore responses for the old city/dates, including requests still in flight.
     searchSequence++;
@@ -450,7 +495,9 @@ function searchDetailsChanged(){
 form.addEventListener("change",searchDetailsChanged);
 form.addEventListener("input",searchDetailsChanged);
 [accommodationTypeFilter,pricedOnlyFilter,minPriceFilter,maxPriceFilter].forEach(filter=>{
+  filter?.addEventListener("input",markSearchIntentChanged);
   filter?.addEventListener("change",()=>{
+    markSearchIntentChanged();
     saveSearchState();
     if(lastSearchParams) runSearch(lastSearchParams);
   });
@@ -460,22 +507,29 @@ citySelect.addEventListener("change",()=>{
   saveSearchState();
 });
 countrySelect.addEventListener("change",async()=>{
-  try{
-    await loadCities(countrySelect.value,"");
-    saveSearchState();
-  }catch(error){
-    console.error(error);
-    state("locationError","error");
-  }
+  const result=await loadCities(countrySelect.value,"");
+  if(result.operation.generation===locationGeneration&&result.status!=="stale") saveSearchState();
 });
 buttons.forEach(b=>b.addEventListener("click",()=>applyLanguage(b.dataset.searchLang)));
-window.ParrotMessaging?.onSession(user=>{
+searchCore.session.subscribe(({user})=>{
   renderAccountIndicator(user);
   if(renderedItems) render(renderedItems);
 });
+void searchCore.session.refresh().catch(()=>{accountFeedback.textContent=t("logoutError");});
 applyLanguage(lang);
 const savedSearchState=restoreSearchState();
-loadLocations(savedSearchState).then(()=>{
+const restoreRevision=formRevision;
+restoreIntentPending=hasSearched;
+loadLocations(savedSearchState).then(locationResult=>{
+  restoreIntentPending=false;
+  if(formRevision!==restoreRevision||locationResult?.status==="stale"||locationResult?.status==="failed"){
+    if(formRevision===restoreRevision&&hasSearched){
+      hasSearched=false;
+      lastSearchParams=null;
+      saveSearchState();
+    }
+    return;
+  }
   if(hasSearched&&form.reportValidity()){
     lastSearchParams=currentSearchParams();
     runSearch(lastSearchParams);
