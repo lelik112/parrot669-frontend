@@ -194,6 +194,74 @@ const navigationHandler=request=>{
   if(request.path==='/api/host/auth/logout')return new Response(null,{status:204});
 };
 
+test('PM140: unchanged polling preserves keyed inbox, history, composer, caret, scroll and live regions',async t=>{
+  const h=await harness(t,{url:`/messages.html?conversation=${conversation}`,handler:r=>{
+    if(r.path==='/api/messaging/conversations') return {items:[detail()],nextCursor:null};
+    if(r.path===`/api/messaging/conversations/${conversation}`) return detail();
+    if(r.path.endsWith('/messages')) return {items:[message()],nextAfterSequence:null};
+  }});
+  const list=h.$('msg-list'),log=h.$('msg-history'),row=list.firstElementChild,bubble=log.firstElementChild;
+  const input=h.$('msg-compose').elements.body;
+  h.input(input,'Unsent text and selection');input.focus();input.setSelectionRange(3,9);
+  Object.defineProperty(log,'scrollHeight',{get:()=>1000});
+  Object.defineProperty(log,'clientHeight',{get:()=>200});log.scrollTop=250;
+  const records=[];
+  const observer=new h.w.MutationObserver(changes=>records.push(...changes));
+  for(const target of [list,log,h.$('msg-status'),h.$('msg-inbox-status'),h.$('msg-thread-notice')])
+    observer.observe(target,{childList:true,characterData:true,subtree:true});
+  const historyLength=h.w.history.length;
+  for(let i=0;i<3;i++){h.intervals[1]();await flush();}
+  observer.disconnect();
+  assert.equal(list.firstElementChild,row);assert.equal(log.firstElementChild,bubble);
+  assert.equal(records.length,0,'unchanged private content and live regions must be mutation-free');
+  assert.equal(h.$('msg-compose').elements.body,input);assert.equal(input.value,'Unsent text and selection');
+  assert.equal(h.w.document.activeElement,input);assert.equal(input.selectionStart,3);assert.equal(input.selectionEnd,9);
+  assert.equal(log.scrollTop,250);assert.equal(h.w.history.length,historyLength);
+  assert.equal(h.calls.some(r=>r.method!=='GET'),false,'polling an unfocused history sends no commands');
+});
+
+test('PM140: incoming append retains old bubbles and composer; keyed reorder retains row focus and clears stale unread label',async t=>{
+  let incoming=false;
+  const h=await harness(t,{url:`/messages.html?conversation=${conversation}`,handler:r=>{
+    if(r.path==='/api/messaging/conversations')return {items:incoming?
+      [detail(otherConversation,{updatedAt:'2026-09-24T10:00:00Z'}),detail(conversation,{unreadCount:0,lastMessagePreview:'Changed'})]:
+      [detail(),detail(otherConversation,{updatedAt:'2026-09-22T10:00:00Z'})],nextCursor:null};
+    if(r.path===`/api/messaging/conversations/${conversation}`)return detail(conversation,{lastSequence:incoming?2:1});
+    if(r.path.endsWith('/messages'))return {items:incoming?[message(2)]:[message()],nextAfterSequence:null};
+  }});
+  const log=h.$('msg-history'),row=h.$('msg-list').firstElementChild,bubble=log.firstElementChild;
+  const input=h.$('msg-compose').elements.body;h.input(input,'Still composing');
+  Object.defineProperty(log,'scrollHeight',{get:()=>log.children.length*500});
+  Object.defineProperty(log,'clientHeight',{get:()=>200});log.scrollTop=50;
+  row.focus();incoming=true;h.intervals[1]();await flush();
+  assert.equal(h.$('msg-list').lastElementChild,row);assert.equal(h.w.document.activeElement,row);
+  assert.equal(row.hasAttribute('aria-label'),false);assert.equal(row.querySelector('.messaging-badge'),null);
+  assert.match(row.textContent,/Changed/);
+  assert.equal(log.firstElementChild,bubble);assert.equal(log.children.length,2);
+  assert.equal(log.scrollTop,50);assert.equal(input.value,'Still composing');
+  h.w.ParrotMessaging.setLanguage('es');
+  assert.equal(log.firstElementChild,bubble);assert.equal(h.$('msg-list').lastElementChild,row);
+});
+
+test('PM140: late prior-account poll cannot install private nodes after replacement',async t=>{
+  const late=deferred();let hold=false,second=false;
+  const h=await harness(t,{url:`/messages.html?conversation=${conversation}`,handler:r=>{
+    if(r.path==='/api/messaging/conversations')return hold&&!second?late.promise:
+      {items:[detail(conversation,{propertyTitle:second?'Second account':'First account'})],nextCursor:null};
+    if(r.path===`/api/messaging/conversations/${conversation}`)return detail(conversation,{propertyTitle:second?'Second account':'First account'});
+    if(r.path.endsWith('/messages'))return {items:[message(1,{body:second?'Second private history':'First private history'})],nextAfterSequence:null};
+  }});
+  h.input(h.$('msg-compose').elements.body,'First private draft');
+  hold=true;h.intervals[1]();await flush();
+  second=true;h.w.ParrotCore.session.setUser({...user,accountId:'second-account',profile:{id:ids[0]}});await flush();
+  const row=h.$('msg-list').firstElementChild,bubble=h.$('msg-history').firstElementChild;
+  late.resolve({items:[detail(conversation,{propertyTitle:'LATE first account'})],nextCursor:null});await flush();
+  assert.equal(h.$('msg-list').firstElementChild,row);assert.equal(h.$('msg-history').firstElementChild,bubble);
+  assert.match(h.$('msg-list').textContent,/Second account/);assert.doesNotMatch(h.$('messages-app').textContent,/First private|LATE first/);
+  assert.equal(h.$('msg-compose').elements.body.value,'');
+  assert.equal(h.w.ParrotCore.storage.session.getItem(`parrot669-draft:${user.accountId}:${conversation}`),null);
+});
+
 test('same-account profile notification preserves composer DOM, draft and focus',async t=>{
   const h=await harness(t,{url:`/messages.html?conversation=${conversation}`,handler:navigationHandler});
   const input=h.$('msg-compose').elements.body;h.input(input,'Unfinished private draft');input.focus();
@@ -213,7 +281,7 @@ test('Messages Back/Forward restores conversation without pushing history or wri
   };
   await traverse('back');assert.equal(h.$('msg-property').textContent,'Apartment');
   await traverse('forward');assert.equal(h.$('msg-property').textContent,'Room');
-  assert.equal(h.w.history.length,length);assert.equal(h.calls.some(call=>call.method==='POST'),false);
+  assert.equal(h.w.history.length,length);assert.equal(h.calls.some(call=>call.method!=='GET'),false);
 });
 
 test('expired private draft stays hidden, same account restores, explicit logout clears',async t=>{
