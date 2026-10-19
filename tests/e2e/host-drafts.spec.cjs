@@ -59,6 +59,8 @@ test('Host retains B/profile drafts and physical focus/caret through save A, fai
 
 test('Host retains verification through Disable/Enable and binds replacement calendar actions to current identity',async({page})=>{
   await installHostFixture(page);
+  // Test state transitions with native clicks, without smooth-scroll target movement.
+  await page.emulateMedia({reducedMotion:'reduce'});
   const propertyId='11111111-1111-4111-8111-111111111111';
   const a='33333333-3333-4333-8333-333333333333',b='44444444-4444-4444-8444-444444444444';
   let id=a,revision=1,enabled=true,removed=false;
