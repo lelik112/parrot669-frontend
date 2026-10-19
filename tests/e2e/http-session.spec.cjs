@@ -50,6 +50,7 @@ test('verification keeps inclusive UI nights across exclusive API submit and ser
 });
 
 test('Host calendar connect retains invalid-ACK draft then saves through existing PUT/204 contract',async({page})=>{
+  await page.emulateMedia({reducedMotion:'reduce'});
   await installHostFixture(page);
   const propertyId='11111111-1111-4111-8111-111111111111';
   const icalUrl='https://www.airbnb.com/calendar/ical/123.ics?s=SyntheticOnly123';
@@ -73,7 +74,10 @@ test('Host calendar connect retains invalid-ACK draft then saves through existin
   await expect(input).toHaveValue(icalUrl);await expect(input).toBeEnabled();
   expect(commands).toEqual([{method:'PUT',body:{provider:'Airbnb',icalUrl}}]);expect(dashboards).toBe(1);
   accept=true;
+  const saved=page.waitForResponse(response=>response.request().method()==='PUT' &&
+    new URL(response.url()).pathname===`/api/host/properties/${propertyId}/public-links`);
   await form.locator('button[type=submit]').click();
+  expect((await saved).status()).toBe(204);
   await expect.poll(()=>dashboards).toBe(2);
   await expect(form.locator('.host-form-error')).toHaveCount(0);
   expect(commands).toEqual(Array(2).fill({method:'PUT',body:{provider:'Airbnb',icalUrl}}));
