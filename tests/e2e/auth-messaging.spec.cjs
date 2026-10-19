@@ -54,6 +54,14 @@ test('isolated A/B auth contexts exchange, read and survive independent logout',
     await pageA.locator('#msg-send').click();
     await expect(pageA).toHaveURL(new RegExp(`conversation=${fixture.ids.conversation}`));
     await expect(pageA.locator('#msg-history')).toContainText('Synthetic hello from A');
+    await pageA.evaluate(()=>window.dispatchEvent(new Event('focus')));
+    await expect(pageA.locator('#msg-list button')).toHaveCount(1);
+    await pageA.locator('#msg-compose textarea[name="body"]').fill('Unsent A draft');
+    await pageA.locator('#msg-compose textarea[name="body"]').evaluate(input=>{
+      input.focus();input.setSelectionRange(2,7);
+      window.pm140Continuity={input,row:document.querySelector('#msg-list button'),
+        bubble:document.querySelector('#msg-history article'),historyLength:history.length};
+    });
 
     await pageB.goto('/messages.html');
     await login(pageB, fixture.identities.b.username);
@@ -66,9 +74,19 @@ test('isolated A/B auth contexts exchange, read and survive independent logout',
     await pageB.locator('#msg-send').click();
     await expect(pageB.locator('#msg-history')).toContainText('Synthetic reply from B');
 
-    await pageA.reload();
+    // Exercise the existing focus/poll route, not a reload that replaces every node.
+    const writesBeforePoll=fixture.snapshot().calls.filter(call=>call.session==='a'&&call.method==='POST').length;
+    await pageA.bringToFront();
+    await pageA.evaluate(()=>window.dispatchEvent(new Event('focus')));
     await expect(pageA.locator('#msg-account-name')).toHaveText(fixture.identities.a.username);
     await expect(pageA.locator('#msg-history')).toContainText('Synthetic reply from B');
+    expect(await pageA.evaluate(()=>{
+      const saved=window.pm140Continuity,input=document.querySelector('#msg-compose textarea[name="body"]');
+      return {input:saved.input===input,row:saved.row===document.querySelector('#msg-list button'),
+        bubble:saved.bubble===document.querySelector('#msg-history article'),body:input.value,
+        start:input.selectionStart,end:input.selectionEnd,historyUnchanged:history.length===saved.historyLength};
+    })).toEqual({input:true,row:true,bubble:true,body:'Unsent A draft',start:2,end:7,historyUnchanged:true});
+    expect(fixture.snapshot().calls.filter(call=>call.session==='a'&&call.method==='POST')).toHaveLength(writesBeforePoll);
     await expect.poll(() => fixture.snapshot().readThrough.a).toBe(2);
 
     await pageA.locator('#msg-logout').click();

@@ -33,9 +33,26 @@
   const registrationTabKey = "parrot669-registration-intent";
   const profileReturnKey = "parrot669-profile-return";
 
+  function setText(target, value) {
+    const text = String(value ?? "");
+    if (target.textContent !== text) target.textContent = text;
+  }
+  function setAttribute(target, name, value) {
+    if (target.getAttribute(name) !== value) target.setAttribute(name, value);
+  }
+  // Keyed siblings stay attached unless their order or membership really changes.
+  function reconcileNodes(parent, nodes) {
+    const focused = parent.contains(document.activeElement) ? document.activeElement : null;
+    const keep = new Set(nodes);
+    for (const child of [...parent.children]) if (!keep.has(child)) child.remove();
+    nodes.forEach((child,index) => {
+      if (parent.children[index] !== child) parent.insertBefore(child,parent.children[index] || null);
+    });
+    if (focused?.isConnected && document.activeElement !== focused) focused.focus({preventScroll:true});
+  }
   function status(text = "", error = false, target = $("msg-status")) {
-    target.textContent = text; target.classList.toggle("error", error);
-    target.setAttribute("role", error ? "alert" : "status");
+    setText(target,text); target.classList.toggle("error", error);
+    setAttribute(target,"role", error ? "alert" : "status");
   }
   function failed(error, target = $("msg-status")) {
     if (error.status === 401) { M.setUser(null); target = $("msg-status"); }
@@ -148,20 +165,37 @@
     updateComposer();
   }
   function renderInbox() {
-    const list = $("msg-list"); list.replaceChildren();
+    const list = $("msg-list");
+    const existing = new Map([...list.children].map(button => [button.dataset.conversationId,button]));
+    const rows = [];
     for (const item of inbox) {
-      const button = node("button", "messages-conversation"); button.type = "button";
-      button.setAttribute("aria-current", String(item.id === active?.id));
+      let button = existing.get(item.id);
+      if (!button) {
+        button = node("button", "messages-conversation"); button.type = "button";
+        button.dataset.conversationId = item.id;
+        button.append(node("strong"),node("span"),node("small"));
+        button.addEventListener("click", () => void openConversation(item.id));
+      }
+      setAttribute(button,"aria-current", String(item.id === active?.id));
       const unread = Number(item.unreadCount) > 0;
       button.classList.toggle("unread",unread);
-      button.append(node("strong", "", item.propertyTitle), node("span", "", item.otherDisplayName), node("small", "", item.lastMessagePreview));
+      setText(button.children[0],item.propertyTitle);
+      setText(button.children[1],item.otherDisplayName);
+      setText(button.children[2],item.lastMessagePreview);
       if (unread) {
-        button.append(node("span", "messages-unread-label", t("unreadShort")),
-          node("span", "messaging-badge", item.unreadCount > 99 ? "99+" : item.unreadCount));
-        button.setAttribute("aria-label",`${item.propertyTitle}, ${item.otherDisplayName}, ${t("unreadCount")(item.unreadCount)}. ${item.lastMessagePreview}`);
+        if (!button.querySelector(".messaging-badge"))
+          button.append(node("span", "messages-unread-label"),node("span", "messaging-badge"));
+        setText(button.querySelector(".messages-unread-label"),t("unreadShort"));
+        setText(button.querySelector(".messaging-badge"),item.unreadCount > 99 ? "99+" : item.unreadCount);
+        setAttribute(button,"aria-label",`${item.propertyTitle}, ${item.otherDisplayName}, ${t("unreadCount")(item.unreadCount)}. ${item.lastMessagePreview}`);
+      } else {
+        button.querySelector(".messages-unread-label")?.remove();
+        button.querySelector(".messaging-badge")?.remove();
+        button.removeAttribute("aria-label");
       }
-      button.addEventListener("click", () => void openConversation(item.id)); list.append(button);
+      rows.push(button);
     }
+    reconcileNodes(list,rows);
     $("msg-more").hidden = !nextCursor;
     status(inbox.length ? "" : t("emptyInbox"), false, $("msg-inbox-status"));
   }
@@ -186,15 +220,30 @@
   function renderMessages({bottom = false, older = false} = {}) {
     const previousHeight = historyNode.scrollHeight, previousTop = historyNode.scrollTop;
     const wasBottom = atBottom();
-    historyNode.replaceChildren();
+    const existing = new Map([...historyNode.children].map(bubble => [bubble.dataset.messageId,bubble]));
+    const bubbles = [];
     for (const item of [...messages.values()].sort((a,b) => a.sequence-b.sequence)) {
-      const bubble = node("article", `message-bubble${item.senderProfileId === actor?.profile?.id ? " mine" : ""}`);
-      if (item.from && item.to) bubble.append(node("p", "message-stay", `${t("savedDates")}: ${dateLabel(item.from)} → ${dateLabel(item.to)}`));
-      bubble.append(node("p", "", item.body));
-      const time = node("time", "", new Intl.DateTimeFormat(document.documentElement.lang,
+      let bubble = existing.get(item.id);
+      if (!bubble) {
+        bubble = node("article");
+        bubble.dataset.messageId = item.id;
+        bubble.append(node("p"),node("time"));
+      }
+      const className = `message-bubble${item.senderProfileId === actor?.profile?.id ? " mine" : ""}`;
+      if (bubble.className !== className) bubble.className = className;
+      let stay = bubble.querySelector(".message-stay");
+      if (item.from && item.to) {
+        if (!stay) { stay = node("p","message-stay"); bubble.prepend(stay); }
+        setText(stay,`${t("savedDates")}: ${dateLabel(item.from)} → ${dateLabel(item.to)}`);
+      } else stay?.remove();
+      setText(bubble.querySelector("p:not(.message-stay)"),item.body);
+      const time = bubble.querySelector("time");
+      setText(time,new Intl.DateTimeFormat(document.documentElement.lang,
         {day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}).format(new Date(item.createdAt)));
-      time.dateTime = item.createdAt; bubble.append(time); historyNode.append(bubble);
+      setAttribute(time,"datetime",item.createdAt);
+      bubbles.push(bubble);
     }
+    reconcileNodes(historyNode,bubbles);
     $("msg-earlier").hidden = !messages.size || Math.min(...messages.keys()) <= 1;
     if (older) historyNode.scrollTop = previousTop + historyNode.scrollHeight - previousHeight;
     else if (bottom || wasBottom) historyNode.scrollTop = historyNode.scrollHeight;
