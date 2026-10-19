@@ -1,7 +1,87 @@
 const {test}=require('node:test');
+
+test('PM139 causal matrix executes exactly mobile smooth/auto plus Chromium auto',()=>{
+  const registrations=[];
+  for(const project of ['chromium-desktop','webkit-desktop','mobile-emulation'])
+    for(const condition of ['smooth','auto'])for(const scenario of ['connect','save-a'])
+      registrations.push({project,condition,scenario,execute:causalCaseApplies(project,condition)});
+  assert.equal(registrations.length,12);assert.equal(registrations.filter(x=>x.execute).length,6);
+  assert.equal(registrations.filter(x=>!x.execute).length,6);
+  assert.equal(registrations.filter(x=>x.execute&&x.project==='mobile-emulation').length,4);
+});
+
+test('PM139 root auto intervention changes only document-root inline scroll behavior',()=>{
+  for(const rootScroll of ['smooth','auto']){
+    const dom=new JSDOM('<html><head><style>html{scroll-behavior:smooth}</style></head><body><input value="keep"></body></html>',{runScripts:'outside-only'});
+    try{
+      const {window}=dom,body=window.document.body.outerHTML;
+      window.eval('('+installRootCondition.toString()+')('+JSON.stringify({rootScroll})+')');
+      assert.equal(window.getComputedStyle(window.document.documentElement).scrollBehavior,rootScroll);
+      assert.equal(window.document.body.outerHTML,body);
+      assert.equal(window.document.documentElement.style.getPropertyPriority('scroll-behavior'),rootScroll==='auto'?'important':'');
+    }finally{dom.window.close();}
+  }
+});
+
+test('PM139 critical press retains four pre/post frames and bubble chain after later ring eviction',async()=>{
+  const s=setup('<article data-property-id="11111111-1111-4111-8111-111111111111"><div class="host-property-settings"><form class="host-settings-form"><button type="submit">Save</button></form></div></article><button type="button" id="other">Other</button>');
+  try{
+    s.runFrames(8);
+    const button=s.window.document.querySelector('button[type=submit]'),other=s.window.document.querySelector('#other');
+    // Synthetic unit events are not native browser evidence.
+    for(const type of ['pointerdown','pointerup','click'])
+      button.dispatchEvent(new s.window.Event(type,{bubbles:true,cancelable:true}));
+    await Promise.resolve();s.runFrames(8);
+    other.dispatchEvent(new s.window.Event('pointerdown',{bubbles:true}));
+    for(let n=0;n<60;n++)other.dispatchEvent(new s.window.Event('click',{bubbles:true}));
+    await Promise.resolve();
+    const data=s.dump(),critical=data.critical[0];
+    assert.equal(critical.label,'save-a');assert.equal(critical.before.length,4);assert.equal(critical.after.length,4);
+    assert.deepEqual(Array.from(critical.after,frame=>frame.t).length,4);
+    for(const type of ['pointerdown','pointerup','click'])
+      assert(critical.events.some(e=>e.type===type&&e.phase==='document-bubble'));
+    assert(data.dropped.events>0);assert.equal(data.dropped.criticalEvents,0);
+  }finally{s.dom.window.close();}
+});
+
+test('PM139 cap drops old redundant history before protected critical press and counts every cap removal',()=>{
+  const critical={before:Array(4).fill({scroll:[0,1]}),after:Array(4).fill({scroll:[0,2]}),
+    events:['pointerdown','pointerup','click'].map(type=>({type,phase:'document-bubble'}))};
+  const payload={observation:{frames:Array(24).fill({noise:'x'.repeat(2000)}),
+    windows:Array(12).fill({noise:'y'.repeat(1000)}),events:Array(96).fill({noise:'z'.repeat(1000)}),
+    critical:[critical]},requests:Array(64).fill({path:'/api/synthetic'})};
+  const data=boundedEvidence(payload);
+  assert(Buffer.byteLength(JSON.stringify(data))<=65536);
+  assert.equal(data.criticalEvidenceComplete,true);
+  assert.deepEqual(data.observation.critical,[critical]);
+  for(const key of ['frames','windows','events'])
+    assert.equal(data.capDropped[key]+data.observation[key].length,payload.observation[key].length);
+  assert.equal(data.capDropped.requests+data.requests.length,64);
+  assert.equal(payload.observation.events.length,96);
+});
+
+test('PM139 overlarge protected evidence reports inconclusive rather than silently losing its last press',()=>{
+  const data=boundedEvidence({observation:{critical:[{before:['x'.repeat(100000)],after:[],events:[]}]}});
+  assert(Buffer.byteLength(JSON.stringify(data))<=65536);
+  assert.equal(data.criticalEvidenceComplete,false);assert.match(data.collectionError,/inconclusive/);
+});
+
+test('PM139 standalone JSON persists even a passed case inside the test output directory',async()=>{
+  const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os');
+  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'pm139-unit-evidence-'));
+  try{
+    let attachment;
+    const info={outputPath:name=>path.join(dir,name),attach:async(name,data)=>{attachment={name,...data};}};
+    const data={version:2,status:'passed',observation:{media:{noPreference:true}}};
+    const file=await persistEvidence(info,data);
+    assert.equal(path.dirname(file),dir);assert.deepEqual(JSON.parse(await fs.readFile(file,'utf8')),data);
+    assert.equal(attachment,undefined); // Exactly one standalone JSON, no copied attachment.
+  }finally{await fs.rm(dir,{recursive:true});}
+});
 const assert=require('node:assert/strict');
 const {JSDOM}=require('jsdom');
-const {installNativeInputObserver,boundedEvidence}=require('./e2e/pm139-native-input-diagnostic.cjs');
+const {installNativeInputObserver,boundedEvidence,causalCaseApplies,installRootCondition,persistEvidence}
+  =require('./e2e/pm139-native-input-diagnostic.cjs');
 
 function setup(html='<form id="fixture-form"><button type="button" id="fixture-button">Save</button></form>') {
   const dom=new JSDOM(html,{runScripts:'outside-only',url:'http://127.0.0.1:4173/host.html'});
@@ -36,7 +116,8 @@ test('PM139 observer leaves a cancellable click uncancelled and the application 
     const data=s.dump();assert.equal(calls,1);
     assert(data.events.some(x=>x.phase==='document-capture'));
     assert(data.events.some(x=>x.phase==='document-bubble'));
-    assert(data.events.some(x=>x.phase==='after-dispatch'));
+    assert(data.events.some(x=>x.phase==='capture-microtask'));
+    assert(data.events.every(x=>x.phase!=='after-dispatch'));
     assert(data.events.every(x=>x.defaultPrevented===false));
   }finally{s.dom.window.close();}
 });
@@ -51,7 +132,7 @@ test('PM139 observer records actual application cancellation instead of causing 
     await Promise.resolve();
     const data=s.dump();
     assert(data.events.some(x=>x.type==='submit'&&x.phase==='document-capture'&&!x.defaultPrevented));
-    assert(data.events.some(x=>x.type==='submit'&&x.phase==='after-dispatch'&&x.defaultPrevented));
+    assert(data.events.some(x=>x.type==='submit'&&x.phase==='document-bubble'&&x.defaultPrevented));
   }finally{s.dom.window.close();}
 });
 
