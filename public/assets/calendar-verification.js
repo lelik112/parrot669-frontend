@@ -41,6 +41,13 @@
       return [target.getUTCFullYear(),String(target.getUTCMonth()+1).padStart(2,"0"),
         String(Math.min(day,lastDay)).padStart(2,"0")].join("-");
     }
+    // Calendar-date arithmetic only: HOST last night is inclusive, API end exclusive.
+    function shiftDate(iso,days){
+      const date=new Date(`${iso}T00:00:00Z`);
+      if(!Number.isFinite(date.getTime()))return "";
+      date.setUTCDate(date.getUTCDate()+days);
+      return date.toISOString().slice(0,10);
+    }
     function selectableBounds(){
       const minimum=value?.minSelectableDate||new Date().toISOString().slice(0,10);
       return {minimum,maximum:value?.maxSelectableDate||addCalendarMonths(minimum,6)};
@@ -93,7 +100,7 @@
       }
       dates.hidden=!(value?.canStart && calendar.enabled!==false && ["required","failed","rejected","cancelled"].includes(state));
       text(selected,value?.selectedFrom && value?.selectedTo && state!=="required"?
-        ch.dates(value.selectedFrom,value.selectedTo):"");
+        ch.dates(value.selectedFrom,shiftDate(value.selectedTo,-1)):"");
       text(title,heading);text(detail,description);text(timing,time);
       if(error && !(action==="start" && value?.canStart && errorFromStart)){
         action="refresh";button.hidden=false;button.textContent=tr.refresh;
@@ -126,8 +133,11 @@
         const path=`/calendars/${encodeURIComponent(calendar.id)}/verification`;
         value=await request(path+(operation==="refresh"?"":"/"+operation),{
           method:operation==="refresh"?"GET":"POST",signal:controller.signal,
-          ...(operation==="start"?{body:JSON.stringify({from:from.value,to:to.value})}:{})});
+          ...(operation==="start"?{body:JSON.stringify({from:from.value,to:shiftDate(to.value,1)})}:{})});
         if(disposed)return;
+        if(value?.selectedFrom && value?.selectedTo && !from.value && !to.value){
+          from.value=value.selectedFrom;to.value=shiftDate(value.selectedTo,-1);applyBounds();
+        }
       }catch(err){
         if(disposed || err.name==="AbortError")return;
         error=err.status===401?tr.signIn:err.status===400?err.message:tr.unavailable;

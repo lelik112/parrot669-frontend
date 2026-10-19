@@ -1,6 +1,54 @@
 const {test,expect}=require('./isolated-fixture.cjs');
 const {installPublicFixture,installHostFixture}=require('./public-fixture.cjs');
 
+test('verification keeps inclusive UI nights across exclusive API submit and server reload',async({page})=>{
+  await installHostFixture(page);
+  const propertyId='11111111-1111-4111-8111-111111111111',id='22222222-2222-4222-8222-222222222222';
+  const required={status:'Required',attemptsCount:0,maxAttempts:3,canStart:true,canCheck:false,
+    minSelectableDate:'2030-09-23',maxSelectableDate:'2031-03-23'};
+  let state=required;const commands=[];
+  await page.route('**/api/host/dashboard',route=>route.fulfill({json:{properties:[{
+    id:propertyId,title:'Synthetic period property',city:'Barcelona',bedrooms:1,sleeps:2,
+    listings:[{id:'listing-1',url:'https://www.airbnb.com/rooms/123'}]
+  }]}}));
+  await page.route(`**/api/host/properties/${propertyId}/calendars`,route=>route.fulfill({json:{calendars:[{
+    id,provider:'Airbnb',listingId:'123',publicUrl:'https://www.airbnb.com/rooms/123',enabled:true,mode:'Active',revision:7,
+    status:'Connected',lastSyncedAt:null,lastSuccessAt:null,lastError:null,reservationBlocks:[]
+  }]}}));
+  await page.route(new RegExp(`/api/host/calendars/${id}/verification(?:/(?:start|cancel))?$`),route=>{
+    const path=new URL(route.request().url()).pathname;
+    if(path.endsWith('/start')){
+      const body=route.request().postDataJSON();commands.push(body);
+      state={...required,status:'Pending',attemptId:id,attemptsCount:1,baselineReady:true,
+        canStart:false,canCheck:true,canCancel:true,selectedFrom:body.from,selectedTo:body.to,expectedAction:'Close'};
+    }else if(path.endsWith('/cancel'))state={...state,status:'Cancelled',canStart:true,canCheck:false,canCancel:false};
+    return route.fulfill({json:state});
+  });
+  const panel=page.locator('.calendar-verification');
+  async function open(){
+    await page.goto('/host.html');
+    await page.locator(`[data-property-id="${propertyId}"]`).getByRole('button',{name:'Expand',exact:true}).click();
+    await expect(panel).toBeVisible();
+  }
+  await open();
+  for(const [first,last,end] of [['2030-10-10','2030-10-12','2030-10-13'],['2030-12-31','2030-12-31','2031-01-01']]){
+    await panel.locator('input').nth(0).fill(first);
+    await panel.locator('input').nth(1).fill(last);
+    await panel.getByRole('button',{name:/Start.*verification|Start a new attempt/}).click();
+    await expect(panel.locator('.calendar-verification-selected')).toContainText(`${first} – ${last}`);
+    expect(commands.at(-1)).toEqual({from:first,to:end});
+    const count=commands.length;
+    await open();
+    await expect(panel.locator('.calendar-verification-selected')).toContainText(`${first} – ${last}`);
+    await expect(panel.locator('input').nth(0)).toHaveValue(first);
+    await expect(panel.locator('input').nth(1)).toHaveValue(last);
+    expect(commands.length).toBe(count);
+    await panel.getByRole('button',{name:'Cancel verification',exact:true}).click();
+    await expect(panel).toHaveAttribute('data-status','cancelled');
+  }
+  expect(commands).toEqual([{from:'2030-10-10',to:'2030-10-13'},{from:'2030-12-31',to:'2031-01-01'}]);
+});
+
 test('Host calendar connect retains invalid-ACK draft then saves through existing PUT/204 contract',async({page})=>{
   await installHostFixture(page);
   const propertyId='11111111-1111-4111-8111-111111111111';
