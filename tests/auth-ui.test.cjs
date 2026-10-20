@@ -219,9 +219,9 @@ test('PM138 R3: Host permits only producer-derived empty operations',async()=>{
   const routes={'/auth/me':{body:user},'/dashboard':{body:{properties:[]}}};
   for(const route of ['/calendars/cal-1/sync','/calendars/cal-1/activate','/calendars/cal-1','/availability/av-1','/properties/p-1','/listings/l-1','/unavailability/u-1','/profile','/properties/p-1/calendars','/properties/p-1/public-links']) routes[route]={status:204};
   const app=setup(routes);await flushHost();
-  for(const [method,route] of [['PUT','/properties/p-1/public-links'],['POST','/calendars/cal-1/sync'],['POST','/calendars/cal-1/activate'],['PUT','/calendars/cal-1'],['DELETE','/calendars/cal-1'],['PUT','/availability/av-1'],['DELETE','/availability/av-1'],['DELETE','/properties/p-1'],['DELETE','/listings/l-1'],['DELETE','/unavailability/u-1']])
+  for(const [method,route] of [['PUT','/properties/p-1/public-links'],['POST','/calendars/cal-1/sync'],['POST','/calendars/cal-1/activate'],['PUT','/calendars/cal-1'],['DELETE','/calendars/cal-1'],['DELETE','/availability/av-1'],['DELETE','/properties/p-1'],['DELETE','/listings/l-1'],['DELETE','/unavailability/u-1']])
     assert.equal(await app.run(`api(${JSON.stringify(route)},{method:${JSON.stringify(method)}})`),null,method+' '+route);
-  for(const [method,route] of [['GET','/properties/p-1/public-links'],['POST','/properties/p-1/public-links'],['DELETE','/properties/p-1/public-links'],['GET','/calendars/cal-1'],['GET','/calendars/cal-1/activate'],['PUT','/calendars/cal-1/activate'],['PATCH','/profile'],['POST','/properties/p-1/calendars'],['DELETE','/profile'],['PUT','/unavailability/u-1'],['PUT','/properties/p-1']])
+  for(const [method,route] of [['GET','/properties/p-1/public-links'],['POST','/properties/p-1/public-links'],['DELETE','/properties/p-1/public-links'],['GET','/calendars/cal-1'],['GET','/calendars/cal-1/activate'],['PUT','/calendars/cal-1/activate'],['PATCH','/profile'],['POST','/properties/p-1/calendars'],['DELETE','/profile'],['PUT','/unavailability/u-1'],['PATCH','/properties/p-1'],['PUT','/availability/av-1']])
     await assert.rejects(app.run(`api(${JSON.stringify(route)},{method:${JSON.stringify(method)}})`),{kind:'protocol',status:204});
   for(const command of ['syncCalendar({id:"cal-1"})','setCalendarEnabled({id:"cal-1"},false)']) {
     const count=app.calls.filter(x=>x==='/dashboard').length;
@@ -675,7 +675,7 @@ test('saved legacy location is preserved without lookups until Change address is
   assert.equal(editor.getValue(),undefined);
   assert.equal(editor.city.input.disabled,true);
   await form.emit('submit');await settle();
-  assert.equal(app.requests.find(r=>r.method==='PUT').body.address,undefined);
+  assert.equal(app.requests.find(r=>r.method==='PATCH').body.address,undefined);
   assert.equal(editor.city.input.disabled,true);
   assert.equal(app.calls.filter(x=>x.includes('/autocomplete')).length,0);
   assert.equal(form.querySelector('.host-form-error').textContent,'Address validation failed');
@@ -688,7 +688,7 @@ test('address replacement keeps draft on 400 and can be canceled to preserve the
   const form=app.nodes.get('host-properties').children[0].querySelector('.host-settings-form');
   await editor.change.emit('click');await chooseStreet(app,editor);
   await form.emit('submit');await settle();
-  assert.deepEqual(app.requests.find(r=>r.method==='PUT').body.address,addressFixture);
+  assert.deepEqual(app.requests.find(r=>r.method==='PATCH').body.address,addressFixture);
   assert.equal(editor.house.value,'40');
   assert.equal(editor.house.disabled,false);
   await editor.change.emit('click');
@@ -869,7 +869,7 @@ test('BUG-024: listing conflict codes render safe localized guidance and support
 test('existing ranges render the last covered night and round-trip without shifting dates or price', async () => {
   const stored={id:'period-1',from:'2026-10-01',to:'2026-10-05',nightlyPriceCents:10000};
   const app=setup({
-    '/availability/period-1':{body:stored},
+    '/availability/period-1':{body:{id:stored.id,propertyId:'property-1',period:{from:stored.from,to:stored.to},nightlyPriceCents:stored.nightlyPriceCents,createdAt:'2026-10-01T00:00:00Z'}},
     '/properties/property-1/availability':{body:[stored]},
     '/unavailability/block-1':{body:{id:'block-1',from:'2026-10-10',to:'2026-10-11'}}
   });
@@ -992,7 +992,7 @@ test('saving a range blocks duplicate submits; retry clears its old error and re
   assert.equal(form.querySelectorAll('input').every(input => !input.disabled), true);
   await form.emit('submit');
   assert.equal(app.calls.filter(route => route === '/availability/period-1').length, 2);
-  resolve({status:204});
+  resolve({body:{id:'period-1',propertyId:'property-1',period:{from:'2026-10-06',to:'2026-10-11'},nightlyPriceCents:null,createdAt:'2026-10-01T00:00:00Z'}});
   await pending;
   const updated = app.nodes.get('host-properties').children[0].querySelector('.host-period');
   assert.equal(updated, form);
@@ -1209,16 +1209,16 @@ test('unverified email login explains the next step in the selected language',as
 
 test('property name can be edited, errors preserve it, successful save refreshes the heading without replacing periods',async()=>{
   let fail=true;
-  const app=setup({'/properties/property-1':options=>fail?{status:400,body:{error:'title is required',code:'TITLE_REQUIRED'}}:{body:{id:'property-1',city:'Barcelona',...JSON.parse(options.body)}}});await settle();
+  const app=setup({'/properties/property-1':options=>fail?{status:400,body:{error:'title is required',code:'TITLE_REQUIRED'}}:{body:{id:'property-1',city:'Barcelona',country:'Spain',countryCode:'ES',accommodationType:'entire_place',bedrooms:1,sleeps:2,minStayDays:1,cleaningFeeCents:null,address:null,createdAt:'2026-10-01T00:00:00Z',...JSON.parse(options.body)}}});await settle();
   let card=propertyCard(app);let form=card.querySelector('.host-settings-form');const input=form.querySelectorAll('input').find(n=>n.name==='title');
   assert.equal(input.value,'Test home');input.value='  Новый дом 🏠 <test>  ';
   await app.run('updatePropertySettings(state.properties[0],propertiesNode.children[0].querySelector(".host-settings-form"))');
   assert.equal(input.value,'  Новый дом 🏠 <test>  ');assert.equal(input.disabled,false);
   assert.match(form.querySelector('.host-form-error').textContent,/Enter a property name/);
   fail=false;await app.run('updatePropertySettings(state.properties[0],propertiesNode.children[0].querySelector(".host-settings-form"))');
-  assert.equal(app.requests.filter(r=>r.method==='PUT').at(-1).body.title,'Новый дом 🏠 <test>');
-  assert.equal(app.run('state.properties[0].title'),'Новый дом 🏠 <test>');
-  assert.equal(app.nodes.get('host-properties').children[0].querySelector('strong').textContent,'Новый дом 🏠 <test>');
+  assert.equal(app.requests.filter(r=>r.method==='PATCH').at(-1).body.title,'  Новый дом 🏠 <test>  ');
+  assert.equal(app.run('state.properties[0].title'),'  Новый дом 🏠 <test>  ');
+  assert.equal(app.nodes.get('host-properties').children[0].querySelector('strong').textContent,'  Новый дом 🏠 <test>  ');
   assert.equal(app.run('state.properties[0].availability[0].id'),'period-1');
 });
 

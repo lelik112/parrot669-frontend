@@ -218,7 +218,7 @@ export default {
         (path === "/profile" && request.method === "PATCH") ||
         (["/geocode/autocomplete", "/geocode/countries"].includes(path) && request.method === "GET") ||
         (path === "/properties" && request.method === "POST") ||
-        (/^\/properties\/[0-9a-f-]+$/i.test(path) && ["PUT", "DELETE"].includes(request.method)) ||
+        (/^\/properties\/[0-9a-f-]+$/i.test(path) && ["PATCH", "DELETE"].includes(request.method)) ||
         (/^\/properties\/[0-9a-f-]+\/listings$/i.test(path) && request.method === "POST") ||
         (/^\/listings\/[0-9a-f-]+$/i.test(path) && ["PUT", "DELETE"].includes(request.method)) ||
         (/^\/properties\/[0-9a-f-]+\/availability$/i.test(path) && ["GET", "POST"].includes(request.method)) ||

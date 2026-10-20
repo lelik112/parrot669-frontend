@@ -10,6 +10,30 @@ const baseEnv={PUBLIC_ORIGIN:'https://parrot669.com',API_ORIGIN:'https://api.exa
 const qaEnv={...baseEnv,QA_HOSTNAMES:'preview.example.test',
   QA_WORKER_SECRET:'test-worker-secret-with-at-least-thirty-two-characters'};
 
+test('PM144 paired property PATCH forwards exact sparse/null body; obsolete PUT and wrong origins never reach upstream',async()=>{
+  const calls=[],sandbox={URL,Headers,Response,console,fetch:async(url,init)=>{
+    calls.push({url,method:init.method,headers:init.headers,body:await new Response(init.body).json()});
+    return new Response(JSON.stringify({id,title:'saved'}),{status:200});
+  }};
+  vm.createContext(sandbox);vm.runInContext(source,sandbox);
+  for(const host of ['parrot669.com','preview.example.test']){
+    const body={title:'  unchanged whitespace  ',cleaningFeeCents:null};
+    const response=await sandbox.worker.fetch(new Request(`https://${host}/api/host/properties/${id}`,{
+      method:'PATCH',headers:{Origin:`https://${host}`,Cookie:'other=private; parrot_session=synthetic'},body:JSON.stringify(body)}),qaEnv);
+    assert.equal(response.status,200);assert.equal(response.headers.get('Cache-Control'),'no-store');
+    assert.deepEqual(calls.at(-1).body,body);assert.equal(calls.at(-1).method,'PATCH');
+    assert.equal(calls.at(-1).url,`https://api.example.test/api/properties/${id}`);
+    assert.equal(calls.at(-1).headers.get('Cookie'),'parrot_session=synthetic');
+  }
+  const count=calls.length;
+  for(const [method,origin,status] of [['PUT','https://parrot669.com',404],['PATCH','https://evil.test',403]]){
+    const response=await sandbox.worker.fetch(new Request(`https://parrot669.com/api/host/properties/${id}`,{
+      method,headers:{Origin:origin},body:'{}'}),baseEnv);
+    assert.equal(response.status,status);
+  }
+  assert.equal(calls.length,count);
+});
+
 test('host profile PATCH reaches the backend route on production and QA origins', async () => {
   const calls=[];
   const sandbox={URL,Headers,Response,console,fetch:async(url,init)=>{
