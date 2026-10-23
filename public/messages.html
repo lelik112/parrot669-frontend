@@ -13,13 +13,13 @@
   <link rel="stylesheet" href="/assets/styles.css" />
   <link rel="stylesheet" href="/assets/messaging.css" />
 </head>
-<body class="messages-page" data-messaging-version="1">
+<body class="messages-page" data-messaging-version="1" data-messages-language-ready="false">
   <header class="host-topbar">
     <a class="brand" href="/" aria-label="PARROT 669 home"><span class="brand-copy"><strong>PARROT 669</strong><small data-msg-i18n="messages">Messages</small></span></a>
     <div class="host-topbar-actions">
       <div class="lang-switcher host-lang-switcher" aria-label="Language">
-        <button type="button" data-msg-lang="en">EN</button><button type="button" data-msg-lang="es">ES</button>
-        <button type="button" data-msg-lang="ca">CA</button><button type="button" data-msg-lang="ru">RU</button>
+        <button type="button" data-msg-lang="en" disabled>EN</button><button type="button" data-msg-lang="es" disabled>ES</button>
+        <button type="button" data-msg-lang="ca" disabled>CA</button><button type="button" data-msg-lang="ru" disabled>RU</button>
       </div>
       <div class="host-account-actions">
         <a class="host-auth-link" id="msg-login-link" href="#msg-auth" data-msg-i18n="login" hidden>Log in</a>
@@ -112,8 +112,6 @@
       </section>
     </div>
   </main>
-  <script src="/assets/messaging-common.js"></script>
-  <script src="/assets/messaging-email-settings.js"></script>
-  <script src="/assets/messages.js"></script>
+  <script type="module" src="/assets/entry-messages.js"></script>
 </body>
 </html>

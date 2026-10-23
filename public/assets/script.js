@@ -5,8 +5,8 @@ const translations = {
     credLabel1:"BEFORE YOU PAY", credTitle1:"We agree the scope first.", credText1:"You know what we will check and what it costs before paid work begins.",
     credLabel2:"WHAT YOU GET", credTitle2:"Facts, evidence and a clear result.", credText2:"We separate what is verified from what could not be verified.",
     credLabel3:"NO FALSE CERTAINTY", credTitle3:"Verification reduces uncertainty.", credText3:"We do not present an incomplete check as a guarantee.",
-    heroEyebrow:"PROPERTY SERVICES IN BARCELONA", heroTitle:"Find. Check.<br>Move with <span>confidence.</span>",
-    heroLead:"Independent verification, property visits, document checks and local support for tenants, owners and newcomers in Barcelona.",
+    heroEyebrow:"PROPERTY SERVICES IN BARCELONA", heroTitle:"Local help we stand behind.",
+    heroLead:"We agree the work and price up front, show you the result and take responsibility for our mistakes.",
     tellUs:"Tell us what you need", viewServices:"View our services",
     point1:"Independent and unbiased", point2:"Local presence in Barcelona", point3:"Clear reports and documentation",
     heroNote:"Barcelona<br>is where<br>we start.", sideNote:"REAL PEOPLE.<br>REAL PLACES.<br>SAFER DEALS.",
@@ -33,7 +33,28 @@ const translations = {
     formName:"Name", formContact:"Email or WhatsApp", formNeed:"What do you need?", formMessage:"Tell us a little more",
     optionRental:"Rental verification", optionVisit:"Property visit", optionDocs:"Document check", optionSearch:"Property search support", optionOwner:"Owner services", optionOther:"Something else",
     formSubmit:"Send request", formStatus:"We’ll use these details only to respond to your request.",
-    footerNote:"Barcelona is where we start."
+    footerNote:"Barcelona is where we start.",
+    navHousing:"Housing",
+    menuLabel:"Menu",
+    menuOpen:"Open menu",
+    menuClose:"Close menu",
+    presenceLabel:"3 EXAMPLES FROM OUR 6 SERVICES",
+    presenceTitle:"Practical help.<br>Clearer decisions.",
+    presenceVisit:"Property visits",
+    presenceRental:"Rental verification",
+    presenceDocs:"Document checks",
+    viewAllServices:"View all 6 services",
+    servicesRelation:"All 6 services — including the 3 examples above.",
+    aboutTitle:"About PARROT 669",
+    presenceNote:"We agree the scope and price before paid work begins.",
+    housingLabel:"HOUSING ON PARROT",
+    housingTitle:"Looking for a place?",
+    housingText:"Explore housing separately from our local services.",
+    housingCta:"Explore housing",
+    heroSubject:"Local help with property in Barcelona",
+    guaranteeTitle:"Our work guarantee",
+    guaranteePromise:"If we make a mistake in our work, we’ll refund you and take the next step free of charge.",
+    guaranteeAgreement:"We agree the scope of work, expected result, price and guarantee terms with you before work begins."
   },
   es: {
     brandTag:"NEGOCIOS REALES. MÁS SEGUROS.", navHome:"Inicio", navServices:"Servicios", navAbout:"Nosotros", navContact:"Contacto", contactUs:"Contáctanos",
@@ -41,8 +62,8 @@ const translations = {
     credLabel1:"ANTES DE PAGAR", credTitle1:"Primero acordamos el alcance.", credText1:"Sabrás qué vamos a comprobar y cuánto cuesta antes de empezar cualquier trabajo de pago.",
     credLabel2:"QUÉ RECIBES", credTitle2:"Hechos, pruebas y un resultado claro.", credText2:"Separamos lo verificado de lo que no se ha podido verificar.",
     credLabel3:"SIN FALSA CERTEZA", credTitle3:"La verificación reduce la incertidumbre.", credText3:"No presentamos una comprobación incompleta como una garantía.",
-    heroEyebrow:"SERVICIOS INMOBILIARIOS EN BARCELONA", heroTitle:"Encuentra. Comprueba.<br>Avanza con <span>confianza.</span>",
-    heroLead:"Verificación independiente, visitas a propiedades, revisión documental y apoyo local para inquilinos, propietarios y recién llegados a Barcelona.",
+    heroEyebrow:"SERVICIOS INMOBILIARIOS EN BARCELONA", heroTitle:"Ayuda de la que nos hacemos responsables.",
+    heroLead:"Acordamos el trabajo y el precio de antemano, mostramos el resultado y nos hacemos responsables de nuestros errores.",
     tellUs:"Cuéntanos qué necesitas", viewServices:"Ver servicios",
     point1:"Independiente e imparcial", point2:"Presencia local en Barcelona", point3:"Informes y documentación claros",
     heroNote:"Barcelona<br>es donde<br>empezamos.", sideNote:"PERSONAS REALES.<br>LUGARES REALES.<br>NEGOCIOS MÁS SEGUROS.",
@@ -69,7 +90,30 @@ const translations = {
     formName:"Nombre", formContact:"Email o WhatsApp", formNeed:"¿Qué necesitas?", formMessage:"Cuéntanos un poco más",
     optionRental:"Verificación de alquiler", optionVisit:"Visita a propiedad", optionDocs:"Revisión documental", optionSearch:"Apoyo en búsqueda", optionOwner:"Servicios para propietarios", optionOther:"Otra cosa",
     formSubmit:"Enviar solicitud", formStatus:"Usaremos estos datos únicamente para responder a tu solicitud.",
-    footerNote:"Barcelona es donde empezamos."
+    footerNote:"Barcelona es donde empezamos.",
+    navAvailability:"Disponibilidad",
+    navHost:"Para propietarios",
+    navHousing:"Vivienda",
+    menuLabel:"Menú",
+    menuOpen:"Abrir menú",
+    menuClose:"Cerrar menú",
+    presenceLabel:"3 EJEMPLOS DE NUESTROS 6 SERVICIOS",
+    presenceTitle:"Ayuda práctica.<br>Decisiones más claras.",
+    presenceVisit:"Visitas a propiedades",
+    presenceRental:"Verificación de alquiler",
+    presenceDocs:"Revisión de documentos",
+    viewAllServices:"Ver los 6 servicios",
+    servicesRelation:"Los 6 servicios, incluidos los 3 ejemplos anteriores.",
+    aboutTitle:"Sobre PARROT 669",
+    presenceNote:"Acordamos el alcance y el precio antes de empezar cualquier trabajo de pago.",
+    housingLabel:"VIVIENDA EN PARROT",
+    housingTitle:"¿Buscas un lugar?",
+    housingText:"Explora la vivienda por separado de nuestros servicios locales.",
+    housingCta:"Explorar vivienda",
+    heroSubject:"Ayuda local con inmuebles en Barcelona",
+    guaranteeTitle:"La garantía de nuestro trabajo",
+    guaranteePromise:"Si cometemos un error en nuestro trabajo, te devolveremos el dinero y realizaremos gratis el siguiente paso.",
+    guaranteeAgreement:"Acordaremos contigo el alcance del trabajo, el resultado esperado, el precio y las condiciones de la garantía antes de empezar."
   },
   ca: {
     brandTag:"ACORDS REALS. MÉS SEGURS.", navHome:"Inici", navAvailability:"Disponibilitat", navHost:"Per a propietaris", navServices:"Serveis", navAbout:"Nosaltres", navContact:"Contacte", contactUs:"Contacta'ns",
@@ -77,8 +121,8 @@ const translations = {
     credLabel1:"ABANS DE PAGAR", credTitle1:"Primer acordem l'abast.", credText1:"Sabràs què comprovarem i quant costa abans de començar qualsevol feina de pagament.",
     credLabel2:"QUÈ REPS", credTitle2:"Fets, proves i un resultat clar.", credText2:"Separem el que s'ha verificat del que no s'ha pogut verificar.",
     credLabel3:"SENSE FALSA CERTESA", credTitle3:"La verificació redueix la incertesa.", credText3:"No presentem una comprovació incompleta com una garantia.",
-    heroEyebrow:"SERVEIS IMMOBILIARIS A BARCELONA", heroTitle:"Troba. Comprova.<br>Avança amb <span>confiança.</span>",
-    heroLead:"Verificació independent, visites a propietats, revisió documental i suport local per a llogaters, propietaris i persones que arriben a Barcelona.",
+    heroEyebrow:"SERVEIS IMMOBILIARIS A BARCELONA", heroTitle:"Ajuda de la qual ens fem responsables.",
+    heroLead:"Acordem la feina i el preu per endavant, mostrem el resultat i assumim la responsabilitat dels nostres errors.",
     tellUs:"Explica'ns què necessites", viewServices:"Veure serveis",
     point1:"Independent i imparcial", point2:"Presència local a Barcelona", point3:"Informes i documentació clars",
     heroNote:"Barcelona<br>és on<br>comencem.", sideNote:"PERSONES REALS.<br>LLOCS REALS.<br>ACORDS MÉS SEGURS.",
@@ -105,7 +149,28 @@ const translations = {
     formName:"Nom", formContact:"Email o WhatsApp", formNeed:"Què necessites?", formMessage:"Explica'ns una mica més",
     optionRental:"Verificació de lloguer", optionVisit:"Visita a propietat", optionDocs:"Revisió documental", optionSearch:"Suport en la cerca", optionOwner:"Serveis per a propietaris", optionOther:"Una altra cosa",
     formSubmit:"Enviar petició", formStatus:"Farem servir aquestes dades únicament per respondre a la teva petició.",
-    footerNote:"Barcelona és on comencem."
+    footerNote:"Barcelona és on comencem.",
+    navHousing:"Habitatge",
+    menuLabel:"Menú",
+    menuOpen:"Obre el menú",
+    menuClose:"Tanca el menú",
+    presenceLabel:"3 EXEMPLES DELS NOSTRES 6 SERVEIS",
+    presenceTitle:"Ajuda pràctica.<br>Decisions més clares.",
+    presenceVisit:"Visites a propietats",
+    presenceRental:"Verificació del lloguer",
+    presenceDocs:"Revisió de documents",
+    viewAllServices:"Veure els 6 serveis",
+    servicesRelation:"Els 6 serveis, inclosos els 3 exemples anteriors.",
+    aboutTitle:"Sobre PARROT 669",
+    presenceNote:"Acordem l'abast i el preu abans de començar qualsevol feina de pagament.",
+    housingLabel:"HABITATGE A PARROT",
+    housingTitle:"Busques un lloc?",
+    housingText:"Explora l'habitatge per separat dels nostres serveis locals.",
+    housingCta:"Explora habitatge",
+    heroSubject:"Ajuda local amb immobles a Barcelona",
+    guaranteeTitle:"La garantia de la nostra feina",
+    guaranteePromise:"Si ens equivoquem en la nostra feina, et retornarem els diners i farem el següent pas de franc.",
+    guaranteeAgreement:"Abans de començar, acordarem amb tu l'abast de la feina, el resultat esperat, el preu i les condicions de la garantia."
   },
   ru: {
     brandTag:"РЕАЛЬНЫЕ СДЕЛКИ. БЕЗОПАСНЕЕ.", navHome:"Главная", navAvailability:"Свободные даты", navHost:"Владельцам", navServices:"Услуги", navAbout:"О нас", navContact:"Контакты", contactUs:"Связаться",
@@ -113,8 +178,8 @@ const translations = {
     credLabel1:"ДО ОПЛАТЫ", credTitle1:"Сначала согласуем объём.", credText1:"До начала платной работы вы знаете, что именно мы проверяем и сколько это стоит.",
     credLabel2:"ЧТО ВЫ ПОЛУЧАЕТЕ", credTitle2:"Факты, подтверждения и понятный результат.", credText2:"Мы отделяем подтверждённое от того, что проверить не удалось.",
     credLabel3:"БЕЗ ЛОЖНОЙ УВЕРЕННОСТИ", credTitle3:"Проверка снижает неопределённость.", credText3:"Мы не выдаём неполную проверку за гарантию.",
-    heroEyebrow:"УСЛУГИ С НЕДВИЖИМОСТЬЮ В БАРСЕЛОНЕ", heroTitle:"Найти. Проверить.<br>Действовать <span>уверенно.</span>",
-    heroLead:"Независимая проверка, осмотр объектов, проверка документов и локальная поддержка для арендаторов, владельцев и тех, кто переезжает в Барселону.",
+    heroEyebrow:"УСЛУГИ С НЕДВИЖИМОСТЬЮ В БАРСЕЛОНЕ", heroTitle:"Помощь, за которую мы отвечаем.",
+    heroLead:"Согласуем работу и цену заранее, показываем результат и отвечаем за свои ошибки.",
     tellUs:"Расскажите, что вам нужно", viewServices:"Посмотреть услуги",
     point1:"Независимо и без предвзятости", point2:"Мы находимся в Барселоне", point3:"Понятные отчёты и документы",
     heroNote:"Барселона —<br>это только<br>начало.", sideNote:"РЕАЛЬНЫЕ ЛЮДИ.<br>РЕАЛЬНЫЕ ОБЪЕКТЫ.<br>БОЛЕЕ БЕЗОПАСНЫЕ СДЕЛКИ.",
@@ -141,76 +206,35 @@ const translations = {
     formName:"Имя", formContact:"Email или WhatsApp", formNeed:"Что вам нужно?", formMessage:"Расскажите немного подробнее",
     optionRental:"Проверка аренды", optionVisit:"Осмотр объекта", optionDocs:"Проверка документов", optionSearch:"Помощь с поиском", optionOwner:"Услуги для владельцев", optionOther:"Что-то другое",
     formSubmit:"Отправить заявку", formStatus:"Мы используем эти данные только для ответа на вашу заявку.",
-    footerNote:"Барселона — это только начало."
+    footerNote:"Барселона — это только начало.",
+    navHousing:"Жильё",
+    menuLabel:"Меню",
+    menuOpen:"Открыть меню",
+    menuClose:"Закрыть меню",
+    presenceLabel:"3 ПРИМЕРА ИЗ 6 НАШИХ УСЛУГ",
+    presenceTitle:"Практическая помощь.<br>Понятные решения.",
+    presenceVisit:"Осмотр объектов",
+    presenceRental:"Проверка аренды",
+    presenceDocs:"Проверка документов",
+    viewAllServices:"Посмотреть все 6 услуг",
+    servicesRelation:"Все 6 услуг, включая 3 примера выше.",
+    aboutTitle:"О PARROT 669",
+    presenceNote:"До начала платной работы согласуем объём и цену.",
+    housingLabel:"ЖИЛЬЁ НА PARROT",
+    housingTitle:"Ищете жильё?",
+    housingText:"Поиск жилья — отдельно от наших локальных услуг.",
+    housingCta:"Искать жильё",
+    heroSubject:"Локальная помощь с недвижимостью в Барселоне",
+    guaranteeTitle:"Гарантия нашей работы",
+    guaranteePromise:"Если мы ошиблись в своей работе, вернём деньги и следующий шаг сделаем бесплатно.",
+    guaranteeAgreement:"Объём работы, ожидаемый результат, цену и условия гарантии согласуем с вами до начала работы."
   }
 };
 
-Object.assign(translations.en, {
-  navAvailability:"Availability",
-  availabilityEyebrow:"LIVE AVAILABILITY",
-  availabilityTitle:"Find a property that is<br><span>actually free.</span>",
-  availabilityLead:"Search host-reported availability in Barcelona and continue to the original external listing for rental terms.",
-  availabilityCity:"City",
-  availabilityFrom:"From",
-  availabilityTo:"To",
-  availabilityBedrooms:"Bedrooms",
-  availabilitySearch:"Search availability",
-  availabilityLive:"Connected to the live PARROT availability index",
-  availabilityDisclaimer:"Availability does not itself mean a stay of your requested duration is legally or contractually available. Check the external listing and host terms."
-});
-Object.assign(translations.es, {
-  navAvailability:"Disponibilidad",
-  availabilityEyebrow:"DISPONIBILIDAD EN DIRECTO",
-  availabilityTitle:"Encuentra una vivienda que esté<br><span>realmente libre.</span>",
-  availabilityLead:"Busca disponibilidad declarada por propietarios en Barcelona y continúa al anuncio externo original para consultar las condiciones del alquiler.",
-  availabilityCity:"Ciudad",
-  availabilityFrom:"Desde",
-  availabilityTo:"Hasta",
-  availabilityBedrooms:"Dormitorios",
-  availabilitySearch:"Buscar disponibilidad",
-  availabilityLive:"Conectado al índice de disponibilidad de PARROT",
-  availabilityDisclaimer:"La disponibilidad no significa por sí sola que una estancia de la duración solicitada esté permitida legal o contractualmente. Consulta el anuncio externo y las condiciones del propietario."
-});
-Object.assign(translations.ca, {
-  navAvailability:"Disponibilitat",
-  availabilityEyebrow:"DISPONIBILITAT EN DIRECTE",
-  availabilityTitle:"Troba un habitatge que estigui<br><span>realment lliure.</span>",
-  availabilityLead:"Cerca disponibilitat declarada pels propietaris a Barcelona i continua a l'anunci extern original per consultar les condicions del lloguer.",
-  availabilityCity:"Ciutat",
-  availabilityFrom:"Des de",
-  availabilityTo:"Fins a",
-  availabilityBedrooms:"Dormitoris",
-  availabilitySearch:"Cercar disponibilitat",
-  availabilityLive:"Connectat a l'índex de disponibilitat de PARROT",
-  availabilityDisclaimer:"La disponibilitat no implica per si sola que una estada de la durada sol·licitada estigui permesa legalment o contractualment. Consulta l'anunci extern i les condicions del propietari."
-});
-Object.assign(translations.ru, {
-  navAvailability:"Свободные даты",
-  availabilityEyebrow:"АКТУАЛЬНАЯ ДОСТУПНОСТЬ",
-  availabilityTitle:"Найдите жильё, которое<br><span>реально свободно.</span>",
-  availabilityLead:"Ищите свободные даты, указанные владельцами в Барселоне, а условия аренды смотрите в исходном объявлении.",
-  availabilityCity:"Город",
-  availabilityFrom:"С",
-  availabilityTo:"По",
-  availabilityBedrooms:"Спальни",
-  availabilitySearch:"Найти свободное",
-  availabilityLive:"Подключено к живому индексу доступности PARROT",
-  availabilityDisclaimer:"Свободные даты сами по себе не означают, что объект можно законно или по договору арендовать именно на запрошенный срок. Проверяйте исходное объявление и условия владельца."
-});
-
-Object.assign(translations.en, { navAvailability:"Availability", navHost:"For hosts" });
-Object.assign(translations.es, { navAvailability:"Disponibilidad", navHost:"Para propietarios" });
-Object.assign(translations.ca, { navAvailability:"Disponibilitat", navHost:"Per a propietaris" });
-Object.assign(translations.ru, { navAvailability:"Свободные даты", navHost:"Владельцам" });
-
-Object.assign(translations.en, { navHousing:"Housing" });
-Object.assign(translations.es, { navHousing:"Vivienda" });
-Object.assign(translations.ca, { navHousing:"Habitatge" });
-Object.assign(translations.ru, { navHousing:"Жильё" });
-
 const htmlNodes = document.querySelectorAll("[data-i18n-html]");
 const textNodes = document.querySelectorAll("[data-i18n]");
-const langButtons = document.querySelectorAll("[data-lang]");
+const langButtons = document.querySelectorAll("[data-lang],[data-menu-lang]");
+const languageForButton = button => button.dataset.lang || button.dataset.menuLang;
 
 function setLanguage(lang){
   const t = translations[lang] || translations.en;
@@ -223,149 +247,187 @@ function setLanguage(lang){
     const key = node.dataset.i18nHtml;
     if(t[key] !== undefined) node.innerHTML = t[key];
   });
-  langButtons.forEach(btn => btn.classList.toggle("active", btn.dataset.lang === lang));
-  localStorage.setItem("parrot669-language", lang);
+  langButtons.forEach(btn => btn.classList.toggle("active", languageForButton(btn) === lang));
+  window.ParrotCore.storage.local.setItem("parrot669-language", lang);
   document.dispatchEvent(new CustomEvent("parrot:language",{detail:{lang}}));
 }
 
-langButtons.forEach(btn => btn.addEventListener("click", () => setLanguage(btn.dataset.lang)));
+langButtons.forEach(btn => btn.addEventListener("click", () => setLanguage(languageForButton(btn))));
 
-const saved = localStorage.getItem("parrot669-language");
+const saved = window.ParrotCore.storage.local.getItem("parrot669-language");
 const browser = (navigator.language || "en").slice(0,2);
 setLanguage(saved || (translations[browser] ? browser : "en"));
 
 document.getElementById("year").textContent = new Date().getFullYear();
 
-const availabilityForm = document.getElementById("availability-form");
-const availabilityResults = document.getElementById("availability-results");
-
-const availabilityMessages = {
-  en: {loading:"Searching live availability…", empty:"No matching availability yet.", error:"Availability search is temporarily unavailable.", bedrooms:n=>n === 1 ? "1 bedroom" : `${n} bedrooms`, available:(a,b)=>`Available ${a} → ${b}`, view:p=>`View on ${p}`},
-  es: {loading:"Buscando disponibilidad…", empty:"Todavía no hay disponibilidad que coincida.", error:"La búsqueda de disponibilidad no está disponible temporalmente.", bedrooms:n=>n === 1 ? "1 dormitorio" : `${n} dormitorios`, available:(a,b)=>`Disponible ${a} → ${b}`, view:p=>`Ver en ${p}`},
-  ca: {loading:"Cercant disponibilitat…", empty:"Encara no hi ha disponibilitat coincident.", error:"La cerca de disponibilitat no està disponible temporalment.", bedrooms:n=>n === 1 ? "1 dormitori" : `${n} dormitoris`, available:(a,b)=>`Disponible ${a} → ${b}`, view:p=>`Veure a ${p}`},
-  ru: {loading:"Ищем свободные даты…", empty:"Подходящих свободных объектов пока нет.", error:"Поиск доступности временно недоступен.", bedrooms:n=>n === 1 ? "1 спальня" : `${n} спальни`, available:(a,b)=>`Свободно ${a} → ${b}`, view:p=>`Открыть на ${p}`}
-};
-
-const availabilityMessage = () => availabilityMessages[document.documentElement.lang] || availabilityMessages.en;
-
-function renderAvailabilityStatus(message, kind = ""){
-  if (!availabilityResults) return;
-  availabilityResults.replaceChildren();
-  const node = document.createElement("div");
-  node.className = `availability-state ${kind}`.trim();
-  node.textContent = message;
-  availabilityResults.append(node);
-}
-
-function renderAvailabilityResults(items){
-  if (!availabilityResults) return;
-  const m = availabilityMessage();
-  availabilityResults.replaceChildren();
-
-  if (!items.length) {
-    renderAvailabilityStatus(m.empty, "empty");
-    return;
-  }
-
-  items.forEach(item => {
-    const card = document.createElement("article");
-    card.className = "availability-card";
-
-    const heading = document.createElement("div");
-    heading.className = "availability-card-heading";
-
-    const place = document.createElement("strong");
-    place.textContent = item.city || "Barcelona";
-    const beds = document.createElement("span");
-    beds.textContent = m.bedrooms(Number(item.bedrooms || 0));
-    heading.append(place, beds);
-
-    const period = document.createElement("div");
-    period.className = "availability-period";
-    period.textContent = m.available(item.availableFrom, item.availableTo);
-
-    const links = document.createElement("div");
-    links.className = "availability-links";
-
-    (item.links || []).forEach(link => {
-      let parsed;
-      try { parsed = new URL(link.url); } catch { return; }
-      if (parsed.protocol !== "https:") return;
-
-      const anchor = document.createElement("a");
-      anchor.className = "availability-link";
-      anchor.href = parsed.toString();
-      anchor.target = "_blank";
-      anchor.rel = "noopener noreferrer";
-      const platform = String(link.platform || "listing");
-      anchor.textContent = m.view(platform.charAt(0).toUpperCase() + platform.slice(1));
-      links.append(anchor);
-    });
-
-    card.append(heading, period, links);
-    availabilityResults.append(card);
-  });
-}
-
-if (availabilityForm) {
-  const fromInput = availabilityForm.elements.from;
-  const toInput = availabilityForm.elements.to;
-
-  fromInput?.addEventListener("change", () => {
-    if (toInput) toInput.min = fromInput.value;
-    if (toInput?.value && toInput.value < fromInput.value) toInput.value = fromInput.value;
-  });
-
-  availabilityForm.addEventListener("submit", async event => {
-    event.preventDefault();
-    const submit = availabilityForm.querySelector('button[type="submit"]');
-    const data = new FormData(availabilityForm);
-    const params = new URLSearchParams({
-      city: String(data.get("city") || "").trim(),
-      from: String(data.get("from") || ""),
-      to: String(data.get("to") || ""),
-      bedrooms: String(data.get("bedrooms") || "1")
-    });
-
-    submit.disabled = true;
-    renderAvailabilityStatus(availabilityMessage().loading, "loading");
-
-    try {
-      const response = await fetch(`/api/search?${params.toString()}`, {headers:{Accept:"application/json"}});
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const items = await response.json();
-      renderAvailabilityResults(Array.isArray(items) ? items : []);
-    } catch (error) {
-      console.error("Availability search error:", error);
-      renderAvailabilityStatus(availabilityMessage().error, "error");
-    } finally {
-      submit.disabled = false;
-    }
-  });
-}
-
 const menuToggle = document.querySelector(".menu-toggle");
 const mobileMenu = document.getElementById("mobile-menu");
+let menuReturnFocus = null;
+let menuInitialFocus = null;
+let homeAnchorPendingReturn = null;
 
-function setMobileMenu(open){
+function cancelMenuInitialFocus(){
+  const pending = menuInitialFocus;
+  menuInitialFocus = null;
+  if (pending?.frame != null) cancelAnimationFrame(pending.frame);
+}
+
+function cancelHomeAnchorReturn(){
+  const pending = homeAnchorPendingReturn;
+  homeAnchorPendingReturn = null;
+  if (pending?.frame != null) cancelAnimationFrame(pending.frame);
+}
+
+function updateMenuToggleLabel(){
+  if (!menuToggle) return;
+  const t = translations[document.documentElement.lang] || translations.en;
+  const open = menuToggle.getAttribute("aria-expanded") === "true";
+  menuToggle.setAttribute("aria-label", open ? t.menuClose : t.menuOpen);
+}
+
+function mobileMenuFocusables(){
+  if (!mobileMenu) return [];
+  return [...mobileMenu.querySelectorAll('a[href],button:not([disabled])')]
+    .filter(node => node.getClientRects().length > 0);
+}
+
+function setMobileMenu(open,{restoreFocus=false}={}){
   if (!menuToggle || !mobileMenu) return;
+  cancelHomeAnchorReturn();
+  cancelMenuInitialFocus();
+  const wasOpen = menuToggle.getAttribute("aria-expanded") === "true";
+  if (open && !wasOpen) menuReturnFocus = document.activeElement;
   menuToggle.setAttribute("aria-expanded", String(open));
   mobileMenu.setAttribute("aria-hidden", String(!open));
   mobileMenu.classList.toggle("open", open);
+  document.body.classList.toggle("menu-open", open);
+  updateMenuToggleLabel();
+  if (open && !wasOpen) {
+    // A unique ticket owns this opening even if a canceled frame is delivered.
+    // Initialization yields permanently to any newer focus or input intent.
+    const pending = {origin:document.activeElement,frame:null};
+    menuInitialFocus = pending;
+    pending.frame = requestAnimationFrame(() => {
+      if (menuInitialFocus !== pending) return;
+      menuInitialFocus = null;
+      if (menuToggle.getAttribute("aria-expanded") !== "true" || document.activeElement !== pending.origin) return;
+      mobileMenuFocusables()[0]?.focus();
+    });
+  } else if (restoreFocus && wasOpen) {
+    (menuReturnFocus instanceof HTMLElement ? menuReturnFocus : menuToggle).focus();
+  }
 }
 
+document.addEventListener("focusin", event => {
+  if (homeAnchorPendingReturn && event.target !== homeAnchorPendingReturn.origin) cancelHomeAnchorReturn();
+  if (menuInitialFocus && event.target !== menuInitialFocus.origin) cancelMenuInitialFocus();
+});
+document.addEventListener("pointerdown", cancelHomeAnchorReturn);
+mobileMenu?.addEventListener("pointerdown", cancelMenuInitialFocus);
+
 menuToggle?.addEventListener("click", () => {
-  setMobileMenu(menuToggle.getAttribute("aria-expanded") !== "true");
+  const open = menuToggle.getAttribute("aria-expanded") !== "true";
+  setMobileMenu(open,{restoreFocus:!open});
 });
 
 mobileMenu?.querySelectorAll("a").forEach(link => {
   link.addEventListener("click", () => setMobileMenu(false));
 });
 
+function focusAnchorHeading(target){
+  const heading = target.matches("h1,h2,h3") ? target : target.querySelector("h1,h2,h3");
+  const focusTarget = heading || target;
+  if (!focusTarget.hasAttribute("tabindex")) focusTarget.setAttribute("tabindex", "-1");
+  focusTarget.focus({preventScroll:true});
+}
+
+let homeAnchorReturnFocus = null;
+
+function leadServiceNavigationBlocked(){
+  const form = document.getElementById("lead-form");
+  const editor = document.getElementById("lead-editor");
+  return Boolean(form?.elements?.service?.disabled || editor?.hidden);
+}
+
+function rememberHomeAnchorActivator(source){
+  homeAnchorReturnFocus = mobileMenu?.contains(source) ? menuToggle : source;
+}
+
+function navigateHomeAnchor({source,target,hash,scroll=true}){
+  cancelHomeAnchorReturn();
+  rememberHomeAnchorActivator(source);
+  history.pushState(null, "", hash);
+  if (scroll) target.scrollIntoView({block:"start", behavior:"instant"});
+  focusAnchorHeading(target);
+}
+
+document.addEventListener("click", event => {
+  if (!document.body.classList.contains("home-page")) return;
+  if (!(event.target instanceof Element)) return;
+  const link = event.target.closest('a[href^="#"]');
+  const source = link;
+  if (!source || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  const hash = link?.getAttribute("href") || "#contact";
+  if (!hash || hash === "#") return;
+  const target = document.getElementById(decodeURIComponent(hash.slice(1)));
+  if (!target) return;
+
+  const serviceActivation = Boolean(source.closest("[data-service],[data-service-card]"));
+
+  event.preventDefault();
+  if (serviceActivation && leadServiceNavigationBlocked()) return;
+  navigateHomeAnchor({source,target,hash,scroll:!serviceActivation});
+});
+
 document.addEventListener("keydown", event => {
-  if (event.key === "Escape") setMobileMenu(false);
+  cancelHomeAnchorReturn();
+  const open = menuToggle?.getAttribute("aria-expanded") === "true";
+  if (!open) return;
+  cancelMenuInitialFocus();
+  if (event.key === "Escape") {
+    event.preventDefault();
+    setMobileMenu(false,{restoreFocus:true});
+    return;
+  }
+  if (event.key !== "Tab") return;
+  const items = mobileMenuFocusables();
+  if (!items.length) return;
+  const first = items[0];
+  const last = items[items.length-1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  } else if (!mobileMenu.contains(document.activeElement)) {
+    event.preventDefault();
+    first.focus();
+  }
+});
+
+window.addEventListener("popstate", () => {
+  cancelHomeAnchorReturn();
+  cancelMenuInitialFocus();
+  const returnTarget = homeAnchorReturnFocus;
+  homeAnchorReturnFocus = null;
+  if (!(returnTarget instanceof HTMLElement)) return;
+  // This return owns only its frame, and yields permanently to newer intent.
+  const pending = {origin:document.activeElement,frame:null};
+  homeAnchorPendingReturn = pending;
+  pending.frame = requestAnimationFrame(() => {
+    if (homeAnchorPendingReturn !== pending) return;
+    homeAnchorPendingReturn = null;
+    if (document.activeElement === pending.origin && returnTarget.isConnected && returnTarget.getClientRects().length)
+      returnTarget.focus({preventScroll:true});
+  });
 });
 
 window.addEventListener("resize", () => {
+  cancelHomeAnchorReturn();
+  cancelMenuInitialFocus();
   if (window.innerWidth > 980) setMobileMenu(false);
 });
+
+document.addEventListener("parrot:language", updateMenuToggleLabel);
+updateMenuToggleLabel();

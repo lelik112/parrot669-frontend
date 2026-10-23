@@ -10,6 +10,30 @@ const baseEnv={PUBLIC_ORIGIN:'https://parrot669.com',API_ORIGIN:'https://api.exa
 const qaEnv={...baseEnv,QA_HOSTNAMES:'preview.example.test',
   QA_WORKER_SECRET:'test-worker-secret-with-at-least-thirty-two-characters'};
 
+test('PM144 paired property PATCH forwards exact sparse/null body; obsolete PUT and wrong origins never reach upstream',async()=>{
+  const calls=[],sandbox={URL,Headers,Response,console,fetch:async(url,init)=>{
+    calls.push({url,method:init.method,headers:init.headers,body:await new Response(init.body).json()});
+    return new Response(JSON.stringify({id,title:'saved'}),{status:200});
+  }};
+  vm.createContext(sandbox);vm.runInContext(source,sandbox);
+  for(const host of ['parrot669.com','preview.example.test']){
+    const body={title:'  unchanged whitespace  ',cleaningFeeCents:null};
+    const response=await sandbox.worker.fetch(new Request(`https://${host}/api/host/properties/${id}`,{
+      method:'PATCH',headers:{Origin:`https://${host}`,Cookie:'other=private; parrot_session=synthetic'},body:JSON.stringify(body)}),qaEnv);
+    assert.equal(response.status,200);assert.equal(response.headers.get('Cache-Control'),'no-store');
+    assert.deepEqual(calls.at(-1).body,body);assert.equal(calls.at(-1).method,'PATCH');
+    assert.equal(calls.at(-1).url,`https://api.example.test/api/properties/${id}`);
+    assert.equal(calls.at(-1).headers.get('Cookie'),'parrot_session=synthetic');
+  }
+  const count=calls.length;
+  for(const [method,origin,status] of [['PUT','https://parrot669.com',404],['PATCH','https://evil.test',403]]){
+    const response=await sandbox.worker.fetch(new Request(`https://parrot669.com/api/host/properties/${id}`,{
+      method,headers:{Origin:origin},body:'{}'}),baseEnv);
+    assert.equal(response.status,status);
+  }
+  assert.equal(calls.length,count);
+});
+
 test('host profile PATCH reaches the backend route on production and QA origins', async () => {
   const calls=[];
   const sandbox={URL,Headers,Response,console,fetch:async(url,init)=>{
@@ -94,5 +118,125 @@ for(const action of ['request','confirm'])test(`password recovery ${action} keep
   const good=await sandbox.worker.fetch(new Request('https://parrot669.com'+path,{method:'POST',headers:{Origin:'https://parrot669.com','Content-Type':'application/json'},body:'{}'}),baseEnv);
   assert.equal(good.status,204);assert.equal(calls[0].url,'https://api.example.test/api/auth/password-reset/'+action);assert.equal(good.headers.get('Cache-Control'),'no-store');assert.match(good.headers.get('Set-Cookie'),/Max-Age=0/);
   const get=await sandbox.worker.fetch(new Request('https://parrot669.com'+path),baseEnv);assert.equal(get.status,404);
+});
+
+for (const [method,route,status] of [
+  ['GET',`/properties/${id}/calendars`,200],
+  ['POST',`/calendars/${id}/activate`,204]
+]) test(`calendar transport forwards only the existing ${method} ${route} operation`,async()=>{
+  const calls=[];
+  const sandbox={URL,Headers,Response,console,fetch:async(url,init)=>{
+    calls.push({url,...init,body:init.body?await new Response(init.body).json():null});
+    return new Response(status===204?null:JSON.stringify({calendars:[]}),{status,headers:{'X-Request-ID':'calendar-request'}});
+  }};
+  vm.createContext(sandbox);vm.runInContext(source,sandbox);
+  for(const host of ['parrot669.com','preview.example.test']) {
+    const response=await sandbox.worker.fetch(new Request(`https://${host}/api/host${route}`,{
+      method,headers:{Origin:`https://${host}`,Cookie:'other=private; parrot_session=synthetic',
+        Authorization:'Bearer must-not-forward','X-Parrot-QA-Worker':'spoof','Content-Type':'application/json'},
+      ...(method==='POST'?{body:JSON.stringify({expectedRevision:7})}:{})
+    }),qaEnv);
+    assert.equal(response.status,status);
+    assert.equal(response.headers.get('Cache-Control'),'no-store');
+    assert.equal(response.headers.get('X-Request-ID'),'calendar-request');
+  }
+  for(const call of calls){
+    assert.equal(call.url,'https://api.example.test/api'+route);
+    assert.equal(call.method,method);assert.equal(call.headers.get('Cookie'),'parrot_session=synthetic');
+    assert.equal(call.headers.get('Authorization'),null);
+    assert.deepEqual(call.body,method==='POST'?{expectedRevision:7}:null);
+  }
+  assert.equal(calls[0].headers.get('X-Parrot-QA-Worker'),null);
+  assert.equal(calls[1].headers.get('X-Parrot-QA-Worker'),qaEnv.QA_WORKER_SECRET);
+});
+
+test('calendar transport retains exact methods, paths, origin and QA denials',async()=>{
+  let calls=0;
+  const sandbox={URL,Headers,Response,console,fetch:async()=>{calls++;throw Error('Unexpected upstream');}};
+  vm.createContext(sandbox);vm.runInContext(source,sandbox);
+  for(const [method,route] of [
+    ['PUT',`/properties/${id}/calendars`],['DELETE',`/properties/${id}/calendars`],
+    ['GET',`/calendars/${id}/activate`],['PUT',`/calendars/${id}/activate`],
+    ['DELETE',`/calendars/${id}/activate`],['POST',`/calendars/${id}/activate/extra`],
+    ['GET',`/properties/${id}/calendars/extra`],['POST','/calendars/not-an-id/activate']
+  ]) assert.equal((await sandbox.worker.fetch(new Request('https://parrot669.com/api/host'+route,{method}),qaEnv)).status,404);
+  const path=`/api/host/calendars/${id}/activate`;
+  assert.equal((await sandbox.worker.fetch(new Request('https://parrot669.com'+path,{method:'POST',headers:{Origin:'https://evil.test'}}),qaEnv)).status,403);
+  assert.equal((await sandbox.worker.fetch(new Request('https://evil.test'+path,{method:'POST'}),qaEnv)).status,403);
+  assert.equal((await sandbox.worker.fetch(new Request('https://preview.example.test'+path,{method:'POST'}),{...qaEnv,QA_WORKER_SECRET:''})).status,503);
+  assert.equal(calls,0);
+});
+
+test('calendar connect forwards exact PUT with session-only headers on production and QA',async()=>{
+  const calls=[];
+  const sandbox={URL,Headers,Response,console,fetch:async(url,init)=>{
+    calls.push({url,...init,body:await new Response(init.body).json()});
+    return new Response(null,{status:204,headers:{'X-Request-ID':'connect-request'}});
+  }};
+  vm.createContext(sandbox);vm.runInContext(source,sandbox);
+  const body={provider:'Airbnb',icalUrl:'https://www.airbnb.com/calendar/ical/123.ics?s=SyntheticOnly123'};
+  for(const host of ['parrot669.com','preview.example.test']) {
+    const response=await sandbox.worker.fetch(new Request(`https://${host}/api/host/properties/${id}/public-links`,{
+      method:'PUT',headers:{Origin:`https://${host}`,Cookie:'other=private; parrot_session=synthetic',
+        Authorization:'Bearer untrusted','X-Parrot-QA-Origin':'spoof','X-Parrot-QA-Worker':'spoof','Content-Type':'application/json'},
+      body:JSON.stringify(body)
+    }),qaEnv);
+    assert.equal(response.status,204);assert.equal(await response.text(),'');
+    assert.equal(response.headers.get('Cache-Control'),'no-store');
+    assert.equal(response.headers.get('X-Request-ID'),'connect-request');
+  }
+  assert.equal(calls.length,2);
+  for(const call of calls){
+    assert.equal(call.url,`https://api.example.test/api/properties/${id}/public-links`);
+    assert.equal(call.method,'PUT');assert.deepEqual(call.body,body);
+    assert.equal(call.headers.get('Cookie'),'parrot_session=synthetic');
+    assert.equal(call.headers.get('Authorization'),null);
+  }
+  assert.equal(calls[0].headers.get('X-Parrot-QA-Worker'),null);
+  assert.equal(calls[0].headers.get('X-Parrot-QA-Origin'),null);
+  assert.equal(calls[1].headers.get('X-Parrot-QA-Worker'),qaEnv.QA_WORKER_SECRET);
+  assert.equal(calls[1].headers.get('X-Parrot-QA-Origin'),'qa');
+});
+
+test('calendar connect denies obsolete POST, wrong methods/paths and origins before upstream',async()=>{
+  let calls=0;
+  const sandbox={URL,Headers,Response,console,fetch:async()=>{calls++;throw Error('Unexpected upstream');}};
+  vm.createContext(sandbox);vm.runInContext(source,sandbox);
+  for(const [method,route] of [
+    ...['GET','POST','PATCH','DELETE','HEAD','OPTIONS'].map(method=>[method,`/properties/${id}/public-links`]),
+    ['POST',`/properties/${id}/calendars`],['PUT','/properties/not-an-id/public-links'],
+    ['PUT',`/properties/${id}/public-links/extra`],['PUT',`/properties/${id}/public-links/`],
+    ['PUT',`/properties/${id}/public-links-preview`],['PUT',`/properties/${id.replaceAll('-','')}/public-links`]
+  ])assert.equal((await sandbox.worker.fetch(new Request('https://parrot669.com/api/host'+route,{method}),qaEnv)).status,404);
+  const path=`/api/host/properties/${id}/public-links`;
+  assert.equal((await sandbox.worker.fetch(new Request('https://parrot669.com'+path,{method:'PUT',headers:{Origin:'https://evil.test'}}),qaEnv)).status,403);
+  assert.equal((await sandbox.worker.fetch(new Request('https://evil.test'+path,{method:'PUT'}),qaEnv)).status,403);
+  assert.equal((await sandbox.worker.fetch(new Request('https://preview.example.test'+path,{method:'PUT'}),{...qaEnv,QA_WORKER_SECRET:''})).status,503);
+  assert.equal(calls,0);
+});
+
+for(const status of [401,403,404,429])test(`calendar connect preserves backend ${status} without fabricated auth or retry`,async()=>{
+  let calls=0;
+  const sandbox={URL,Headers,Response,console,fetch:async(url,init)=>{
+    calls++;assert.equal(init.headers.get('Cookie'),null);
+    assert.equal(init.headers.get('Authorization'),null);
+    return new Response(JSON.stringify({code:'SYNTHETIC_REFUSAL',error:'Unavailable'}),{status,headers:{'Retry-After':'10'}});
+  }};
+  vm.createContext(sandbox);vm.runInContext(source,sandbox);
+  const response=await sandbox.worker.fetch(new Request(`https://parrot669.com/api/host/properties/${id}/public-links`,{method:'PUT',body:'{}'}),baseEnv);
+  assert.equal(response.status,status);assert.equal((await response.json()).code,'SYNTHETIC_REFUSAL');
+  assert.equal(response.headers.get('Retry-After'),'10');assert.equal(calls,1);
+});
+
+for(const [status,code] of [[401,'AUTHENTICATION_REQUIRED'],[404,'NOT_FOUND'],[409,'CALENDAR_INVALID_TRANSITION'],[412,'CALENDAR_STALE']])
+test(`calendar proxy preserves upstream ${status} ${code} without retry`,async()=>{
+  let calls=0;
+  const sandbox={URL,Headers,Response,console,fetch:async(url,init)=>{
+    calls++;assert.equal(init.headers.get('Cookie'),null);
+    return new Response(JSON.stringify({code,error:'synthetic refusal'}),{status});
+  }};
+  vm.createContext(sandbox);vm.runInContext(source,sandbox);
+  const response=await sandbox.worker.fetch(new Request(`https://parrot669.com/api/host/calendars/${id}/activate`,{method:'POST',body:'{"expectedRevision":7}'}),baseEnv);
+  assert.equal(response.status,status);assert.equal((await response.json()).code,code);assert.equal(calls,1);
 });
 

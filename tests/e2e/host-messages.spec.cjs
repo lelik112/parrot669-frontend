@@ -1,4 +1,4 @@
-const {test, expect} = require('@playwright/test');
+const {test, expect} = require('./isolated-fixture.cjs');
 const {installHostFixture, assertNoHorizontalOverflow} = require('./public-fixture.cjs');
 
 test('PM-026/PM-020: signed-in Host has one keyboard reachable Messages link and returns to Host', async ({page}) => {
@@ -15,6 +15,8 @@ test('PM-026/PM-020: signed-in Host has one keyboard reachable Messages link and
   await nav.locator('a.messaging-nav-link').focus();
   await page.keyboard.press('Enter');
   await expect(page).toHaveURL(/\/messages.html$/);
+  await expect(page.locator('body')).toHaveAttribute('data-messages-language-ready','true');
+  await expect(page.locator('[data-msg-lang="en"]')).toBeEnabled();
   await expect(page.locator('#msg-account-name')).toHaveText('fixture-owner');
   await expect(page.locator('nav.housing-tabs a.messaging-nav-link')).toHaveCount(1);
   await expect(page.locator('.messages-intro h1')).toHaveCount(1);
@@ -42,6 +44,8 @@ test('PM-026/PM-028: Host and Messages navigation uses four languages on compact
     await assertNoHorizontalOverflow(page);
   }
   await page.locator('nav.housing-tabs a.messaging-nav-link').click();
+  await expect(page.locator('body')).toHaveAttribute('data-messages-language-ready','true');
+  await expect(page.locator('[data-msg-lang="en"]')).toBeEnabled();
   for (const [lang,host,messages,first,accent] of [
     ['en','For hosts','Messages','Plan the stay.','Keep the conversation together.'],
     ['es','Para propietarios','Mensajes','Organiza la estancia.','Mantén la conversación en un solo lugar.'],

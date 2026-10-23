@@ -1,4 +1,4 @@
-const {test,expect}=require('@playwright/test');
+const {test,expect}=require('./isolated-fixture.cjs');
 
 async function quietNetwork(page){
   await page.route('https://fonts.googleapis.com/**',route=>route.fulfill({contentType:'text/css',body:''}));
@@ -9,6 +9,35 @@ async function fill(page,{name='Alex',contact='alex@example.test',service='owner
   await page.locator('[name=contact]').fill(contact);
   await page.locator('[name=service]').selectOption(service);
   await page.locator('[name=message]').fill(message);
+}
+
+// Observe native events without preventing, redispatching, focusing or scrolling.
+// Only synthetic fixture pages use this bounded recorder; no field values/PII.
+async function recordRetryEvents(page){
+  await page.addInitScript(()=>{
+    const events=[];
+    const target=node=>node instanceof Element?{tag:node.tagName,id:node.id,name:node.getAttribute('name'),class:node.className}:null;
+    const sample=(event,phase)=>{
+      if(events.length>=600)return;
+      const button=document.querySelector('#lead-form button[type=submit]'),rect=button?.getBoundingClientRect();
+      events.push({type:event.type,phase,time:performance.now(),target:target(event.target),defaultPrevented:event.defaultPrevented,
+        trusted:event.isTrusted,active:target(document.activeElement),x:event.clientX,y:event.clientY,
+        hit:Number.isFinite(event.clientX)?target(document.elementFromPoint(event.clientX,event.clientY)):null,
+        button:rect?{x:rect.x,y:rect.y,width:rect.width,height:rect.height,disabled:button.disabled}:null,
+        scrollY,state:document.querySelector('#form-status')?.dataset.state,
+        path:event.composedPath().filter(node=>node instanceof Element).slice(0,5).map(target)});
+    };
+    for(const type of ['pointerdown','pointerup','mousedown','mouseup','click','submit','focusin','focusout']){
+      document.addEventListener(type,event=>sample(event,'capture'),true);
+      document.addEventListener(type,event=>{sample(event,'bubble');queueMicrotask(()=>sample(event,'microtask'));});
+      window.addEventListener(type,event=>sample(event,'window-bubble'));
+    }
+    let scheduled=false;
+    document.addEventListener('scroll',event=>{
+      if(!scheduled){scheduled=true;requestAnimationFrame(()=>{scheduled=false;sample(event,'frame');});}
+    },true);
+    window.__homeRetryEvents=events;
+  });
 }
 
 test('lead form snapshots one request, localizes in flight and confirms with a read-only summary',async({page})=>{
@@ -39,16 +68,20 @@ test('lead form snapshots one request, localizes in flight and confirms with a r
   await expect(page.locator('[name=name]')).toHaveValue('');
 });
 
-test('validation rejection and ambiguous server or network outcomes preserve the draft',async({page})=>{
+test('validation rejection and ambiguous server or network outcomes preserve the draft',async({page},testInfo)=>{
   await quietNetwork(page);
+  await recordRetryEvents(page);
   let mode='validation',requests=0;
+  const outcomes=[];
   await page.route('**/api/contact',route=>{
     requests+=1;
+    outcomes.push({mode,method:route.request().method()});
     if(mode==='validation')return route.fulfill({status:400,json:{ok:false,error:'Missing or invalid fields'}});
     if(mode==='server-unknown')return route.fulfill({status:500,json:{ok:false,error:'Email delivery failed'}});
     if(mode==='network-unknown')return route.abort('failed');
     return route.fulfill({status:200,json:{ok:true}});
   });
+  try{
   await page.goto('/');
   await fill(page,{message:'Keep this exact draft'});
   await page.locator('#lead-form').evaluate(form=>form.requestSubmit());
@@ -76,6 +109,50 @@ test('validation rejection and ambiguous server or network outcomes preserve the
   await page.locator('#lead-form button[type=submit]').click();
   await expect(page.locator('#form-status')).toHaveAttribute('data-state','success');
   expect(requests).toBe(4);
+  }finally{
+    const events=await page.evaluate(()=>window.__homeRetryEvents||[]);
+    console.log('HOME_RETRY_EVENTS '+JSON.stringify({project:testInfo.project.name,outcomes,events}));
+    await testInfo.attach('home-retry-events',{body:Buffer.from(JSON.stringify({outcomes,events})),contentType:'application/json'});
+  }
+});
+
+// A bounded native press-duration experiment, not a wait/retry workaround:
+// 75ms spans pointerdown/up while the browser may still be moving the page.
+for(const position of ['top','bottom'])for(const pressMs of [0,75])test(`physical retry from ${position}, native press ${pressMs}ms, preserves uncertain draft`,async({page},testInfo)=>{
+  await quietNetwork(page);await recordRetryEvents(page);
+  let requests=0;
+  const outcomes=[];
+  await page.route('**/api/contact',route=>{
+    requests++;outcomes.push(requests===1?400:500);
+    return route.fulfill({status:requests===1?400:500,json:{ok:false,error:'Synthetic rejection'}});
+  });
+  try{
+    await page.goto('/');await fill(page,{message:'Position-specific retry draft'});
+    await page.evaluate(position=>window.scrollTo({top:position==='top'?0:document.documentElement.scrollHeight,behavior:'instant'}),position);
+    await page.locator('#lead-form').evaluate(form=>form.requestSubmit());
+    await expect(page.locator('#form-status')).toHaveAttribute('data-state','error');
+    await expect(page.locator('#form-status')).toBeFocused();
+    const statusRect=await page.locator('#form-status').evaluate(node=>{
+      const rect=node.getBoundingClientRect(),header=document.querySelector('.topbar').getBoundingClientRect();
+      return {top:rect.top,bottom:rect.bottom,safeTop:header.bottom+16,height:innerHeight};
+    });
+    expect(statusRect.top).toBeGreaterThanOrEqual(statusRect.safeTop-1);
+    expect(statusRect.bottom).toBeLessThanOrEqual(statusRect.height-15);
+    await page.locator('#lead-form button[type=submit]').click({delay:pressMs});
+    await expect(page.locator('#form-status')).toHaveAttribute('data-state','uncertain');
+    await expect(page.locator('[name=message]')).toHaveValue('Position-specific retry draft');
+    expect(requests).toBe(2);
+    const events=await page.evaluate(()=>window.__homeRetryEvents);
+    const gesture=events.filter(event=>event.phase==='capture'&&['pointerdown','pointerup','click'].includes(event.type));
+    expect(gesture.map(event=>event.target.tag)).toEqual(['BUTTON','BUTTON','BUTTON']);
+    expect(gesture.map(event=>event.hit.tag)).toEqual(['BUTTON','BUTTON','BUTTON']);
+    expect(events.filter(event=>event.type==='click'&&event.phase==='window-bubble').every(event=>!event.defaultPrevented)).toBe(true);
+    expect(events.filter(event=>event.type==='submit'&&event.phase==='capture')).toHaveLength(2);
+  }finally{
+    const events=await page.evaluate(()=>window.__homeRetryEvents||[]);
+    console.log('HOME_RETRY_POSITION_EVENTS '+JSON.stringify({project:testInfo.project.name,position,pressMs,outcomes,events}));
+    await testInfo.attach('home-retry-events',{body:Buffer.from(JSON.stringify({position,pressMs,outcomes,events})),contentType:'application/json'});
+  }
 });
 
 test('manual retry keeps the receipt title below the compact sticky header in every locale',async({page})=>{
