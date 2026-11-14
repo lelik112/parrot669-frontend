@@ -16,9 +16,9 @@ async function installPublicFixture(page, {items=[property]} = {}) {
     seen.push({path, method:request.method()});
     const data = path === '/api/host/auth/me' ? {error:'unauthorized'}
       : path === '/api/locations/countries' ? [{code:'ES', name:'Spain'}]
-      : path === '/api/locations/cities' && url.searchParams.get('country') === 'ES' ? [{name:'Barcelona'}]
+      : path === '/api/locations/cities' && url.searchParams.get('country') === 'ES' ? [{countryCode:'ES', municipalityKey:'R347950', name:'Barcelona', nativeName:null}]
       : path === '/api/search' && url.searchParams.get('country') === 'ES'
-          && url.searchParams.get('city') === 'Barcelona'
+          && url.searchParams.get('municipalityKey') === 'R347950'
           && url.searchParams.get('from') === property.availableFrom
           && url.searchParams.get('to') === property.availableTo ? items
       : items.some(item => path === `/api/messaging/contact-options/${item.propertyId}`) ? {

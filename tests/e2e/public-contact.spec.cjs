@@ -92,7 +92,7 @@ test('PM-024/PM-023: public search reaches guest draft and auth gate without sen
   const fixture = await installPublicFixture(page);
   await page.goto('/search.html');
   await page.locator('select[name="country"]').selectOption('ES');
-  await page.locator('select[name="city"]').selectOption('Barcelona');
+  await page.locator('select[name="city"]').selectOption('R347950');
   await page.locator('input[name="from"]').fill('2026-11-10');
   await page.locator('input[name="to"]').fill('2026-11-17');
   await page.locator('#availability-form button[type="submit"]').click();
@@ -147,7 +147,7 @@ test('PM-024: contact stays available with no external link, verified link and p
   const fixture = await installPublicFixture(page,{items});
   await page.goto('/search.html');
   await page.locator('select[name="country"]').selectOption('ES');
-  await page.locator('select[name="city"]').selectOption('Barcelona');
+  await page.locator('select[name="city"]').selectOption('R347950');
   await page.locator('input[name="from"]').fill(base.availableFrom);
   await page.locator('input[name="to"]').fill(base.availableTo);
   await page.locator('#availability-form button[type="submit"]').click();

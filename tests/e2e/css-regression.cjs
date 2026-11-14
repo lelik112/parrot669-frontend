@@ -86,7 +86,7 @@ async function runCssRegression(page,expect,c,{origin='',capture=async()=>{}}={}
     await expect(page.locator('body')).not.toHaveClass(/menu-open/);
     return;
   }
-  await expect(page.locator('.housing-tabs a')).toHaveCount(3);
+  await expect(page.locator('.housing-tabs a')).toHaveCount(4);
   const links=await page.locator('.housing-tabs a').evaluateAll(nodes=>nodes.map(n=>{
     const r=n.getBoundingClientRect(),range=document.createRange();range.selectNodeContents(n);
     return {text:n.textContent.trim(),left:r.left,right:r.right,height:r.height,client:n.clientWidth,scroll:n.scrollWidth,
