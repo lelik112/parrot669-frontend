@@ -8,13 +8,15 @@ const hostHtml = fs.readFileSync(
   'utf8',
 );
 
-test('host page versions the provider-contract and verification controller assets', () => {
-  assert.match(
-    hostHtml,
-    /<script src="\/assets\/calendar-verification\.js\?v=20261002-camelcase-status"><\/script>/,
-  );
-  assert.match(
-    hostHtml,
-    /<script src="\/assets\/host\.js\?v=20261002-camelcase-status"><\/script>/,
-  );
+test('host page loads one module entrypoint with address and calendar dependencies', () => {
+  assert.match(hostHtml, /type="module" src="\/assets\/entry-host\.js"/);
+  const entry=fs.readFileSync(path.join(__dirname,'../public/assets/entry-host.js'),'utf8');
+  assert.equal(entry, 'import "./entry.js";\nimport "./profile-navigation.js";\nimport "./messaging-common.js";\nimport "./host-address.js";\nimport "./calendar-verification.js";\nimport "./host.js";\n');
+});
+
+test('workspace precedes closed add-property management and profile without an extra script',()=>{
+  assert.ok(hostHtml.indexOf('id="host-properties"')<hostHtml.indexOf('id="property-form"'));
+  assert.ok(hostHtml.indexOf('id="property-panel"')<hostHtml.indexOf('id="host-profile"'));
+  assert.match(hostHtml,/<details class="host-workspace-disclosure host-add-property" id="host-add-property">/);
+  assert.equal((hostHtml.match(/<script /g)||[]).length,1);
 });

@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PARROT 669 — My profile</title>
+  <link rel="stylesheet" href="/assets/my-profile.css" />
+</head>
+<body class="my-profile-page">
+  <header class="editor-topbar">
+    <a class="editor-brand" href="/">PARROT 669</a>
+    <nav class="editor-nav" id="editor-nav" aria-label="Primary navigation">
+      <a href="/search.html" data-profile-copy="nav.search">Find a stay</a>
+      <a href="/host.html" data-profile-copy="nav.housing">My listings</a>
+      <a href="/messages.html" data-profile-copy="nav.messages">Messages</a>
+      <a href="/my-profile.html" aria-current="page" data-profile-copy="nav.profile">My profile</a>
+    </nav>
+    <select id="editor-language" aria-label="Language">
+      <option value="en">EN</option><option value="es">ES</option><option value="ca">CA</option><option value="ru">RU</option>
+    </select>
+    <button id="editor-menu" class="editor-secondary" type="button" aria-expanded="false" aria-controls="editor-nav" data-profile-copy="nav.menu">Menu</button>
+  </header>
+  <main class="editor-shell">
+    <section class="editor-gate" id="editor-gate" aria-live="polite">
+      <h1 id="gate-title" tabindex="-1">Loading your profile…</h1>
+      <p id="gate-body">Please wait for the current data.</p>
+      <button type="button" id="gate-retry" data-profile-copy="load.retry" hidden>Try loading again</button>
+      <button type="button" id="gate-signin" data-profile-copy="nav.signin" hidden>Sign in</button>
+      <a href="/search.html" data-profile-copy="auth.back" hidden id="gate-back">Go back</a>
+      <form id="editor-login" hidden>
+        <label for="editor-login-name" data-profile-copy="account.login">Username</label>
+        <input id="editor-login-name" name="login" autocomplete="username" required />
+        <label for="editor-login-password" id="password-label">Password</label>
+        <input id="editor-login-password" name="password" type="password" autocomplete="current-password" required />
+        <p id="login-error" role="alert"></p>
+        <button type="submit" data-profile-copy="nav.signin">Sign in</button>
+        <button type="button" id="login-cancel" class="editor-secondary" data-profile-copy="button.cancel">Cancel</button>
+      </form>
+    </section>
+
+    <div id="editor-private" hidden>
+      <div id="editor-heading">
+        <a id="editor-return" class="editor-return" hidden></a>
+        <h1 data-profile-copy="page.title">My profile</h1>
+        <p class="editor-lead" data-profile-copy="page.lead">Introduce yourself and choose whether your profile is public.</p>
+        <p class="editor-muted"><span data-profile-copy="id.label">PARROT ID</span> · <span id="editor-parrot-id"></span></p>
+        <div class="editor-heading-actions">
+          <p class="editor-badge" id="editor-visibility"></p>
+          <button type="button" class="editor-secondary" id="editor-preview" data-profile-copy="preview.open">Preview profile</button>
+        </div>
+      </div>
+      <div class="editor-grid" id="editor-grid">
+        <section class="editor-card editor-form-card" aria-labelledby="form-title">
+          <h2 id="form-title" data-profile-copy="form.title">About you</h2>
+          <p class="editor-warning" id="editor-dirty" data-profile-copy="status.dirty" hidden>You have unsaved changes</p>
+          <div id="save-status" role="status" aria-live="polite" aria-atomic="true"></div>
+          <button type="button" id="editor-check" class="editor-secondary" data-profile-copy="form.check" hidden>Check saved data</button>
+          <p class="editor-muted" id="editor-check-help" data-profile-copy="form.check.help" hidden>This reads the data and does not repeat the save.</p>
+          <form id="profile-editor-form" novalidate>
+            <label for="editor-name" data-profile-copy="form.name">Name on PARROT</label>
+            <input id="editor-name" name="displayName" required maxlength="120" aria-describedby="name-help name-error" />
+            <p class="editor-muted" id="name-help" data-profile-copy="form.name.help">You can use a nickname. Up to 120 characters.</p>
+            <p class="editor-error" id="name-error"></p>
+            <label for="editor-about" data-profile-copy="form.about">About · optional</label>
+            <textarea id="editor-about" name="about" maxlength="500" rows="4" aria-describedby="about-help about-error"></textarea>
+            <p class="editor-muted" id="about-counter" aria-hidden="true">0 / 500</p>
+            <p class="editor-muted" id="about-help" data-profile-copy="form.about.help">Leave out your phone number, email, exact address and anything else you do not want to make public.</p>
+            <p class="editor-error" id="about-error"></p>
+            <button type="submit" id="editor-save" disabled>Save</button>
+            <button type="button" id="editor-discard" class="editor-secondary" data-profile-copy="form.discard" hidden>Discard changes</button>
+            <p class="editor-muted" id="editor-save-help"></p>
+          </form>
+          <section class="editor-comparison" id="editor-comparison" hidden>
+            <h3 data-profile-copy="form.saved.label">Saved</h3><p id="compare-name"></p><p id="compare-about"></p>
+            <h3 data-profile-copy="form.draft.label">Your draft</h3><p id="compare-draft-name"></p><p id="compare-draft-about"></p>
+          </section>
+        </section>
+        <aside class="editor-aside">
+          <section class="editor-card" aria-labelledby="visibility-title">
+            <h2 id="visibility-title" data-profile-copy="visibility.title">Profile visibility</h2>
+            <p id="visibility-body"></p><p class="editor-muted" id="visibility-help"></p>
+            <div id="visibility-status" role="status" aria-live="polite"></div>
+            <button type="button" id="visibility-action"></button>
+          </section>
+          <section class="editor-card" id="instagram-card" aria-labelledby="instagram-title" hidden>
+            <p class="editor-badge" id="instagram-private"></p>
+            <h2 id="instagram-title">Instagram</h2>
+            <div id="instagram-status" role="status" aria-live="polite" aria-atomic="true">
+              <p id="instagram-state"></p><p class="editor-instagram-name" id="instagram-name"></p>
+              <p class="editor-muted" id="instagram-description"></p>
+              <p id="instagram-notice"></p>
+            </div>
+            <button type="button" class="editor-secondary" id="instagram-refresh"></button>
+            <p class="editor-muted" id="instagram-read-help"></p>
+            <p class="editor-muted" id="instagram-privacy"></p>
+          </section>
+          <section class="editor-card" aria-labelledby="account-title">
+            <h2 id="account-title" data-profile-copy="account.title">Account</h2>
+            <p class="editor-mint" data-profile-copy="account.private">Only you can see these details</p>
+            <dl><dt data-profile-copy="account.email">Email</dt><dd id="editor-email"></dd>
+              <dt data-profile-copy="account.login">Username</dt><dd id="editor-username"></dd></dl>
+            <p class="editor-muted" data-profile-copy="account.session">Signed in</p>
+          </section>
+        </aside>
+      </div>
+      <section id="editor-preview-view" hidden aria-labelledby="preview-title">
+        <h1 id="preview-title" tabindex="-1"></h1>
+        <p id="preview-description"></p><p class="editor-warning" id="preview-warning"></p>
+        <p class="editor-muted" id="preview-privacy" hidden data-profile-copy="visibility.review.private">Your email and sign-in details remain private.</p>
+        <div class="editor-grid">
+          <article class="editor-card editor-preview-card" id="preview-card" hidden>
+            <h2 id="preview-name"></h2><p class="editor-muted"><span data-profile-copy="id.label">PARROT ID</span> · <span id="preview-id"></span></p>
+            <section id="preview-about-section"><h3 data-profile-copy="form.about">About · optional</h3><p id="preview-about"></p></section>
+          </article>
+          <div class="editor-preview-actions">
+            <p id="preview-status" role="status"></p>
+            <button type="button" id="preview-refresh" data-profile-copy="preview.refresh" hidden>Refresh preview</button>
+            <button type="button" id="preview-publish" data-profile-copy="visibility.publish" hidden>Publish profile</button>
+            <button type="button" class="editor-secondary" id="preview-return" data-profile-copy="preview.return">Back to editing</button>
+          </div>
+        </div>
+      </section>
+    </div>
+    <dialog class="editor-leave" id="editor-leave" aria-labelledby="leave-title">
+      <h2 id="leave-title" data-profile-copy="leave.title">You have unsaved changes</h2><p data-profile-copy="leave.body">If you leave, the changes in this form will be lost.</p>
+      <button type="button" id="leave-stay" data-profile-copy="leave.stay">Keep editing</button>
+      <button type="button" id="leave-go" class="editor-secondary" data-profile-copy="leave.go">Leave without saving</button>
+    </dialog>
+  </main>
+  <script type="module" src="/assets/my-profile.js"></script>
+</body>
+</html>

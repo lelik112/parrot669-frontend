@@ -1,4 +1,4 @@
-const {test, expect} = require('@playwright/test');
+const {test, expect} = require('./isolated-fixture.cjs');
 const {installPublicFixture, assertNoHorizontalOverflow} = require('./public-fixture.cjs');
 
 const priced = {

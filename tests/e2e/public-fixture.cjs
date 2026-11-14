@@ -25,7 +25,7 @@ async function installPublicFixture(page, {items=[property]} = {}) {
           propertyId:path.split('/').at(-1),
           propertyTitle:items.find(item => path.endsWith(item.propertyId)).propertyTitle,
           hostDisplayName:property.ownerDisplayName,
-          hostProfileId:'fixture-host', acceptingNewConversations:true
+          hostProfileId:'P669-BBBB-BBBB-BBBB', acceptingNewConversations:true
         }
       : null;
     if (path === '/api/host/auth/me') return route.fulfill({status:401, json:data});
@@ -38,14 +38,16 @@ async function installPublicFixture(page, {items=[property]} = {}) {
 async function installHostFixture(page) {
   const seen = [];
   const user = {accountId:'fixture-owner', username:'fixture-owner', email:'fixture@example.invalid',
-    profile:{id:'22222222-2222-4222-8222-222222222222', displayName:'Fixture host'}};
+    parrotId:'P669-BBBB-BBBB-BBBB', displayName:'Fixture host'};
   await page.route('https://fonts.googleapis.com/**', route => route.fulfill({contentType:'text/css', body:''}));
   await page.route('https://fonts.gstatic.com/**', route => route.abort());
   await page.route('**/api/**', route => {
-    const request = route.request(), path = new URL(request.url()).pathname;
+    const request = route.request(), url = new URL(request.url()), path = url.pathname;
     seen.push({path,method:request.method()});
     const data = path === '/api/host/auth/me' ? user
-      : path === '/api/host/dashboard' ? {profile:user.profile,properties:[]}
+      : path === '/api/host/dashboard' ? {profile:{id:user.parrotId,displayName:user.displayName},properties:[]}
+      : path === '/api/host/geocode/countries' && ['en','es','ca','ru'].includes(url.searchParams.get('language')) ? [{code:'ES',name:'Spain'}]
+      : /^\/api\/host\/properties\/[^/]+\/calendars$/.test(path) ? {calendars:[]}
       : path === '/api/messaging/unread' ? {conversations:0,messages:0}
       : path === '/api/messaging/conversations' ? {items:[],nextCursor:null}
       : path === '/api/messaging/notification-settings' ? {enabled:false,language:'en'}

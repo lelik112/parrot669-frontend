@@ -3,24 +3,24 @@ const ids = Object.freeze({
   conversation: '33333333-3333-4333-8333-333333333333',
   accountA: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   accountB: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-  profileA: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa',
-  profileB: 'bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb'
+  profileA: 'P669-AAAA-AAAA-AAAA',
+  profileB: 'P669-BBBB-BBBB-BBBB'
 });
 
 const identities = Object.freeze({
   a: Object.freeze({
     accountId: ids.accountA,
     username: 'fixture-guest-a',
-    profile: Object.freeze({id: ids.profileA, displayName: 'Fixture guest A'})
+    parrotId: ids.profileA, displayName: 'Fixture guest A'
   }),
   b: Object.freeze({
     accountId: ids.accountB,
     username: 'fixture-host-b',
-    profile: Object.freeze({id: ids.profileB, displayName: 'Fixture host B'})
+    parrotId: ids.profileB, displayName: 'Fixture host B'
   })
 });
 
-function createAuthMessagingFixture() {
+function createAuthMessagingFixture({acknowledge=value=>value, completeParticipants=false}={}) {
   const calls = [];
   const sessions = new Map();
   const messages = [];
@@ -31,14 +31,25 @@ function createAuthMessagingFixture() {
   const other = key => key === 'a' ? identities.b : identities.a;
   const lastSequence = () => messages.at(-1)?.sequence || 0;
 
+  function saveMessage(input,user,createdAt) {
+    const previous=messages.find(item=>item.senderProfileId===user.parrotId&&item.clientMessageId===input.clientMessageId);
+    if(previous)return previous.body===input.body&&previous.from===(input.from??null)&&previous.to===(input.to??null)?previous:null;
+    const sequence=messages.length+1;
+    const value={id:`77777777-7777-4777-8777-${String(sequence).padStart(12,'0')}`,sequence,
+      senderProfileId:user.parrotId,clientMessageId:input.clientMessageId,body:input.body,
+      from:input.from??null,to:input.to??null,createdAt};
+    messages.push(value);return value;
+  }
+
   function detail(key) {
     return {
       id: ids.conversation,
       propertyId: ids.property,
       propertyTitle: 'Fixture apartment',
       hostProfileId: ids.profileB,
-      otherProfileId: other(key).profile.id,
-      otherDisplayName: other(key).profile.displayName,
+      ...(completeParticipants === true ? {guestProfileId: ids.profileA} : {}),
+      otherProfileId: other(key).parrotId,
+      otherDisplayName: other(key).displayName,
       self: false,
       canReply: true,
       blockedByMe: false,
@@ -96,7 +107,7 @@ function createAuthMessagingFixture() {
       if (!key) return unauthorized();
       if (path === '/api/messaging/contact-options/' + ids.property && method === 'GET')
         return json(200, {propertyId: ids.property, propertyTitle: 'Fixture apartment',
-          hostDisplayName: identities.b.profile.displayName, hostProfileId: ids.profileB,
+          hostDisplayName: identities.b.displayName, hostProfileId: ids.profileB,
           acceptingNewConversations: true});
       if (path === '/api/messaging/conversations/for-property/' + ids.property && method === 'GET')
         return json(200, conversationExists ? detail(key) : null);
@@ -105,12 +116,10 @@ function createAuthMessagingFixture() {
         if (key !== 'a' || input.propertyId !== ids.property || !input.clientMessageId || !input.body)
           return json(400, {error: 'invalid synthetic request'});
         conversationExists = true;
-        messages.push({sequence: messages.length + 1, senderProfileId: user.profile.id,
-          clientMessageId: input.clientMessageId, body: input.body, from: input.from || null,
-          to: input.to || null, createdAt: '2026-09-28T02:55:00.000Z'});
+        const message=saveMessage(input,user,'2026-09-28T02:55:00.000Z');
+        if(!message)return json(409,{code:'CONFLICT',error:'clientMessageId reused for different content'});
         readThrough.set('a', lastSequence());
-        return json(200, {conversationId: ids.conversation, id: input.clientMessageId,
-          sequence: lastSequence()});
+        return json(200, acknowledge({conversationId:ids.conversation,message},{firstSend:true,input}));
       }
       if (path === '/api/messaging/conversations' && method === 'GET')
         return json(200, {items: conversationExists ? [inboxItem(key)] : [], nextCursor: null});
@@ -129,11 +138,10 @@ function createAuthMessagingFixture() {
         const input = body();
         if (!conversationExists || !input.clientMessageId || !input.body)
           return json(400, {error: 'invalid synthetic request'});
-        messages.push({sequence: messages.length + 1, senderProfileId: user.profile.id,
-          clientMessageId: input.clientMessageId, body: input.body, from: input.from || null,
-          to: input.to || null, createdAt: '2026-09-28T02:56:00.000Z'});
+        const message=saveMessage(input,user,'2026-09-28T02:56:00.000Z');
+        if(!message)return json(409,{code:'CONFLICT',error:'clientMessageId reused for different content'});
         readThrough.set(key, lastSequence());
-        return json(200, {id: input.clientMessageId, sequence: lastSequence()});
+        return json(200, acknowledge(message,{firstSend:false,input}));
       }
       if (path === '/api/messaging/conversations/' + ids.conversation + '/read' && method === 'PUT') {
         const through = Math.min(lastSequence(), Number(body().throughSequence) || 0);

@@ -11,6 +11,7 @@ test('BUG-024 contact route preselects a localized, non-identifying Airbnb confl
   for(const [language,expected] of [['en',/already connected to another account/],['es',/conectado a otra cuenta/],['ca',/connectat a un altre compte/],['ru',/привязано к другому аккаунту/]]){
     const dom=new JSDOM(read('index.html'),{url:'https://parrot669.com/?contact=airbnb-listing-conflict#contact',runScripts:'outside-only'});t.after(()=>dom.window.close());
     const w=dom.window;w.localStorage.setItem('parrot669-language',language);w.fetch=async()=>({ok:true,json:async()=>[]});
+    require('./helpers/core.cjs').installCore(w);
     w.eval(read('assets/lead-form.js'));
     w.eval(read('assets/script.js'));
     const form=w.document.getElementById('lead-form');
@@ -20,14 +21,68 @@ test('BUG-024 contact route preselects a localized, non-identifying Airbnb confl
   }
 });
 async function searchApp(t,search=()=>[item]){
-  const dom=new JSDOM(read('search.html'),{url:'https://parrot669.com/search',runScripts:'outside-only'});t.after(()=>dom.window.close());
+  const dom=new JSDOM(read('search.html'),{url:'https://parrot669.com/search',runScripts:'outside-only'});
+  const tasks=[];
+  const drain=async()=>{
+    // Follow real operations and descendants appended by their continuations.
+    for(let index=0;index<tasks.length;index++)await tasks[index];
+  };
+  t.after(async()=>{try{await drain();}finally{dom.window.close();}});
   const w=dom.window,calls=[];w.localStorage.setItem('parrot669-language','ru');
-  w.fetch=async url=>{calls.push(String(url));return {ok:true,json:async()=>String(url).includes('/locations/countries')?[{code:'ES',name:'Spain'}]:String(url).includes('/locations/cities')?[{name:'Barcelona'}]:search(url)}};
-  w.eval(read('assets/search.js'));await settle();
+  w.fetch=async url=>{calls.push(String(url));return {ok:true,json:async()=>String(url).includes('/locations/countries')?[{code:'ES',name:'Spain'}]:String(url).includes('/locations/cities')?[{countryCode:'ES',municipalityKey:'R100',name:'Barcelona',nativeName:null}]:search(url)}};
+  require('./helpers/core.cjs').installCore(w);
+  w.eval(read('assets/search.js'));
+  // These classic-script functions keep their implementation and original promises.
+  // This owns post-bootstrap fixture actions, not every background task on the page.
+  for(const name of ['loadLocations','loadCities','runSearch']){
+    const operation=w[name];
+    w[name]=(...args)=>{
+      const task=operation(...args);
+      tasks.push(task);
+      return task;
+    };
+  }
+  await settle();
   const form=w.document.getElementById('availability-form');form.elements.country.value='ES';form.elements.country.dispatchEvent(new w.Event('change'));await settle();
   form.elements.from.value='2026-10-01';form.elements.to.value='2026-10-08';
-  return {w,calls,form,$:id=>w.document.getElementById(id),submit:async()=>{form.dispatchEvent(new w.Event('submit',{cancelable:true}));await settle()}};
+  return {w,calls,form,drain,$:id=>w.document.getElementById(id),submit:async()=>{form.dispatchEvent(new w.Event('submit',{cancelable:true}));await settle()}};
 }
+test('housing fixture drain awaits locale countries, cities and search before DOM teardown',async t=>{
+  const deferred=()=>{let resolve;const promise=new Promise(done=>resolve=done);return {promise,resolve}};
+  const countries=deferred(),cities=deferred(),results=deferred();
+  const countryStarted=deferred(),cityStarted=deferred(),searchStarted=deferred();
+  let hold=false,drained=false;
+  const a=await searchApp(t,()=>{if(!hold)return [item];searchStarted.resolve();return results.promise});
+  await a.submit();
+  const fetch=a.w.fetch;
+  a.w.fetch=async (raw,...args)=>{
+    const url=new URL(raw,a.w.location.origin);
+    if(url.searchParams.get('language')==='es'){
+      if(url.pathname==='/api/locations/countries'){countryStarted.resolve();await countries.promise;}
+      if(url.pathname==='/api/locations/cities'){cityStarted.resolve();await cities.promise;}
+    }
+    return fetch(raw,...args);
+  };
+  try{
+    hold=true;
+    a.w.document.querySelector('[data-search-lang="es"]').click();
+    const completion=a.drain().then(()=>{drained=true;});
+    await countryStarted.promise;
+    assert.equal(drained,false,'countries still own the live DOM');
+    countries.resolve();await cityStarted.promise;
+    assert.equal(drained,false,'descendant cities still own the live DOM');
+    cities.resolve();await searchStarted.promise;
+    assert.equal(drained,false,'locale search still owns the live DOM');
+    results.resolve([item]);await completion;
+    assert.equal(drained,true);
+    assert.equal(a.w.document.documentElement.lang,'es');
+    assert.equal(a.form.elements.city.value,'R100');
+    assert.match(a.$('availability-results').textContent,/Habitación privada/);
+    assert.equal(new URL(a.calls.filter(x=>x.startsWith('/api/search')).at(-1),'https://parrot669.com').searchParams.get('language'),'es');
+  }finally{
+    countries.resolve();cities.resolve();results.resolve([item]);
+  }
+});
 test('negative, invalid-precision and reversed budgets stop search; zero and decimals are preserved',async t=>{
   const a=await searchApp(t);const field=a.$('filter-price-to');
   for(const value of ['-100','1.234']){
@@ -43,14 +98,15 @@ test('live filter rejects bad price and stale response cannot overwrite that err
   await a.submit();a.$('filter-price-to').value='-1';a.$('filter-price-to').dispatchEvent(new a.w.Event('change'));await settle();
   finish([item]);await settle();assert.match(a.$('availability-results').textContent,/отрицательной/);assert.equal(a.$('availability-results').querySelectorAll('article').length,0);
 });
-test('language changes translate loaded cards and statuses without another search',async t=>{
+test('language changes preserve intent and request locale-specific catalogs/results',async t=>{
   const a=await searchApp(t);await a.submit();const before=a.calls.length;
   assert.match(a.$('availability-results').textContent,/3 спальных места/);
   a.w.document.querySelector('[data-search-lang="es"]').click();assert.match(a.$('availability-results').textContent,/Habitación privada/);
-  assert.match(a.$('availability-results').textContent,/3 plazas/);assert.equal(a.calls.length,before);
+  assert.match(a.$('availability-results').textContent,/3 plazas/);await settle();assert.ok(a.calls.length>before);assert.equal(new URL(a.calls.filter(x=>x.startsWith('/api/search')).at(-1),'https://parrot669.com').searchParams.get('language'),'es');
   assert.match(a.$('availability-results').textContent,/Name <test>/);assert.equal(a.$('availability-results').querySelector('test'),null);
-  a.w.document.querySelector('[data-search-lang="ru"]').click();assert.match(a.$('availability-results').textContent,/Отдельная комната/);
+  a.w.document.querySelector('[data-search-lang="ru"]').click();await settle();assert.match(a.$('availability-results').textContent,/Отдельная комната/);
   a.$('filter-price-to').value='-1';await a.submit();a.w.document.querySelector('[data-search-lang="ca"]').click();assert.match(a.$('availability-results').textContent,/negatiu/);
+  await a.drain();assert.match(a.$('availability-results').textContent,/negatiu/);
 });
 test('Russian capacity forms include teens and quantities ending in one or two',async t=>{
   const quantities=[1,2,3,5,11,21,22,25,31,40];const a=await searchApp(t,()=>quantities.map(n=>({...item,sleeps:n})));await a.submit();
@@ -60,7 +116,8 @@ test('Russian capacity forms include teens and quantities ending in one or two',
 async function recoveryApp(t,{hash='',handler=()=>({status:202}),language='ru'}={}){
   const dom=new JSDOM(read('recover.html'),{url:'https://parrot669.com/recover.html'+hash,runScripts:'outside-only'});t.after(()=>dom.window.close());
   const w=dom.window,calls=[];w.localStorage.setItem('parrot669-language',language);
-  w.fetch=async (url,init)=>{const request={url,body:JSON.parse(init.body)};calls.push(request);const result=await handler(request);return {ok:result.status<400,status:result.status,json:async()=>result.body||{}}};
+  w.fetch=async (url,init)=>{const request={url,body:JSON.parse(init.body)};calls.push(request);const result=await handler(request);return {ok:result.status<400,status:result.status,text:async()=>result.status===204?'':JSON.stringify(result.body||{}),json:async()=>result.body||{}}};
+  require('./helpers/core.cjs').installCore(w);
   w.eval(read('assets/recover.js'));return {w,calls,$:id=>w.document.getElementById(id),submit:async id=>{w.document.getElementById(id).dispatchEvent(new w.Event('submit',{cancelable:true}));await settle()}};
 }
 test('recovery request gives generic localized guidance and preserves form after a network failure',async t=>{
@@ -78,6 +135,6 @@ test('reset secret leaves the URL, is never persisted, mismatched passwords do n
 test('expired reset link offers a fresh request and double submit is blocked',async t=>{
   let finish;const a=await recoveryApp(t,{hash:'#token='+'y'.repeat(43),handler:()=>new Promise(resolve=>finish=resolve)});const form=a.$('recovery-confirm');
   form.elements.password.value=form.elements.repeat.value='new-test-password';await a.submit('recovery-confirm');await a.submit('recovery-confirm');assert.equal(a.calls.length,1);
-  finish({status:400,body:{error:'reset token is invalid or expired'}});await settle();assert.equal(a.$('recovery-again').hidden,false);assert.match(a.$('recovery-status').textContent,/устарела/);
+  finish({status:400,body:{error:'reset token is invalid or expired',code:'INVALID_RESET_TOKEN'}});await settle();assert.equal(a.$('recovery-again').hidden,false);assert.match(a.$('recovery-status').textContent,/устарела/);
   a.$('recovery-again').click();assert.equal(a.$('recovery-request').hidden,false);assert.equal(form.hidden,true);
 });
