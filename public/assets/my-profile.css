@@ -106,7 +106,7 @@
   .my-profile-page #profile-editor-form>button{width:100%}
 }
 
-.editor-instagram-name{font-size:1.15rem;font-weight:700;overflow-wrap:anywhere}
-#instagram-card button{min-height:48px}
+.my-profile-page .editor-instagram-name{font-size:1.15rem;font-weight:700;overflow-wrap:anywhere}
+.my-profile-page #instagram-card button{min-height:48px}
 
-#instagram-state{font-weight:600}
+.my-profile-page #instagram-state{font-weight:600}
