@@ -53,7 +53,7 @@ test('ordinary spinner uses no-preference and valid ACK plus GET before Saved',a
   expect(animation.reduced).toBe(false);expect(animation.name).toBe('host-period-spin');expect(animation.duration).not.toBe('0s');
   expect(fixture.seen.filter(call=>call.method==='PUT')).toHaveLength(1);
   Object.assign(fixture.periods[0],{nightlyPriceCents:8125});
-  pending.resolve(fixture.json(fixture.ack(fixture.periods[0])));
+  pending.resolve(fixture.json(null,204));
   await expect(row(page)).toHaveAttribute('data-state','saved');
   expect(fixture.seen.some(call=>call.path.endsWith('/availability') && call.method==='GET')).toBe(true);
 });
