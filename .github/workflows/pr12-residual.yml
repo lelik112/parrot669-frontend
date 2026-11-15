@@ -1,14 +1,14 @@
 name: PR12 six residual assertions one-shot
 on:
   push:
-    branches: ['diagnostic/pr12-fixtures-5f7832-once']
+    branches: ['diagnostic/pr12-selectors-ad8787-once']
     paths:
       - '.github/workflows/pr12-residual.yml'
       - '.github/diagnostics/pr12-residual/**'
 permissions:
   contents: read
 concurrency:
-  group: pr12-residual-5f7832-one-diagnostic
+  group: pr12-residual-ad8787-one-diagnostic
   cancel-in-progress: false
 jobs:
   diagnose:
@@ -25,9 +25,9 @@ jobs:
           node-version: '22'
       - name: Verify exact source and one-shot scope
         run: |
-          test "$(git rev-parse HEAD^)" = 5cc74ca1556535ba3c94eaa22526b92e374685f7
-          git cat-file -e 7d14de254cac30bce04841b3ec1479d82d2b931e^{tree}
-          test "$(git diff --name-only 7d14de254cac30bce04841b3ec1479d82d2b931e HEAD | grep -vE '^\.github/(workflows/pr12-residual.yml|diagnostics/pr12-residual/run.py)$' | wc -l)" = 0
+          test "$(git rev-parse HEAD^)" = 56fe467fd2108147a4ec415c1b76057642bf8e86
+          git cat-file -e b1f1861da7751db58d44f7951c490622ececfaee^{tree}
+          test "$(git diff --name-only b1f1861da7751db58d44f7951c490622ececfaee HEAD | grep -vE '^\.github/(workflows/pr12-residual.yml|diagnostics/pr12-residual/run.py)$' | wc -l)" = 0
           test "$GITHUB_RUN_ATTEMPT" = 1
           mkdir -p diagnostic-evidence
       - name: Install locked dependencies without lifecycle scripts
@@ -57,7 +57,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always() && env.DIAGNOSTIC_EVIDENCE_ALLOWED == 'true'
         with:
-          name: pr12-residual-5f7832-diagnostic
+          name: pr12-residual-ad8787-diagnostic
           path: diagnostic-evidence/
           retention-days: 1
           if-no-files-found: error
