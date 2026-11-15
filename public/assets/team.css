@@ -31,7 +31,7 @@
 .team-hero{padding:92px 0 96px;display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:90px;align-items:start}
 .team-kicker,.team-section-label{margin:0 0 24px;font-size:12px;font-weight:800;letter-spacing:.08em;color:var(--team-cyan)}
 .team-kicker{display:inline-block;padding:7px 12px;border:1px solid #907a1d;border-radius:999px;color:#e8c838}
-.team-hero h1{margin:0;font-size:clamp(3rem,5vw,5rem);line-height:1.06;letter-spacing:-.055em}
+.team-hero h1{overflow-wrap:anywhere;margin:0;font-size:clamp(3rem,5vw,5rem);line-height:1.06;letter-spacing:-.055em}
 .team-lead{max-width:850px;margin:24px 0 0;color:var(--team-muted);font-size:20px;line-height:1.65}
 .team-stats{margin:65px 0 0;display:grid;gap:6px}
 .team-stats div{display:flex;gap:7px;align-items:baseline;color:var(--team-cyan);font-weight:700}
@@ -56,12 +56,12 @@
 .team-role{margin:12px 0 0;color:var(--team-cyan);font-size:14px;font-weight:700;overflow-wrap:anywhere}
 .team-role-accent{color:var(--team-lime)}
 .team-bio{width:100%;max-width:52ch;margin:30px 0 0;color:var(--team-muted);overflow-wrap:break-word;word-break:normal}
-.team-github,.team-social-link{min-width:160px;margin-top:auto;padding:12px 24px;border:1px solid var(--team-line);border-radius:8px;text-align:center;text-decoration:none;font-size:12px;font-weight:700}
+.team-github,.team-social-link{min-width:min(160px,100%);max-width:100%;min-height:44px;overflow-wrap:anywhere;margin-top:auto;padding:12px 24px;border:1px solid var(--team-line);border-radius:8px;text-align:center;text-decoration:none;font-size:12px;font-weight:700}
 .team-github:hover,.team-social-link:hover{border-color:var(--team-cyan);color:var(--team-cyan)}
 .team-values{margin-bottom:92px;padding:30px 32px 36px;border:1px solid var(--team-line);border-radius:22px}
 .team-values .team-section-label{margin-bottom:30px}
 .team-values-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:28px}
-.team-values-grid div{display:grid;gap:8px}
+.team-values-grid div{min-width:0;overflow-wrap:anywhere;display:grid;grid-template-columns:minmax(0,1fr);gap:8px}
 .team-values-grid strong{font-size:17px}
 .team-values-grid span{color:var(--team-muted);font-size:12px}
 .team-footer{display:block;width:100%;margin:0;padding:0;background:#03090a;border:0;border-top:1px solid color-mix(in srgb,var(--team-line),transparent 25%)}
@@ -92,7 +92,7 @@
   .team-bio{max-width:100%;margin-top:20px;font-size:14px;line-height:1.7}
   .team-github,.team-social-link{margin-top:24px}
   .team-values{margin-bottom:64px;padding:24px 20px 26px}
-  .team-values-grid{grid-template-columns:1fr 1fr;gap:24px 16px}
+  .team-values-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:24px 16px}
   .team-values-grid strong{font-size:14px;overflow-wrap:break-word}
   .team-footer-inner{min-height:210px;display:grid;align-content:center;gap:28px}
   .team-footer nav{gap:18px;flex-wrap:wrap}

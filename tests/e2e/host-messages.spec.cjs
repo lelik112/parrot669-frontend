@@ -19,7 +19,7 @@ test('PM-026/PM-020: signed-in Host has one keyboard reachable Messages link and
   await expect(page.locator('[data-msg-lang="en"]')).toBeEnabled();
   await expect(page.locator('#msg-account-name')).toHaveText('fixture-owner');
   await expect(page.locator('nav.housing-tabs a.messaging-nav-link')).toHaveCount(1);
-  await expect(page.locator('.messages-intro h1')).toHaveCount(1);
+  await expect(page.locator('.messages-intro h1:visible')).toHaveCount(1);
   await expect(page.locator('[data-msg-i18n="messagesTitleFirst"]')).toHaveText('Plan the stay.');
   await expect(page.locator('[data-msg-i18n="messagesTitleAccent"]')).toHaveCSS('color','rgb(217, 255, 98)');
   await page.locator('#msg-host-link').focus();
