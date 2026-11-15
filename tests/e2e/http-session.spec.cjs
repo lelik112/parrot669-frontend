@@ -7,7 +7,7 @@ test('verification keeps inclusive UI nights across exclusive API submit and ser
   const required={status:'Required',attemptsCount:0,maxAttempts:3,canStart:true,canCheck:false,
     minSelectableDate:'2030-09-23',maxSelectableDate:'2031-03-23'};
   let state=required;const commands=[];
-  await page.route('**/api/host/dashboard',route=>route.fulfill({json:{properties:[{
+  await page.route(url=>url.pathname==='/api/host/dashboard',route=>route.fulfill({json:{properties:[{
     id:propertyId,title:'Synthetic period property',city:'Barcelona',bedrooms:1,sleeps:2,
     listings:[{id:'listing-1',url:'https://www.airbnb.com/rooms/123'}]
   }]}}));

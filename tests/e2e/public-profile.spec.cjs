@@ -92,9 +92,17 @@ test('V1/V2 predicates reject pre-fix CSS and pass after restoration',async({pag
 
   selectedCssPath=currentCssPath;
   await page.reload();
+  await expect(page.locator('#profile-name')).toBeFocused();
   await page.evaluate(()=>{document.documentElement.style.zoom='2';});
+  // Reload restores Russian; switch away before exercising the Russian reload/focus path.
+  await page.locator('[data-lang="en"]').focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('html')).toHaveAttribute('lang','en');
+  await expectDisplayNameFocusWithoutControlChrome(page);
   await page.locator('[data-lang="ru"]').focus();
   await page.keyboard.press('Enter');
+  await expect(page.locator('html')).toHaveAttribute('lang','ru');
+  await expectDisplayNameFocusWithoutControlChrome(page);
   const restoredGeometry=await navGeometry(page);
   expect(restoredGeometry).toHaveLength(3);
   for(const item of restoredGeometry) {

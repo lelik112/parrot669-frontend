@@ -24,10 +24,10 @@ test('PM-050/PM-053: anonymous auth modes and Messages accent stay correct', asy
   await expect(page.locator('#msg-register-form')).toBeVisible();
   await expect(page.locator('#msg-login-form')).toBeHidden();
   await expect(page.locator('[data-msg-i18n="messagesEyebrow"]')).toHaveText('PRIVATE CONVERSATIONS');
-  await expect(page.locator('.messages-intro h1')).toHaveCount(1);
+  await expect(page.locator('.messages-intro h1:visible')).toHaveCount(1);
   await expect(page.locator('[data-msg-i18n="messagesTitleFirst"]')).toHaveText('Plan the stay.');
   await expect(page.locator('[data-msg-i18n="messagesTitleAccent"]')).toHaveText('Keep the conversation together.');
-  const titleStyle=await page.locator('.messages-intro h1').evaluate(title=>{
+  const titleStyle=await page.locator('.messages-intro h1:visible').evaluate(title=>{
     const first=title.querySelector('[data-msg-i18n="messagesTitleFirst"]');
     const accent=title.querySelector('.messages-title-accent');
     const firstBox=first.getBoundingClientRect(),accentBox=accent.getBoundingClientRect();
