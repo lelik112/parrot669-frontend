@@ -5,7 +5,7 @@ out=root/'diagnostic-evidence'
 out.mkdir(exist_ok=True)
 started=time.monotonic()
 deadline=started+600
-source='7d14de254cac30bce04841b3ec1479d82d2b931e'
+source='b1f1861da7751db58d44f7951c490622ececfaee'
 def utc(): return datetime.datetime.now(datetime.timezone.utc).isoformat()
 def hashes(base, names):
     return {n:hashlib.sha256((base/n).read_bytes()).hexdigest() for n in names}
