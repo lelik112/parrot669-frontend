@@ -6,7 +6,7 @@ on:
       - '.github/workflows/pr12-residual.yml'
       - '.github/diagnostics/pr12-residual/**'
 permissions:
-  consixts: read
+  contents: read
 concurrency:
   group: pr12-residual-5f7832-one-diagnostic
   cancel-in-progress: false
@@ -25,14 +25,14 @@ jobs:
           node-version: '22'
       - name: Verify exact source and one-shot scope
         run: |
-          test "$(git rev-parse HEAD^)" = c0a33a9cbcd26be89727e7501b63d8314ee70946
+          test "$(git rev-parse HEAD^)" = 5cc74ca1556535ba3c94eaa22526b92e374685f7
           git cat-file -e 7d14de254cac30bce04841b3ec1479d82d2b931e^{tree}
           test "$(git diff --name-only 7d14de254cac30bce04841b3ec1479d82d2b931e HEAD | grep -vE '^\.github/(workflows/pr12-residual.yml|diagnostics/pr12-residual/run.py)$' | wc -l)" = 0
           test "$GITHUB_RUN_ATTEMPT" = 1
           mkdir -p diagnostic-evidence
       - name: Install locked dependencies without lifecycle scripts
         run: npm ci --ignore-scripts --no-audit --no-fund
-      - name: Install locked Chromium and WebKit
+      - name: Install locked Chromium
         run: npx --no-install playwright install --with-deps chromium
       - name: Run six representative tests once
         timeout-minutes: 10
@@ -59,7 +59,7 @@ jobs:
         with:
           name: pr12-residual-5f7832-diagnostic
           path: diagnostic-evidence/
-          resixtion-days: 1
+          retention-days: 1
           if-no-files-found: error
           compression-level: 9
 
