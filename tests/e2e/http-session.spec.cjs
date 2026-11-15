@@ -9,6 +9,7 @@ test('verification keeps inclusive UI nights across exclusive API submit and ser
   let state=required;const commands=[];
   await page.route(url=>url.pathname==='/api/host/dashboard',route=>route.fulfill({json:{properties:[{
     id:propertyId,title:'Synthetic period property',city:'Barcelona',bedrooms:1,sleeps:2,
+    availability:[],unavailability:[],
     listings:[{id:'listing-1',url:'https://www.airbnb.com/rooms/123'}]
   }]}}));
   await page.route(`**/api/host/properties/${propertyId}/calendars`,route=>route.fulfill({json:{calendars:[{

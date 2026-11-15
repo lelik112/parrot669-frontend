@@ -73,6 +73,27 @@ test('Team landmarks, keyboard path and CSS magnification stay usable',async({pa
   await expect(page).toHaveURL(/#team-members$/);
   await expect(page.locator('#team-members')).toBeFocused();
   await page.evaluate(()=>{document.body.style.zoom='2';});
+  const overflowEvidence=await page.evaluate(()=>{
+    const width=document.documentElement.clientWidth;
+    const rounded=value=>Math.round(value*100)/100;
+    const identify=node=>node.tagName.toLowerCase()+(node.id?'#'+node.id:'')+(typeof node.className==='string'?'.'+node.className.trim().split(/\s+/).join('.'):'');
+    const nodes=Array.from(document.body.querySelectorAll('*')).map(node=>{
+      const r=node.getBoundingClientRect(),s=getComputedStyle(node);
+      if(!r.width||!r.height||s.display==='none')return null;
+      const textRects=[];
+      for(const child of node.childNodes)if(child.nodeType===Node.TEXT_NODE&&child.textContent.trim()){
+        const range=document.createRange();range.selectNodeContents(child);
+        for(const box of range.getClientRects())if(box.right>width+1)textRects.push({right:rounded(box.right),width:rounded(box.width)});
+      }
+      if(r.right<=width+1&&node.scrollWidth<=node.clientWidth+1&&!textRects.length)return null;
+      return {node:identify(node),parent:identify(node.parentElement),text:node.textContent.trim().slice(0,100),
+        rect:{left:rounded(r.left),right:rounded(r.right),width:rounded(r.width)},client:node.clientWidth,scroll:node.scrollWidth,
+        css:{display:s.display,width:s.width,minWidth:s.minWidth,maxWidth:s.maxWidth,overflowX:s.overflowX,
+          font:s.font,fontSize:s.fontSize,whiteSpace:s.whiteSpace,overflowWrap:s.overflowWrap,zoom:s.zoom},textRects};
+    }).filter(Boolean);
+    return {viewport:width,documentScroll:document.documentElement.scrollWidth,bodyRect:document.body.getBoundingClientRect().toJSON(),nodes:nodes.slice(0,100),total:nodes.length};
+  });
+  console.log('TEAM_OVERFLOW_EVIDENCE '+JSON.stringify(overflowEvidence));
   await expectNoOverflow(page);
   await expect(page.locator('[data-member=masha]')).toBeVisible();
 });
