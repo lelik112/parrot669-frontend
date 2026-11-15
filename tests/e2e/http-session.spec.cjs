@@ -54,7 +54,7 @@ test('Host previews token-free source, keeps damaged save unknown, then resolves
   await installHostFixture(page);await page.emulateMedia({reducedMotion:'reduce'});
   const propertyId='11111111-1111-4111-8111-111111111111',id='22222222-2222-4222-8222-222222222222';
   const icalUrl='https://www.airbnb.com/calendar/ical/123.ics?s=SyntheticOnly123';const commands=[];let exists=false;
-  await page.route('**/api/host/dashboard',route=>route.fulfill({json:{properties:[{id:propertyId,title:'Synthetic source',city:'Barcelona',bedrooms:1,sleeps:2,listings:[]}]}}));
+  await page.route(url=>url.pathname==='/api/host/dashboard',route=>route.fulfill({json:{properties:[{id:propertyId,title:'Synthetic source',city:'Barcelona',bedrooms:1,sleeps:2,availability:[],unavailability:[],listings:[]}]}}));
   await page.route(`**/api/host/properties/${propertyId}/calendars`,route=>route.fulfill({json:{calendars:exists?[{id,provider:'Airbnb',listingId:'123',publicUrl:'https://www.airbnb.com/rooms/123',enabled:true,mode:'Active',revision:7,status:'Connected',lastSyncedAt:null,lastSuccessAt:null,lastError:null,reservationBlocks:[]}]:[]}}));
   await page.route(`**/api/host/properties/${propertyId}/public-links`,route=>{
     const method=route.request().method();commands.push({method,body:route.request().postDataJSON()});
@@ -78,9 +78,9 @@ test('Host calendar uses snapshot revisions for sync, disable, activate and dele
   const propertyId='11111111-1111-4111-8111-111111111111',id='22222222-2222-4222-8222-222222222222';
   let revision=7,mode='Active',removed=false,refuse=false,dashboards=0;
   const commands=[];
-  await page.route('**/api/host/dashboard',route=>{
+  await page.route(url=>url.pathname==='/api/host/dashboard',route=>{
     dashboards++;
-    return route.fulfill({json:{properties:[{id:propertyId,title:'Synthetic calendar property',city:'Barcelona',bedrooms:1,sleeps:2,
+    return route.fulfill({json:{properties:[{id:propertyId,title:'Synthetic calendar property',city:'Barcelona',bedrooms:1,sleeps:2,availability:[],unavailability:[],
       listings:[{id:'listing-1',url:'https://www.airbnb.com/rooms/123'}]}]}});
   });
   await page.route(`**/api/host/properties/${propertyId}/calendars`,route=>route.fulfill({json:{calendars:removed?[]:[{
@@ -143,10 +143,10 @@ test('Host account switch removes previous private cards before the next dashboa
   let account='a',releaseB;
   const bReady=new Promise(resolve=>releaseB=resolve);
   await page.route('**/api/host/auth/me',route=>route.fulfill({json:{accountId:account,username:account,parrotId:account==='a'?'P669-AAAA-AAAA-AAAA':'P669-BBBB-BBBB-BBBB'}}));
-  await page.route('**/api/host/dashboard',async route=>{
+  await page.route(url=>url.pathname==='/api/host/dashboard',async route=>{
     const requestedAccount=account;
     if(requestedAccount==='b')await bReady;
-    await route.fulfill({json:{properties:[{id:'private-'+requestedAccount,title:'PRIVATE '+requestedAccount,city:'Barcelona',bedrooms:1,sleeps:2}]}});
+    await route.fulfill({json:{properties:[{id:'private-'+requestedAccount,title:'PRIVATE '+requestedAccount,city:'Barcelona',bedrooms:1,sleeps:2,availability:[],unavailability:[]}]}});
   });
   await page.goto('/host.html');
   await expect(page.locator('[data-property-id="private-a"]')).toBeVisible();
@@ -182,9 +182,9 @@ async function selectFixtureCity(page) {
   await expect(country).toBeEnabled();
   await country.selectOption('ES');
   await expect(city).toBeEnabled();
-  await city.selectOption('Barcelona');
+  await city.selectOption('R347950');
   await expect(country).toHaveValue('ES');
-  await expect(city).toHaveValue('Barcelona');
+  await expect(city).toHaveValue('R347950');
 }
 
 test('module entrypoints boot Home, Search, Host and Recover with blocked storage',async({page})=>{
