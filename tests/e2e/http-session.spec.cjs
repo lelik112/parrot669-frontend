@@ -101,7 +101,7 @@ test('Host calendar uses snapshot revisions for sync, disable, activate and dele
     return route.fulfill({status:204});
   });
   await page.goto('/host.html');
-  const card=page.locator(`[data-property-id="${propertyId}"]`);
+  const card=page.locator(`article.host-property-workspace[data-property-id="${propertyId}"]`);
   await card.locator('details[id^="host-calendar-"] > summary').click();
   const actions=card.locator('.host-calendar-actions');
   async function refreshedClick(name){
@@ -149,12 +149,12 @@ test('Host account switch removes previous private cards before the next dashboa
     await route.fulfill({json:{properties:[{id:'private-'+requestedAccount,title:'PRIVATE '+requestedAccount,city:'Barcelona',bedrooms:1,sleeps:2,availability:[],unavailability:[]}]}});
   });
   await page.goto('/host.html');
-  await expect(page.locator('[data-property-id="private-a"]')).toBeVisible();
+  await expect(page.locator('article.host-property-workspace[data-property-id="private-a"]')).toBeVisible();
   account='b';
   await page.evaluate(()=>window.ParrotCore.session.refresh());
-  await expect(page.locator('[data-property-id="private-a"]')).toHaveCount(0);
+  await expect(page.locator('article.host-property-workspace[data-property-id="private-a"]')).toHaveCount(0);
   await expect(page.locator('#host-account-email')).toHaveText('b');
-  releaseB();await expect(page.locator('[data-property-id="private-b"]')).toBeVisible();
+  releaseB();await expect(page.locator('article.host-property-workspace[data-property-id="private-b"]')).toBeVisible();
 });
 
 test('document load includes page handlers even when controller downloads are delayed',async({page})=>{
