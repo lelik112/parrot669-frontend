@@ -1,0 +1,65 @@
+name: PR12 ten residual assertions one-shot
+on:
+  push:
+    branches: ['diagnostic/pr12-residual-650bf3-once']
+    paths:
+      - '.github/workflows/pr12-residual.yml'
+      - '.github/diagnostics/pr12-residual/**'
+permissions:
+  contents: read
+concurrency:
+  group: pr12-residual-650bf3-one-diagnostic
+  cancel-in-progress: false
+jobs:
+  diagnose:
+    if: github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 8
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact source and one-shot scope
+        run: |
+          test "$(git rev-parse HEAD^)" = d929e477032da3a59e2497a19256a8f7f1f61662
+          git cat-file -e ac56b13f33ba4a703093df3fc2d42aedc0e33722^{tree}
+          test "$(git diff --name-only ac56b13f33ba4a703093df3fc2d42aedc0e33722 HEAD | grep -vE '^\.github/(workflows/pr12-residual.yml|diagnostics/pr12-residual/run.py)$' | wc -l)" = 0
+          test "$GITHUB_RUN_ATTEMPT" = 1
+          mkdir -p diagnostic-evidence
+      - name: Install locked dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Install locked Chromium and WebKit
+        run: npx --no-install playwright install --with-deps chromium webkit
+      - name: Run ten representative tests once
+        timeout-minutes: 10
+        run: python3 .github/diagnostics/pr12-residual/run.py
+      - name: Bound text evidence
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          root=Path('diagnostic-evidence')
+          files=list(root.rglob('*')) if root.exists() else []
+          files=[p for p in files if p.is_file()]
+          allowed=bool(files) and all(p.suffix in ('.json','.txt') and not p.is_symlink() for p in files)
+          size=sum(p.stat().st_size for p in files)
+          allowed=allowed and size<=64*1024*1024
+          with open(os.environ['GITHUB_ENV'],'a') as f:
+              f.write('DIAGNOSTIC_EVIDENCE_ALLOWED='+str(allowed).lower()+'\n')
+          print('Diagnostic text evidence bytes:',size,'; allowed:',allowed)
+          if not allowed: raise SystemExit(1)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always() && env.DIAGNOSTIC_EVIDENCE_ALLOWED == 'true'
+        with:
+          name: pr12-residual-650bf3-diagnostic
+          path: diagnostic-evidence/
+          retention-days: 1
+          if-no-files-found: error
+          compression-level: 9
+
