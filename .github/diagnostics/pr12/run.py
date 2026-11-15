@@ -1,4 +1,4 @@
-"""One authorized diagnostic pass; no production or baseline modifications."""
+"""One authorized Team CSS diagnostic; no Host baseline or release modifications."""
 import datetime, hashlib, json, os, pathlib, shutil, signal, subprocess, tempfile, time
 root=pathlib.Path.cwd()
 out=root/'diagnostic-evidence'
@@ -49,12 +49,11 @@ use:{...base.use,trace:'off',screenshot:'off',video:'off'},
 webServer:{...base.webServer,reuseExistingServer:false}};
 """)
 cases=[
-('host-messages','tests/e2e/host-messages.spec.cjs:4',None),
-('host-period-editor','tests/e2e/host-period-editor.spec.cjs:13','workspace disclosure/editor geometry 320/en'),
-('http-session','tests/e2e/http-session.spec.cjs:4',None),
-('public-contact','tests/e2e/public-contact.spec.cjs:4',None),
-('public-profile','tests/e2e/public-profile.spec.cjs:69',None),
-('team-page','tests/e2e/team-page.spec.cjs:63',None)]
+('team-1440','tests/e2e/team-page.spec.cjs','synthetic local Team 1440px keeps'),
+('team-390','tests/e2e/team-page.spec.cjs','synthetic local Team 390px keeps'),
+('team-320','tests/e2e/team-page.spec.cjs','synthetic local Team 320px keeps'),
+('team-compact','tests/e2e/team-page.spec.cjs','synthetic compact controls preserve'),
+('team-keyboard-zoom','tests/e2e/team-page.spec.cjs','Team landmarks, keyboard path and CSS magnification stay usable')]
 env=os.environ.copy()
 env['CI']='true'
 # No user browser profile or stored state is passed. Every test uses Playwright's fresh context.
