@@ -19,14 +19,16 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-          fetch-depth: 2
+          fetch-depth: 4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
       - name: Verify exact source and one-shot scope
         run: |
-          test "$(git rev-parse HEAD^)" = cbc3ac279fbda8dff98dccba7e25a08390d7b62a
+          test "$(git rev-parse HEAD^)" = 7a64b0cef4db4df1b59c7d262a809cd6818ca316
           test "$(git diff --name-only HEAD^ HEAD | grep -vE '^(\.github/(workflows/pr12-diagnostic.yml|diagnostics/pr12/run.py)|tests/e2e/(http-session|team-page)\.spec\.cjs)$' | wc -l)" = 0
+          git cat-file -e 2c17d1356abec57dad677e741eb974553db06b74^{tree}
+          test "$(git rev-parse HEAD~3)" = 2c17d1356abec57dad677e741eb974553db06b74
           test "$GITHUB_RUN_ATTEMPT" = 1
           mkdir -p diagnostic-evidence
       - name: Install locked dependencies without lifecycle scripts
