@@ -50,7 +50,219 @@ use:{...base.use,trace:'off',screenshot:'off',video:'off'},
 webServer:{...base.webServer,reuseExistingServer:false}};
 """)
 cases=[
-('cancel','tests/e2e/host-period-editor.spec.cjs:13','^workspace disclosure/editor geometry 320/en$','webkit-desktop'),
+('cancel','tests/e2e/host-period-editor.spec.cjs:13','workspace disclosure/editor geometry 320/en,'webkit-desktop'),
+('save','tests/e2e/host-period-editor.spec.cjs:41',None,'webkit-desktop'),
+('preview','tests/e2e/http-session.spec.cjs:53',None,'webkit-desktop'),
+('verification','tests/e2e/http-session.spec.cjs:4',None,'mobile-emulation'),
+('messaging','tests/e2e/auth-messaging.spec.cjs:181','S3 Host B real keyboard and retained draft 390/en,'mobile-emulation')]
+
+env=os.environ.copy()
+env['CI']='true'
+# No user browser profile or stored state is passed. Every test uses Playwright's fresh context.
+cli=[str(root/'node_modules/.bin/playwright'),'test']
+def run(args, log, env, limit):
+    with log.open('w') as f:
+        p=subprocess.Popen(args,cwd=work,env=env,stdout=f,stderr=subprocess.STDOUT,start_new_session=True)
+        try: return p.wait(timeout=limit)
+        except subprocess.TimeoutExpired:
+            os.killpg(p.pid,signal.SIGTERM)
+            try: p.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                os.killpg(p.pid,signal.SIGKILL);p.wait()
+            return 124
+def count_tests(suites):
+    return sum(sum(len(s.get('tests',[])) for s in suite.get('specs',[]))+count_tests(suite.get('suites',[])) for suite in suites)
+failed=False
+try:
+    for family,selector,grep,project in cases:
+        if deadline-time.monotonic()<300:
+            manifest['stop']='Remaining bounded time insufficient for another selection';failed=True;break
+        base=cli+[selector,'--config=playwright.diagnostic.cjs','--project='+project,'--workers=1','--retries=0']
+        if grep: base+=['--grep',grep]
+        case={'family':family,'selector':selector,'grep':grep,'project':project,'started':utc()}
+        manifest['cases'].append(case)
+        env['DIAG_EVENTS']=str(out/(family+'-events.json'))
+        env['DIAG_JSON']=str(out/(family+'.json'))
+        env['DIAG_TMP']=str(work/('generated-'+family))
+        listing=out/(family+'-list.txt')
+        rc=run(base+['--list','--reporter=json'],listing,env,20)
+        case['listExit']=rc
+        if rc!=0: manifest['stop']='Selection listing failed';failed=True;save();break
+        listing_data=json.loads(listing.read_text())
+        count=count_tests(listing_data.get('suites',[]));case['selectedCount']=count
+        if count!=1: manifest['stop']='Selector does not resolve to exactly one test';failed=True;save();break
+    assert len(manifest['cases'])==5 and all(c.get('selectedCount')==1 for c in manifest['cases']), 'Five selections not qualified'
+    save()
+    for case,(family,selector,grep,project) in zip(manifest['cases'],cases):
+        base=cli+[selector,'--config=playwright.diagnostic.cjs','--project='+project,'--workers=1','--retries=0']
+        if grep: base+=['--grep',grep]
+        env['DIAG_EVENTS']=str(out/(family+'-events.json'))
+        env['DIAG_JSON']=str(out/(family+'.json'))
+        env['DIAG_TMP']=str(work/('generated-'+family))
+        log=out/(family+'.txt')
+        rc=run(base,log,env,45)
+        case['exit']=rc;case['finished']=utc();failed=failed or rc!=0
+        print('DIAGNOSTIC',family,'exit',rc,flush=True)
+        # Emit bounded assertion evidence immediately even if later artifact upload is interrupted.
+        text=log.read_text(errors='replace')
+        print(text[-18000:],flush=True)
+        if hashes(work,frozen)!={n:baseline[n] for n in frozen}:
+            manifest['stop']='Unexpected source/baseline mutation';failed=True;save();break
+        if rc==124:
+            manifest['stop']='Invocation exceeded hard diagnostic timeout';failed=True;save();break
+        save()
+finally:
+    manifest['finished']=utc()
+    manifest['originalSourceUnchanged']=hashes(root,names)==baseline
+    manifest['frozenCopyUnchanged']=hashes(work,frozen)=={n:baseline[n] for n in frozen}
+    manifest['executedCount']=sum('exit' in c for c in manifest['cases'])
+    save()
+    # Only the temporary diagnostic directory created above is removed; original evidence stays in out.
+    shutil.rmtree(work)
+if not manifest['originalSourceUnchanged'] or not manifest['frozenCopyUnchanged']: raise SystemExit(2)
+raise SystemExit(1 if failed else 0)
+
+,'webkit-desktop'),
+('save','tests/e2e/host-period-editor.spec.cjs:41',None,'webkit-desktop'),
+('preview','tests/e2e/http-session.spec.cjs:53',None,'webkit-desktop'),
+('verification','tests/e2e/http-session.spec.cjs:4',None,'mobile-emulation'),
+('messaging','tests/e2e/auth-messaging.spec.cjs:181','^S3 Host B real keyboard and retained draft 390/en$','mobile-emulation')]
+
+env=os.environ.copy()
+env['CI']='true'
+# No user browser profile or stored state is passed. Every test uses Playwright's fresh context.
+cli=[str(root/'node_modules/.bin/playwright'),'test']
+def run(args, log, env, limit):
+    with log.open('w') as f:
+        p=subprocess.Popen(args,cwd=work,env=env,stdout=f,stderr=subprocess.STDOUT,start_new_session=True)
+        try: return p.wait(timeout=limit)
+        except subprocess.TimeoutExpired:
+            os.killpg(p.pid,signal.SIGTERM)
+            try: p.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                os.killpg(p.pid,signal.SIGKILL);p.wait()
+            return 124
+def count_tests(suites):
+    return sum(sum(len(s.get('tests',[])) for s in suite.get('specs',[]))+count_tests(suite.get('suites',[])) for suite in suites)
+failed=False
+try:
+    for family,selector,grep,project in cases:
+        if deadline-time.monotonic()<300:
+            manifest['stop']='Remaining bounded time insufficient for another selection';failed=True;break
+        base=cli+[selector,'--config=playwright.diagnostic.cjs','--project='+project,'--workers=1','--retries=0']
+        if grep: base+=['--grep',grep]
+        case={'family':family,'selector':selector,'grep':grep,'project':project,'started':utc()}
+        manifest['cases'].append(case)
+        env['DIAG_EVENTS']=str(out/(family+'-events.json'))
+        env['DIAG_JSON']=str(out/(family+'.json'))
+        env['DIAG_TMP']=str(work/('generated-'+family))
+        listing=out/(family+'-list.txt')
+        rc=run(base+['--list','--reporter=json'],listing,env,20)
+        case['listExit']=rc
+        if rc!=0: manifest['stop']='Selection listing failed';failed=True;save();break
+        listing_data=json.loads(listing.read_text())
+        count=count_tests(listing_data.get('suites',[]));case['selectedCount']=count
+        if count!=1: manifest['stop']='Selector does not resolve to exactly one test';failed=True;save();break
+    assert len(manifest['cases'])==5 and all(c.get('selectedCount')==1 for c in manifest['cases']), 'Five selections not qualified'
+    save()
+    for case,(family,selector,grep,project) in zip(manifest['cases'],cases):
+        base=cli+[selector,'--config=playwright.diagnostic.cjs','--project='+project,'--workers=1','--retries=0']
+        if grep: base+=['--grep',grep]
+        env['DIAG_EVENTS']=str(out/(family+'-events.json'))
+        env['DIAG_JSON']=str(out/(family+'.json'))
+        env['DIAG_TMP']=str(work/('generated-'+family))
+        log=out/(family+'.txt')
+        rc=run(base,log,env,45)
+        case['exit']=rc;case['finished']=utc();failed=failed or rc!=0
+        print('DIAGNOSTIC',family,'exit',rc,flush=True)
+        # Emit bounded assertion evidence immediately even if later artifact upload is interrupted.
+        text=log.read_text(errors='replace')
+        print(text[-18000:],flush=True)
+        if hashes(work,frozen)!={n:baseline[n] for n in frozen}:
+            manifest['stop']='Unexpected source/baseline mutation';failed=True;save();break
+        if rc==124:
+            manifest['stop']='Invocation exceeded hard diagnostic timeout';failed=True;save();break
+        save()
+finally:
+    manifest['finished']=utc()
+    manifest['originalSourceUnchanged']=hashes(root,names)==baseline
+    manifest['frozenCopyUnchanged']=hashes(work,frozen)=={n:baseline[n] for n in frozen}
+    manifest['executedCount']=sum('exit' in c for c in manifest['cases'])
+    save()
+    # Only the temporary diagnostic directory created above is removed; original evidence stays in out.
+    shutil.rmtree(work)
+if not manifest['originalSourceUnchanged'] or not manifest['frozenCopyUnchanged']: raise SystemExit(2)
+raise SystemExit(1 if failed else 0)
+
+,'mobile-emulation')]
+
+env=os.environ.copy()
+env['CI']='true'
+# No user browser profile or stored state is passed. Every test uses Playwright's fresh context.
+cli=[str(root/'node_modules/.bin/playwright'),'test']
+def run(args, log, env, limit):
+    with log.open('w') as f:
+        p=subprocess.Popen(args,cwd=work,env=env,stdout=f,stderr=subprocess.STDOUT,start_new_session=True)
+        try: return p.wait(timeout=limit)
+        except subprocess.TimeoutExpired:
+            os.killpg(p.pid,signal.SIGTERM)
+            try: p.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                os.killpg(p.pid,signal.SIGKILL);p.wait()
+            return 124
+def count_tests(suites):
+    return sum(sum(len(s.get('tests',[])) for s in suite.get('specs',[]))+count_tests(suite.get('suites',[])) for suite in suites)
+failed=False
+try:
+    for family,selector,grep,project in cases:
+        if deadline-time.monotonic()<300:
+            manifest['stop']='Remaining bounded time insufficient for another selection';failed=True;break
+        base=cli+[selector,'--config=playwright.diagnostic.cjs','--project='+project,'--workers=1','--retries=0']
+        if grep: base+=['--grep',grep]
+        case={'family':family,'selector':selector,'grep':grep,'project':project,'started':utc()}
+        manifest['cases'].append(case)
+        env['DIAG_EVENTS']=str(out/(family+'-events.json'))
+        env['DIAG_JSON']=str(out/(family+'.json'))
+        env['DIAG_TMP']=str(work/('generated-'+family))
+        listing=out/(family+'-list.txt')
+        rc=run(base+['--list','--reporter=json'],listing,env,20)
+        case['listExit']=rc
+        if rc!=0: manifest['stop']='Selection listing failed';failed=True;save();break
+        listing_data=json.loads(listing.read_text())
+        count=count_tests(listing_data.get('suites',[]));case['selectedCount']=count
+        if count!=1: manifest['stop']='Selector does not resolve to exactly one test';failed=True;save();break
+    assert len(manifest['cases'])==5 and all(c.get('selectedCount')==1 for c in manifest['cases']), 'Five selections not qualified'
+    save()
+    for case,(family,selector,grep,project) in zip(manifest['cases'],cases):
+        base=cli+[selector,'--config=playwright.diagnostic.cjs','--project='+project,'--workers=1','--retries=0']
+        if grep: base+=['--grep',grep]
+        env['DIAG_EVENTS']=str(out/(family+'-events.json'))
+        env['DIAG_JSON']=str(out/(family+'.json'))
+        env['DIAG_TMP']=str(work/('generated-'+family))
+        log=out/(family+'.txt')
+        rc=run(base,log,env,45)
+        case['exit']=rc;case['finished']=utc();failed=failed or rc!=0
+        print('DIAGNOSTIC',family,'exit',rc,flush=True)
+        # Emit bounded assertion evidence immediately even if later artifact upload is interrupted.
+        text=log.read_text(errors='replace')
+        print(text[-18000:],flush=True)
+        if hashes(work,frozen)!={n:baseline[n] for n in frozen}:
+            manifest['stop']='Unexpected source/baseline mutation';failed=True;save();break
+        if rc==124:
+            manifest['stop']='Invocation exceeded hard diagnostic timeout';failed=True;save();break
+        save()
+finally:
+    manifest['finished']=utc()
+    manifest['originalSourceUnchanged']=hashes(root,names)==baseline
+    manifest['frozenCopyUnchanged']=hashes(work,frozen)=={n:baseline[n] for n in frozen}
+    manifest['executedCount']=sum('exit' in c for c in manifest['cases'])
+    save()
+    # Only the temporary diagnostic directory created above is removed; original evidence stays in out.
+    shutil.rmtree(work)
+if not manifest['originalSourceUnchanged'] or not manifest['frozenCopyUnchanged']: raise SystemExit(2)
+raise SystemExit(1 if failed else 0)
+
+,'webkit-desktop'),
 ('save','tests/e2e/host-period-editor.spec.cjs:41',None,'webkit-desktop'),
 ('preview','tests/e2e/http-session.spec.cjs:53',None,'webkit-desktop'),
 ('verification','tests/e2e/http-session.spec.cjs:4',None,'mobile-emulation'),

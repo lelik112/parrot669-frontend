@@ -19,13 +19,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-          fetch-depth: 2
+          fetch-depth: 3
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
       - name: Verify exact source and one-shot scope
         run: |
-          test "$(git rev-parse HEAD^)" = d1fd07f4bc1ab41bd5adc9de6822f0d355961b11
+          test "$(git rev-parse HEAD^)" = 53e3db168fcbf9e1a3cfbc0a62995e8081186614
           git cat-file -e d1fd07f4bc1ab41bd5adc9de6822f0d355961b11^{tree}
           test "$(git diff --name-only d1fd07f4bc1ab41bd5adc9de6822f0d355961b11 HEAD | grep -vE '^\.github/(workflows/pr12-webkit-d7668.yml|diagnostics/pr12-webkit-d7668/(run.py|instrument.cjs))$' | wc -l)" = 0
           test "$GITHUB_RUN_ATTEMPT" = 1
