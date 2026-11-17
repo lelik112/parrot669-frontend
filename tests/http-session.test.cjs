@@ -7,25 +7,31 @@ const {createAuth}=require('../public/assets/shared/auth.js');
 const worker=require('../src/index.js').default;
 const response=(data,status=200,headers={})=>new Response(JSON.stringify(data),{status,headers});
 const defer=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {resolve,promise};};
-const user=(account='account-a',name='First')=>({accountId:account,username:name,parrotId:account==='account-a'?'P669-AAAA-AAAA-AAAA':'P669-BBBB-BBBB-BBBB',displayName:name});
+const user=(account='account-a',name='First')=>({accountId:account,username:name,parrotId:account==='account-a'?'P669-AAAA-AAAA-AAAA-AAAA':'P669-BBBB-BBBB-BBBB-BBBB',displayName:name});
 const root=()=>({});
 
-test('PM094 canonical profile grammar rejects aliases, coercion and normalization',()=>{
+test('PM094 HEX64 grammar accepts every boundary and rejects aliases or numeric coercion',()=>{
   const {isParrotId}=require('../public/assets/shared/identity.js');
-  for(const value of ['P669-AAAA-AAAA-AAAA','P669-Z999-2345-6HJK'])assert.equal(isParrotId(value),true);
-  for(const value of [null,undefined,{},['P669-AAAA-AAAA-AAAA'],123,'PAR-OLD',
-    '11111111-1111-4111-8111-111111111111','p669-aaaa-aaaa-aaaa',
-    ' P669-AAAA-AAAA-AAAA','P669-AAAA-AAAA-AAAA ','P669-AAAA-AAAA-AAAA\n',
-    'P669-AAAA-AAAA-AAAI','P669-AAAA-AAAA-AAAO','P669-AAAA-AAAA-AAA1','P669-AAAA-AAAA-AAA0',
-    'P669-AAAA-AAAA-AAA','P669-AAAA-AAAA-AAAAA','P669-ＡAAA-AAAA-AAAA'])
+  const valid=['P669-0000-0000-0000-0000','P669-0000-0000-0000-0001','P669-0123-4567-89AB-CDEF',
+    'P669-7FFF-FFFF-FFFF-FFFF','P669-8000-0000-0000-0000','P669-FFFF-FFFF-FFFF-FFFF'];
+  for(const value of valid)assert.equal(isParrotId(value),true,value);
+  const canonical=valid[2];
+  for(const value of [null,undefined,{},[canonical],123,0,2**63,'PAR-OLD',
+    '11111111-1111-4111-8111-111111111111','0123456789ABCDEF','P669-AAAA-AAAA-AAAA',
+    canonical.toLowerCase(),' '+canonical,canonical+' ',canonical+'\n',canonical+'\r\n',
+    'P669-0123-4567-89AB-CDEG','P669-0123-4567-89AB-CDEI','P669-0123-4567-89AB-CDEO',
+    'P669-0123-4567-89AB-CDE','P669-0123-4567-89AB-CDEFF','P669-0123-4567-89AB-CDEF-0000',
+    'P669-０123-4567-89AB-CDEF',canonical.replace(/-/g,'\u2010'),canonical+'\u0000'])
     assert.equal(isParrotId(value),false,JSON.stringify(value));
 });
 
 test('PM094 same-account ParrotId changes retire in-flight responses without clearing drafts',async()=>{
-  for(const next of ['P669-BBBB-BBBB-BBBB','P669-CCCC-CCCC-CCCC'])for(const status of [200,401]){
+  for(const [from,next] of [['P669-AAAA-AAAA-AAAA-AAAA','P669-BBBB-BBBB-BBBB-BBBB'],
+    ['P669-AAAA-AAAA-AAAA-AAAA','P669-CCCC-CCCC-CCCC-CCCC'],
+    ['P669-8000-0000-0000-0000','P669-8000-0000-0000-0001']])for(const status of [200,401]){
     const wait=defer(),storage=createStorage(root());
     const session=createSession({http:createHttp({fetch:()=>wait.promise}),storage});
-    session.setUser(user());const epoch=session.epoch;
+    session.setUser({...user(),parrotId:from});const epoch=session.epoch;
     const draft=JSON.stringify({body:'Unconfirmed',pending:{payload:{clientMessageId:'same-key'}}});
     storage.session.setItem('parrot669-draft:account-a:thread',draft);
     const old=session.request('/private',{authenticated:true});
@@ -35,7 +41,7 @@ test('PM094 same-account ParrotId changes retire in-flight responses without cle
     await assert.rejects(old,{kind:'stale'});
     assert.equal(session.status,'authenticated');assert.equal(session.user.parrotId,next);
     assert.equal(storage.session.getItem('parrot669-draft:account-a:thread'),draft);
-    session.setUser(user());assert.equal(session.epoch,epoch+2,'A to B to A must remain a new epoch');
+    session.setUser({...user(),parrotId:from});assert.equal(session.epoch,epoch+2,'A to B to A must remain a new epoch');
   }
 });
 
@@ -128,15 +134,15 @@ test('late response and late 401 from the previous account cannot update or expi
 test('same account profile update notifies without changing identity epoch; IDs are distinct',()=>{
   const session=createSession({http:()=>{},storage:createStorage(root())});const updates=[];
   const unsubscribe=session.subscribe(s=>updates.push(s));session.setUser(user());const epoch=session.epoch;
-  session.updateProfile({displayName:'Updated',accountId:'injected',parrotId:'P669-CCCC-CCCC-CCCC',id:'P669-CCCC-CCCC-CCCC',profile:{id:'P669-CCCC-CCCC-CCCC'}});assert.equal(session.epoch,epoch);assert.equal(updates.length,2);
+  session.updateProfile({displayName:'Updated',accountId:'injected',parrotId:'P669-CCCC-CCCC-CCCC-CCCC',id:'P669-CCCC-CCCC-CCCC-CCCC',profile:{id:'P669-CCCC-CCCC-CCCC-CCCC'}});assert.equal(session.epoch,epoch);assert.equal(updates.length,2);
   assert.equal(session.user.displayName,'Updated');assert.equal(session.user.accountId,'account-a');
-  assert.equal(session.user.parrotId,'P669-AAAA-AAAA-AAAA');assert.equal(Object.hasOwn(session.user,'profile'),false);assert.notEqual(session.user.accountId,session.user.parrotId);
-  for(const value of [null,[],{}, {id:'P669-BBBB-BBBB-BBBB'}, {displayName:null}])session.updateProfile(value);
+  assert.equal(session.user.parrotId,'P669-AAAA-AAAA-AAAA-AAAA');assert.equal(Object.hasOwn(session.user,'profile'),false);assert.notEqual(session.user.accountId,session.user.parrotId);
+  for(const value of [null,[],{}, {id:'P669-BBBB-BBBB-BBBB-BBBB'}, {displayName:null}])session.updateProfile(value);
   assert.equal(session.epoch,epoch);assert.equal(updates.length,2);assert.equal(session.user.displayName,'Updated');
   unsubscribe();session.setUser(user('b'));assert.equal(updates.length,2);
 });
 
-for(const [from,to] of [['P669-AAAA-AAAA-AAAA','P669-BBBB-BBBB-BBBB'],['P669-BBBB-BBBB-BBBB','P669-AAAA-AAAA-AAAA']])
+for(const [from,to] of [['P669-AAAA-AAAA-AAAA-AAAA','P669-BBBB-BBBB-BBBB-BBBB'],['P669-BBBB-BBBB-BBBB-BBBB','P669-AAAA-AAAA-AAAA-AAAA']])
 for(const outcome of ['success','401','network'])test(`PM094 refresh fences same-account ${from} to ${to}: ${outcome}`,async()=>{
   const old=defer(),current=defer();let calls=0;
   const session=createSession({http:()=>++calls===1?old.promise:current.promise,storage:createStorage(root())});
@@ -154,7 +160,7 @@ for(const outcome of ['success','401','network'])test(`PM094 refresh fences same
 });
 
 test('session schema errors are not anonymous; network failure is not expiry',async()=>{
-  for(const data of [{},{accountId:'a',profile:{}},{accountId:'a',profile:{id:'P669-AAAA-AAAA-AAAA'}},null,
+  for(const data of [{},{accountId:'a',profile:{}},{accountId:'a',profile:{id:'P669-AAAA-AAAA-AAAA-AAAA'}},null,
     ...[undefined,null,'',' ',[],123,'11111111-1111-4111-8111-111111111111','p669-aaaa-aaaa-aaaa'].map(parrotId=>({...user(),parrotId}))]){
     const session=createSession({http:createHttp({fetch:async()=>response(data)}),storage:createStorage(root())});
     await assert.rejects(session.refresh(),{kind:'protocol'});assert.equal(session.status,'unavailable');assert.equal(session.user,undefined);

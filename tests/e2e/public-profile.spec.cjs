@@ -3,7 +3,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const crypto = require('node:crypto');
 
-const parrotId='P669-AAAA-AAAA-AAAA';
+const parrotId='P669-AAAA-AAAA-AAAA-AAAA';
 const propertyId='11111111-1111-4111-8111-111111111111';
 const currentCssPath=path.join(__dirname,'../../public/assets/public-profile.css');
 const preV1V2CssPath=path.join(__dirname,'fixtures/public-profile-pre-v1v2-c5ad.css');

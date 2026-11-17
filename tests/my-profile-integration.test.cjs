@@ -11,8 +11,8 @@ const {bindProfileNavigation,profileReturnContext}=require('../public/assets/pro
 const root=path.resolve(__dirname,'..'),read=p=>fs.readFileSync(path.join(root,p),'utf8');
 const tick=async()=>{for(let i=0;i<16;i++)await new Promise(resolve=>setImmediate(resolve));};
 const deferred=()=>{let resolve;return {promise:new Promise(r=>resolve=r),resolve:value=>resolve(value)};};
-const settings=extra=>({parrotId:'P669-AAAA-AAAA-AAAA',displayName:'Saved member',about:'Saved About',published:false,revision:4,...extra});
-const user=accountId=>({accountId,email:'private@example.invalid',username:'synthetic',parrotId:accountId==='owner-a'?'P669-AAAA-AAAA-AAAA':'P669-BBBB-BBBB-BBBB',displayName:'Saved member'});
+const settings=extra=>({parrotId:'P669-AAAA-AAAA-AAAA-AAAA',displayName:'Saved member',about:'Saved About',published:false,revision:4,...extra});
+const user=accountId=>({accountId,email:'private@example.invalid',username:'synthetic',parrotId:accountId==='owner-a'?'P669-AAAA-AAAA-AAAA-AAAA':'P669-BBBB-BBBB-BBBB-BBBB',displayName:'Saved member'});
 
 async function harness(t,{url='/my-profile.html',sessionData={},anonymous=false}={}){
   const dom=new JSDOM(read('public/my-profile.html'),{url:'https://synthetic.test'+url,runScripts:'outside-only',pretendToBeVisual:true});
@@ -82,7 +82,7 @@ test('actual editor DOM sends full null-clearing command and minimal ACK never b
   const h=await harness(t);h.edit('editor-name',' Exact sent name ');h.edit('editor-about','');h.$('editor-save').click();await tick();
   assert.deepEqual(h.calls.find(c=>c.method==='PATCH').body,{displayName:' Exact sent name ',about:null,expectedRevision:4});
   assert.equal(h.$('editor-save').disabled,true);assert.equal(h.$('editor-name').value,' Exact sent name ');
-  assert.equal(h.w.ParrotCore.session.user.parrotId,'P669-AAAA-AAAA-AAAA');assert.equal(h.w.ParrotCore.session.user.displayName,'Saved member');
+  assert.equal(h.w.ParrotCore.session.user.parrotId,'P669-AAAA-AAAA-AAAA-AAAA');assert.equal(h.w.ParrotCore.session.user.displayName,'Saved member');
   assert(!Object.hasOwn(h.w.ParrotCore.session.user,'success'));
   assert.equal(h.calls.filter(c=>['POST','DELETE'].includes(c.method)).length,0);
 });
@@ -160,7 +160,7 @@ test('late Instagram read cannot restore prior same-account ParrotId or signed-o
   const h=await harness(t),held=deferred();h.intercept(call=>call.path==='/api/instagram'?held.promise:undefined);
   h.$('instagram-refresh').click();await tick();
   h.intercept(call=>call.path==='/api/instagram'?new Response('null'):undefined);
-  h.setProfile(settings({parrotId:'P669-BBBB-BBBB-BBBB'}));h.setUser({...user('owner-a'),parrotId:'P669-BBBB-BBBB-BBBB'});await tick();
+  h.setProfile(settings({parrotId:'P669-BBBB-BBBB-BBBB-BBBB'}));h.setUser({...user('owner-a'),parrotId:'P669-BBBB-BBBB-BBBB-BBBB'});await tick();
   held.resolve(new Response(JSON.stringify({userName:'OldPrivate',verified:true})));await tick();
   assert.equal(h.$('instagram-name').textContent,'');assert.equal(h.$('instagram-state').textContent,'No Instagram added');
   h.setUser(null);await tick();assert.equal(h.$('instagram-card').hidden,true);assert.equal(h.$('instagram-name').textContent,'');

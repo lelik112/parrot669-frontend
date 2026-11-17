@@ -25,7 +25,7 @@ async function installPublicFixture(page, {items=[property]} = {}) {
           propertyId:path.split('/').at(-1),
           propertyTitle:items.find(item => path.endsWith(item.propertyId)).propertyTitle,
           hostDisplayName:property.ownerDisplayName,
-          hostProfileId:'P669-BBBB-BBBB-BBBB', acceptingNewConversations:true
+          hostProfileId:'P669-BBBB-BBBB-BBBB-BBBB', acceptingNewConversations:true
         }
       : null;
     if (path === '/api/host/auth/me') return route.fulfill({status:401, json:data});
@@ -38,7 +38,7 @@ async function installPublicFixture(page, {items=[property]} = {}) {
 async function installHostFixture(page) {
   const seen = [];
   const user = {accountId:'fixture-owner', username:'fixture-owner', email:'fixture@example.invalid',
-    parrotId:'P669-BBBB-BBBB-BBBB', displayName:'Fixture host'};
+    parrotId:'P669-BBBB-BBBB-BBBB-BBBB', displayName:'Fixture host'};
   await page.route('https://fonts.googleapis.com/**', route => route.fulfill({contentType:'text/css', body:''}));
   await page.route('https://fonts.gstatic.com/**', route => route.abort());
   await page.route('**/api/**', route => {

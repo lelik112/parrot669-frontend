@@ -7,8 +7,8 @@ const {installCore}=require('./helpers/core.cjs');
 
 const html = fs.readFileSync(path.join(__dirname,'../public/profile.html'),'utf8');
 const script = fs.readFileSync(path.join(__dirname,'../public/assets/public-profile.js'),'utf8');
-const parrotId='P669-AAAA-AAAA-AAAA';
-const otherId='P669-BBBB-BBBB-BBBB';
+const parrotId='P669-AAAA-AAAA-AAAA-AAAA';
+const otherId='P669-BBBB-BBBB-BBBB-BBBB';
 const propertyId='11111111-1111-4111-8111-111111111111';
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 const profile=(overrides={})=>({
@@ -243,8 +243,8 @@ for(const query of ['debug=1','property=one&property=two','property='])test('inv
   const h=await page({url:`https://parrot669.com/p/${parrotId}?${query}`});t.after(()=>h.dom.window.close());
   assert.equal(h.calls.filter(c=>c.url.startsWith('/api/p/')).length,0);assert.equal(h.document.querySelector('#profile-unavailable').hidden,false);
 });
-for(const id of ['PAR-OLD','P669-K7M2Q8XZ','p669-aaaa-aaaa-aaaa','P669-AAAA-AAAA-AAA0',
-  ' P669-AAAA-AAAA-AAAA','P669-AAAA-AAAA-AAAA\n','11111111-1111-4111-8111-111111111111'])
+for(const id of ['PAR-OLD','P669-K7M2Q8XZ','p669-aaaa-aaaa-aaaa-aaaa','P669-AAAA-AAAA-AAAA-AAAG',
+  ' P669-AAAA-AAAA-AAAA-AAAA','P669-AAAA-AAAA-AAAA-AAAA\n','11111111-1111-4111-8111-111111111111'])
 test('noncanonical profile path does not fetch data or recover an alias '+JSON.stringify(id),async t=>{
   const h=await page({url:`https://parrot669.com/p/${encodeURIComponent(id)}`});t.after(()=>h.dom.window.close());
   assert.equal(h.calls.filter(c=>c.url.startsWith('/api/p/')).length,0);

@@ -7,14 +7,14 @@ const file = name => fs.readFileSync(path.join(__dirname,'../public',name),'utf8
 const ids = ['11111111-1111-4111-8111-111111111111','22222222-2222-4222-8222-222222222222',
   '33333333-3333-4333-8333-333333333333','44444444-4444-4444-8444-444444444444'];
 const [property, conversation, otherConversation] = ids;
-const profile = 'P669-BBBB-BBBB-BBBB';
+const profile = 'P669-BBBB-BBBB-BBBB-BBBB';
 const user = {accountId:'guest-account',username:'guest',parrotId:profile};
 const detail = (id=conversation, extra={}) => ({id,propertyId:property,propertyTitle:id===conversation?'Apartment':'Room',
-  hostProfileId:'P669-AAAA-AAAA-AAAA',guestProfileId:profile,
+  hostProfileId:'P669-AAAA-AAAA-AAAA-AAAA',guestProfileId:profile,
   otherDisplayName:'Host',lastSequence:1,readThroughSequence:0,unreadCount:1,lastMessagePreview:'Hello',
   updatedAt:'2026-09-23T10:00:00Z',canReply:true,blockedByMe:false,blockedByOther:false,...extra});
 const message = (sequence=1, extra={}) => ({id:`55555555-5555-4555-8555-${String(sequence).padStart(12,'0')}`,sequence,
-  senderProfileId:'P669-AAAA-AAAA-AAAA',clientMessageId:'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+  senderProfileId:'P669-AAAA-AAAA-AAAA-AAAA',clientMessageId:'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
   body:`Message ${sequence}`,from:null,to:null,createdAt:'2026-09-23T10:00:00Z',...extra});
 const flush = async () => { for(let i=0;i<8;i++) await new Promise(resolve=>setImmediate(resolve)); };
 const deferred = () => { let resolve; const promise=new Promise(r=>resolve=r); return {promise,resolve}; };
@@ -37,7 +37,7 @@ const invalidAckCases={
   'clientMessageId wrong type':(ack,first)=>{const value=first?ack.message:ack;const bad={...value,clientMessageId:[value.clientMessageId]};return first?{...ack,message:bad}:bad;},
   'different clientMessageId':(ack,first)=>{const bad={...(first?ack.message:ack),clientMessageId:'99999999-9999-4999-8999-999999999999'};return first?{...ack,message:bad}:bad;},
   'legacy UUID sender':(ack,first)=>{const bad={...(first?ack.message:ack),senderProfileId:'99999999-9999-4999-8999-999999999999'};return first?{...ack,message:bad}:bad;},
-  'different canonical sender':(ack,first)=>{const bad={...(first?ack.message:ack),senderProfileId:'P669-CCCC-CCCC-CCCC'};return first?{...ack,message:bad}:bad;},
+  'different canonical sender':(ack,first)=>{const bad={...(first?ack.message:ack),senderProfileId:'P669-CCCC-CCCC-CCCC-CCCC'};return first?{...ack,message:bad}:bad;},
   'lowercase sender':(ack,first)=>{const bad={...(first?ack.message:ack),senderProfileId:profile.toLowerCase()};return first?{...ack,message:bad}:bad;},
   'whitespace sender':(ack,first)=>{const bad={...(first?ack.message:ack),senderProfileId:profile+' '};return first?{...ack,message:bad}:bad;},
   'invalid sender type':(ack,first)=>{const bad={...(first?ack.message:ack),senderProfileId:[profile]};return first?{...ack,message:bad}:bad;},
@@ -258,7 +258,7 @@ test('PM140: late prior-account poll cannot install private nodes after replacem
   }});
   h.input(h.$('msg-compose').elements.body,'First private draft');
   hold=true;h.intervals[1]();await flush();
-  second=true;h.w.ParrotCore.session.setUser({...user,accountId:'second-account',parrotId:'P669-CCCC-CCCC-CCCC'});await flush();
+  second=true;h.w.ParrotCore.session.setUser({...user,accountId:'second-account',parrotId:'P669-CCCC-CCCC-CCCC-CCCC'});await flush();
   const row=h.$('msg-list').firstElementChild,bubble=h.$('msg-history').firstElementChild;
   late.resolve({items:[detail(conversation,{propertyTitle:'LATE first account'})],nextCursor:null});await flush();
   assert.equal(h.$('msg-list').firstElementChild,row);assert.equal(h.$('msg-history').firstElementChild,bubble);
@@ -275,9 +275,11 @@ test('same-account profile notification preserves composer DOM, draft and focus'
   assert.equal(h.w.document.activeElement,input);assert.equal(h.w.ParrotCore.session.user.displayName,'Updated profile');
 });
 
-for(const firstSend of [true,false])test(`PM094 ${firstSend?'first send':'reply'} profile identity change retires old ACK and preserves manual retry`,async t=>{
-  const late=deferred(),posts=[];let current=profile;
-  const h=await harness(t,{url:firstSend?`/messages.html?property=${property}`:`/messages.html?conversation=${conversation}`,handler:r=>{
+for(const [initial,next] of [[profile,'P669-CCCC-CCCC-CCCC-CCCC'],
+  ['P669-8000-0000-0000-0000','P669-8000-0000-0000-0001']])
+for(const firstSend of [true,false])test(`PM094 ${initial} ${firstSend?'first send':'reply'} profile identity change retires old ACK and preserves manual retry`,async t=>{
+  const late=deferred(),posts=[];let current=initial;
+  const h=await harness(t,{sessionUser:{...user,parrotId:initial},url:firstSend?`/messages.html?property=${property}`:`/messages.html?conversation=${conversation}`,handler:r=>{
     if(r.path==='/api/messaging/conversations'&&r.method==='GET')return {items:[detail(conversation,{guestProfileId:current})],nextCursor:null};
     if(r.path===`/api/messaging/conversations/${conversation}`)return detail(conversation,{guestProfileId:current});
     if(r.method==='POST'){
@@ -291,8 +293,9 @@ for(const firstSend of [true,false])test(`PM094 ${firstSend?'first send':'reply'
   h.input(form.elements.from,'2027-05-01');h.input(form.elements.to,'2027-05-04');h.submit(form);await flush();
   const key=`parrot669-draft:${user.accountId}:${firstSend?'property:'+property:conversation}`;
   const before=JSON.parse(h.w.ParrotCore.storage.session.getItem(key));
-  current='P669-CCCC-CCCC-CCCC';h.w.ParrotCore.session.setUser({...user,parrotId:current});await flush();
-  late.resolve(sendAck(posts[0],firstSend));await flush();
+  current=next;h.w.ParrotCore.session.setUser({...user,parrotId:current});await flush();
+  const oldAck=sendAck(posts[0],firstSend);(firstSend?oldAck.message:oldAck).senderProfileId=initial;
+  late.resolve(oldAck);await flush();
   const after=JSON.parse(h.w.ParrotCore.storage.session.getItem(key));
   assert.deepEqual(after.pending,before.pending);assert.equal(form.elements.body.value,before.body);
   assert.equal(form.elements.body.disabled,true);assert.equal(posts.length,1,'no automatic resend');
@@ -346,7 +349,7 @@ async function harness(t,{url='/messages.html',handler=()=>undefined,loggedIn=tr
     if(request.path==='/api/messaging/notification-settings') return response({enabled:true,language:'en'});
     if(request.path==='/api/messaging/conversations') return response({items:[],nextCursor:null});
     if(request.path===`/api/messaging/conversations/for-property/${property}`) return response(null);
-    if(request.path===`/api/messaging/contact-options/${property}`) return response({propertyId:property,propertyTitle:'Apartment',hostDisplayName:'Host',hostProfileId:'P669-AAAA-AAAA-AAAA',acceptingNewConversations:true});
+    if(request.path===`/api/messaging/contact-options/${property}`) return response({propertyId:property,propertyTitle:'Apartment',hostDisplayName:'Host',hostProfileId:'P669-AAAA-AAAA-AAAA-AAAA',acceptingNewConversations:true});
     if(request.path.endsWith('/read')) return response({throughSequence:request.body.throughSequence});
     throw Error(`Unexpected request: ${request.method} ${raw}`);
   };
@@ -509,9 +512,9 @@ test('polling highlights an incoming conversation before opening it and clears o
 });
 
 test('only the conversation host sees a profile link and keeps the same-account thread return',async t=>{
-  const owner={accountId:'owner-account',username:'owner',parrotId:'P669-AAAA-AAAA-AAAA'};
+  const owner={accountId:'owner-account',username:'owner',parrotId:'P669-AAAA-AAAA-AAAA-AAAA'};
   const handler=r=>{
-    if(r.path===`/api/messaging/conversations/${conversation}`) return detail(conversation,{hostProfileId:'P669-AAAA-AAAA-AAAA',guestProfileId:profile});
+    if(r.path===`/api/messaging/conversations/${conversation}`) return detail(conversation,{hostProfileId:'P669-AAAA-AAAA-AAAA-AAAA',guestProfileId:profile});
     if(r.path.endsWith(`/${conversation}/messages`)) return {items:[message()],nextAfterSequence:null};
   };
   const host=await harness(t,{url:`/messages.html?conversation=${conversation}`,sessionUser:owner,handler});
@@ -639,8 +642,8 @@ test('direct Messages entry explains private inbox; guest composer and auth gate
 });
 
 test('only the owner sees a link to this conversation’s existing property',async t=>{
-  const owner={...user,accountId:'owner-account',username:'owner',parrotId:'P669-AAAA-AAAA-AAAA'};
-  const metadata=detail(conversation,{hostProfileId:'P669-AAAA-AAAA-AAAA',guestProfileId:profile});
+  const owner={...user,accountId:'owner-account',username:'owner',parrotId:'P669-AAAA-AAAA-AAAA-AAAA'};
+  const metadata=detail(conversation,{hostProfileId:'P669-AAAA-AAAA-AAAA-AAAA',guestProfileId:profile});
   const handler=r=>{
     if(r.path===`/api/messaging/conversations/${conversation}`) return metadata;
     if(r.path.endsWith(`/${conversation}/messages`)) return {items:[message()],nextAfterSequence:null};
@@ -736,7 +739,7 @@ test('late block metadata cannot overwrite another selected conversation; accoun
   assert.equal(h.$('msg-history').textContent,'');assert.equal(h.$('msg-compose').elements.body.value,'');
   assert.equal(h.$('msg-property').textContent,'');assert.equal(h.$('msg-other').textContent,'');
   h.w.history.replaceState(null,'','/messages.html');
-  h.w.ParrotMessaging.setUser({...user,accountId:'another-account',parrotId:'P669-CCCC-CCCC-CCCC'});await flush();
+  h.w.ParrotMessaging.setUser({...user,accountId:'another-account',parrotId:'P669-CCCC-CCCC-CCCC-CCCC'});await flush();
   assert.equal(h.$('msg-compose').elements.body.value,'');
 });
 
@@ -776,7 +779,7 @@ test('host has no switch that claims to disable guest enquiries',async t=>{
 
 test('search always shows contact and dates, even with legacy opt-out or failed options request',async t=>{
   const h=await harness(t,{page:'search.html',url:'/search.html',loggedIn:false,handler:r=>{
-    if(r.path.includes('/contact-options/')) return {acceptingNewConversations:false,hostProfileId:'P669-AAAA-AAAA-AAAA'};
+    if(r.path.includes('/contact-options/')) return {acceptingNewConversations:false,hostProfileId:'P669-AAAA-AAAA-AAAA-AAAA'};
   }});
   const container=h.w.document.createElement('div');h.w.document.body.append(container);
   h.w.ParrotMessaging.attachContact(container,{propertyId:property,availableFrom:'2027-05-01',availableTo:'2027-05-04',links:[]});
@@ -790,7 +793,7 @@ test('search always shows contact and dates, even with legacy opt-out or failed 
 
 test('legacy opt-out cannot disable first message in the guest composer',async t=>{
   const h=await harness(t,{url:`/messages.html?property=${property}`,handler:r=>{
-    if(r.path.includes('/contact-options/')) return {propertyTitle:'Apartment',hostDisplayName:'Host',hostProfileId:'P669-AAAA-AAAA-AAAA',acceptingNewConversations:false};
+    if(r.path.includes('/contact-options/')) return {propertyTitle:'Apartment',hostDisplayName:'Host',hostProfileId:'P669-AAAA-AAAA-AAAA-AAAA',acceptingNewConversations:false};
   }});
   assert.equal(h.$('msg-compose').hidden,false);
   assert.equal(h.$('msg-send').disabled,false);
@@ -837,10 +840,10 @@ test('PM-002: verification nudge prepares an unsent draft regardless of legacy o
 });
 
 test('PM142 S1: owner links and direct action require one factual host side',async t=>{
-  const other='P669-AAAA-AAAA-AAAA';
+  const other='P669-AAAA-AAAA-AAAA-AAAA';
   for(const [name,hostProfileId,guestProfileId,allowed] of [
     ['host',profile,other,true],['guest',other,profile,false],
-    ['equal sides / actor both',profile,profile,false],['actor neither',other,'P669-CCCC-CCCC-CCCC',false],
+    ['equal sides / actor both',profile,profile,false],['actor neither',other,'P669-CCCC-CCCC-CCCC-CCCC',false],
     ['missing guest',profile,undefined,false],['empty guest',profile,'',false],
     ['blank guest',profile,'   ',false],['missing host',undefined,profile,false],
     ['empty host','',profile,false],['blank host','\t',profile,false],
@@ -867,7 +870,7 @@ test('PM142 S1: owner links and direct action require one factual host side',asy
 
 test('PM142 S1: history reconciliation keeps uncertain drafts unless all identity and context facts match',async t=>{
   const client='66666666-6666-4666-8666-666666666666';
-  const other='P669-AAAA-AAAA-AAAA';
+  const other='P669-AAAA-AAAA-AAAA-AAAA';
   const scenarios=[
     {name:'matching own reply',clear:true},
     {name:'matching own first send',first:true,clear:true},
@@ -883,7 +886,7 @@ test('PM142 S1: history reconciliation keeps uncertain drafts unless all identit
     {name:'invalid pending client',client:'not-a-client-id',invalidPending:true},
     {name:'array pending client',client:[client],invalidPending:true},
     {name:'equal sides / ambiguous actor',hostProfileId:profile,guestProfileId:profile},
-    {name:'actor outside pair',hostProfileId:other,guestProfileId:'P669-CCCC-CCCC-CCCC'},
+    {name:'actor outside pair',hostProfileId:other,guestProfileId:'P669-CCCC-CCCC-CCCC-CCCC'},
     {name:'missing participant',hostProfileId:undefined},
     {name:'controller snapshot has null own ID',ownId:null},
     {name:'controller snapshot loses own ID',ownId:undefined,sender:undefined,hostProfileId:undefined},
@@ -933,7 +936,7 @@ test('PM142 S1: history reconciliation keeps uncertain drafts unless all identit
 
 test('PM142 S1: first enquiry requires factual non-self identities without writing',async t=>{
   for(const [name,sessionUser,hostProfileId,canReply]of[
-    ['known other',user,'P669-AAAA-AAAA-AAAA',true],
+    ['known other',user,'P669-AAAA-AAAA-AAAA-AAAA',true],
     ['self',user,profile,false],['missing host',user,undefined,false],['empty host',user,'',false],
     ['blank host',user,' ',false],['non-string host',user,[profile],false]
   ])await t.test(name,async t=>{
@@ -1050,7 +1053,7 @@ for(const firstSend of [true,false])test(`flat AuthUser metadata update preserve
   const key=`parrot669-draft:${user.accountId}:${firstSend?'property:'+property:conversation}`;
   const saved=session.user&&h.w.ParrotCore.storage.session.getItem(key);
   assert.ok(saved);assert.equal(posts.length,1);
-  session.updateProfile({displayName:'Renamed while sending',parrotId:'P669-CCCC-CCCC-CCCC'});await flush();
+  session.updateProfile({displayName:'Renamed while sending',parrotId:'P669-CCCC-CCCC-CCCC-CCCC'});await flush();
   assert.equal(session.epoch,epoch);assert.equal(session.user.parrotId,profile);
   assert.equal(Object.hasOwn(session.user,'profile'),false);assert.equal(form.elements.body,input);
   assert.equal(h.w.ParrotCore.storage.session.getItem(key),saved);assert.equal(posts.length,1);

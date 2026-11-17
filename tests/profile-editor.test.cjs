@@ -5,10 +5,10 @@ const {HttpError,createHttp}=require('../public/assets/shared/http.js');
 const {createSession}=require('../public/assets/shared/session.js');
 const {createStorage}=require('../public/assets/shared/storage.js');
 
-const profile=(extra={})=>({parrotId:'P669-AAAA-AAAA-AAAA',displayName:'First',about:'Saved',published:false,revision:4,...extra});
+const profile=(extra={})=>({parrotId:'P669-AAAA-AAAA-AAAA-AAAA',displayName:'First',about:'Saved',published:false,revision:4,...extra});
 test('own settings require the canonical P669 grammar without alias normalization',()=>{
-  for(const parrotId of ['PAR-OLD','P669-K7M2Q8XZ','P669-AAAA-AAAA-AAA0','P669-AAAA-AAAA-AAAI',
-    'p669-aaaa-aaaa-aaaa',' P669-AAAA-AAAA-AAAA','P669-AAAA-AAAA-AAAA\n',
+  for(const parrotId of ['PAR-OLD','P669-K7M2Q8XZ','P669-AAAA-AAAA-AAAA-AAAG','P669-AAAA-AAAA-AAAA-AAAI',
+    'p669-aaaa-aaaa-aaaa-aaaa',' P669-AAAA-AAAA-AAAA-AAAA','P669-AAAA-AAAA-AAAA-AAAA\n',
     '11111111-1111-4111-8111-111111111111'])assert.equal(profileSettings(profile({parrotId})),false,parrotId);
 });
 const deferred=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};};
@@ -186,11 +186,11 @@ test('expiry and same-account revalidation clear private editor memory; no login
 test('shared HTTP/session integration rejects late 401 from the old account without expiring the new user',async()=>{
   const wait=deferred(),storage=createStorage({});let delayed=false;
   const session=createSession({storage,http:createHttp({fetch:async()=>delayed?wait.promise:new Response(JSON.stringify(profile()),{headers:{'Content-Type':'application/json'}})})});
-  session.setUser({accountId:'account-a',parrotId:'P669-AAAA-AAAA-AAAA'});
+  session.setUser({accountId:'account-a',parrotId:'P669-AAAA-AAAA-AAAA-AAAA'});
   const editor=createProfileEditor({request:(...args)=>session.request(...args)});
   session.subscribe(s=>editor.setSession({accountId:s.user?.accountId,epoch:s.epoch,status:s.status}));
   await editor.load();editor.edit({displayName:'Old'});delayed=true;const saving=editor.save(4);
-  session.setUser({accountId:'account-b',parrotId:'P669-BBBB-BBBB-BBBB'});wait.resolve(new Response('{}',{status:401}));
+  session.setUser({accountId:'account-b',parrotId:'P669-BBBB-BBBB-BBBB-BBBB'});wait.resolve(new Response('{}',{status:401}));
   assert.equal(await saving,false);assert.equal(session.user.accountId,'account-b');assert.equal(editor.state.draft,null);
 });
 
@@ -198,15 +198,15 @@ test('same-account P669 replacement retires private editor drafts and late save 
   const wait=deferred();let delayed=false;
   const session=createSession({storage:createStorage({}),http:createHttp({fetch:async()=>delayed?wait.promise
     :new Response(JSON.stringify(profile()),{headers:{'Content-Type':'application/json'}})})});
-  session.setUser({accountId:'account-a',parrotId:'P669-AAAA-AAAA-AAAA'});
+  session.setUser({accountId:'account-a',parrotId:'P669-AAAA-AAAA-AAAA-AAAA'});
   const editor=createProfileEditor({request:(...args)=>session.request(...args)});
   session.subscribe(s=>editor.setSession({accountId:s.user?.accountId,epoch:s.epoch,status:s.status}));
   await editor.load();editor.edit({displayName:'Private old draft'});delayed=true;const saving=editor.save(4);
-  session.setUser({accountId:'account-a',parrotId:'P669-BBBB-BBBB-BBBB'});
+  session.setUser({accountId:'account-a',parrotId:'P669-BBBB-BBBB-BBBB-BBBB'});
   assert.equal(editor.state.confirmed,null);assert.equal(editor.state.draft,null);
   wait.resolve(new Response(JSON.stringify({success:true,revision:5})));
   assert.equal(await saving,false);assert.equal(editor.state.confirmed,null);assert.equal(editor.state.draft,null);
-  assert.equal(session.user.parrotId,'P669-BBBB-BBBB-BBBB');
+  assert.equal(session.user.parrotId,'P669-BBBB-BBBB-BBBB-BBBB');
 });
 
 test('older/same-revision inconsistent reads and unsafe JSON revisions cannot become writable snapshots',async()=>{

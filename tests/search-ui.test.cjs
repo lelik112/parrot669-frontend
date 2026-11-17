@@ -36,7 +36,7 @@ async function harness(t, {handler=()=>undefined, saved=null, messaging=false, s
     if(url.pathname==='/api/host/auth/logout' && options.method==='POST') return new Response(null,{status:204});
     if(url.pathname.startsWith('/api/messaging/contact-options/')) {
       const id=decodeURIComponent(url.pathname.split('/').at(-1));
-      return response({acceptingNewConversations:false,hostProfileId:ownerProfiles[id]||'P669-BBBB-BBBB-BBBB'});
+      return response({acceptingNewConversations:false,hostProfileId:ownerProfiles[id]||'P669-BBBB-BBBB-BBBB-BBBB'});
     }
     if(url.pathname==='/api/locations/countries') return response([{code:'ES',name:'Spain'},{code:'BY',name:'Belarus'}]);
     if(url.pathname==='/api/locations/cities') return response((url.searchParams.get('country')==='ES'?
@@ -425,8 +425,8 @@ test('PM-048: search copy stays concise and the price-only label toggles its che
 });
 
 test('PM-049: Search logout clears identity and owned-card state without leaving the page',async t=>{
-  const h=await harness(t,{messaging:true,sessionUser:{accountId:'account',username:'tester',email:'private@example.test',parrotId:'P669-AAAA-AAAA-AAAA'},
-    ownerProfiles:{owned:'P669-AAAA-AAAA-AAAA'},handler:url=>url.pathname==='/api/search' ? [{...property('Barcelona'),propertyId:'owned'}] : undefined});
+  const h=await harness(t,{messaging:true,sessionUser:{accountId:'account',username:'tester',email:'private@example.test',parrotId:'P669-AAAA-AAAA-AAAA-AAAA'},
+    ownerProfiles:{owned:'P669-AAAA-AAAA-AAAA-AAAA'},handler:url=>url.pathname==='/api/search' ? [{...property('Barcelona'),propertyId:'owned'}] : undefined});
   await h.barcelona();
   assert.equal(h.$('search-account-indicator').textContent,'tester');
   assert.equal(h.w.document.body.textContent.includes('private@example.test'),false);
@@ -462,7 +462,7 @@ test('PM-050: anonymous Search exposes localized login and registration deep lin
 });
 
 test('PM-049: Search clears a BFCache account snapshot before revalidating the session',async t=>{
-  const h=await harness(t,{messaging:true,sessionUser:{accountId:'account',username:'tester',parrotId:'P669-AAAA-AAAA-AAAA'}});
+  const h=await harness(t,{messaging:true,sessionUser:{accountId:'account',username:'tester',parrotId:'P669-AAAA-AAAA-AAAA-AAAA'}});
   assert.equal(h.$('search-account').hidden,false);
   h.setSessionUser(null);
   const event=new h.w.Event('pageshow');
@@ -492,8 +492,8 @@ test('PM-024: every search card has a working contact link when legacy opt-in is
 
 test('BUG-019: signed-in username and owned property are clear in every language; other contact and sign-out stay correct',async t=>{
   const ownId='own-property',otherId='other-property';
-  const h=await harness(t,{messaging:true,sessionUser:{accountId:'account',username:'fixture-owner',parrotId:'P669-AAAA-AAAA-AAAA'},
-    ownerProfiles:{[ownId]:'P669-AAAA-AAAA-AAAA',[otherId]:'P669-BBBB-BBBB-BBBB'},handler:url=>url.pathname==='/api/search' ? [
+  const h=await harness(t,{messaging:true,sessionUser:{accountId:'account',username:'fixture-owner',parrotId:'P669-AAAA-AAAA-AAAA-AAAA'},
+    ownerProfiles:{[ownId]:'P669-AAAA-AAAA-AAAA-AAAA',[otherId]:'P669-BBBB-BBBB-BBBB-BBBB'},handler:url=>url.pathname==='/api/search' ? [
       {...property('Barcelona'),propertyId:ownId}, {...property('Barcelona'),propertyId:otherId}
     ]:undefined});
   await h.barcelona();

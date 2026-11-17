@@ -22,7 +22,7 @@ async function setup({calendars=[],verification='Required'}={}){
     const call={route,method,body};fixture.seen.push(call);
     const hook=fixture.hooks.get(method+' '+route);if(hook)return hook(call);
     let value,status=200;
-    if(route==='/auth/me')value={accountId:propertyId,email:'owner@example.test',username:'owner',parrotId:'P669-AAAA-AAAA-AAAA',displayName:'Owner'};
+    if(route==='/auth/me')value={accountId:propertyId,email:'owner@example.test',username:'owner',parrotId:'P669-AAAA-AAAA-AAAA-AAAA',displayName:'Owner'};
     else if(route==='/dashboard')value={properties:[{id:propertyId,title:'Source property',city:'Barcelona',countryCode:'ES',country:'Spain',accommodationType:'entire_place',bedrooms:1,sleeps:2,minStayDays:1,cleaningFeeCents:null,address:null,createdAt:'2030-01-01T00:00:00Z',availability:[],unavailability:[],listings:fixture.calendars.length?[{id:propertyId,url:publicUrl,showInSearch:true}]:[]}]};
     else if(route===snapshotPath)value={calendars:copy(fixture.calendars)};
     else if(route==='/geocode/countries')value=[{code:'ES',name:'Spain'}];
@@ -285,7 +285,7 @@ test('BFCache revalidation synchronously clears observations before restoring th
   h.fixture.hooks.set('GET /auth/me',()=>held.promise);
   const work=h.w.s5.revalidateRestoredPage();assert.equal(owner.size,0);
   assert.equal(owner.isCurrent(old),false);owner.transportSettled(old);assert.equal(owner.size,0);
-  held.resolve(new Response(JSON.stringify({accountId:propertyId,parrotId:'P669-AAAA-AAAA-AAAA',displayName:'Owner'}),{status:200}));
+  held.resolve(new Response(JSON.stringify({accountId:propertyId,parrotId:'P669-AAAA-AAAA-AAAA-AAAA',displayName:'Owner'}),{status:200}));
   await work;await tick();assert.equal(owner.size,0);assert.equal(h.w.s5.getState().authenticated,true);
 });
 
@@ -298,7 +298,7 @@ test('Check without an observation stays GET-only and accepts a new authenticate
   assert.equal(h.w.s5.calendarRevision(h.property().calendars[0]),8);assert.throws(()=>h.w.s5.calendarRevision(old));
 });
 
-for(const [from,to] of [['P669-AAAA-AAAA-AAAA','P669-BBBB-BBBB-BBBB'],['P669-BBBB-BBBB-BBBB','P669-AAAA-AAAA-AAAA']])
+for(const [from,to] of [['P669-AAAA-AAAA-AAAA-AAAA','P669-BBBB-BBBB-BBBB-BBBB'],['P669-BBBB-BBBB-BBBB-BBBB','P669-AAAA-AAAA-AAAA-AAAA']])
 for(const status of [204,500])test(`PM094 profile epoch retires old source transport without clearing its replacement: ${from} to ${to}, ${status}`,async t=>{
   const h=await setup();t.after(h.close);const session=h.w.ParrotCore.session;
   const identity=id=>({...session.user,parrotId:id,displayName:'Owner'});

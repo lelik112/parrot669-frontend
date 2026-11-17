@@ -3,8 +3,8 @@ const ids = Object.freeze({
   conversation: '33333333-3333-4333-8333-333333333333',
   accountA: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   accountB: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-  profileA: 'P669-AAAA-AAAA-AAAA',
-  profileB: 'P669-BBBB-BBBB-BBBB'
+  profileA: 'P669-AAAA-AAAA-AAAA-AAAA',
+  profileB: 'P669-BBBB-BBBB-BBBB-BBBB'
 });
 
 const identities = Object.freeze({

@@ -142,7 +142,7 @@ test('Host account switch removes previous private cards before the next dashboa
   await installHostFixture(page);
   let account='a',releaseB;
   const bReady=new Promise(resolve=>releaseB=resolve);
-  await page.route('**/api/host/auth/me',route=>route.fulfill({json:{accountId:account,username:account,parrotId:account==='a'?'P669-AAAA-AAAA-AAAA':'P669-BBBB-BBBB-BBBB'}}));
+  await page.route('**/api/host/auth/me',route=>route.fulfill({json:{accountId:account,username:account,parrotId:account==='a'?'P669-AAAA-AAAA-AAAA-AAAA':'P669-BBBB-BBBB-BBBB-BBBB'}}));
   await page.route(url=>url.pathname==='/api/host/dashboard',async route=>{
     const requestedAccount=account;
     if(requestedAccount==='b')await bReady;

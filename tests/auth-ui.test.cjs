@@ -160,14 +160,14 @@ function setup(routes = {}, search = '', {hash = '', sessionData = {}, layout = 
   }};
 }
 const settle = () => new Promise(resolve => setImmediate(resolve));
-const user = {accountId:'test-account',email:'test@example.test',parrotId:'P669-AAAA-AAAA-AAAA',displayName:'Owner'};
+const user = {accountId:'test-account',email:'test@example.test',parrotId:'P669-AAAA-AAAA-AAAA-AAAA',displayName:'Owner'};
 
 const flushHost = async () => { for(let i=0;i<10;i++) await settle(); };
 const privateProperty = (id,title) => ({id,title,city:'Barcelona',cityNative:null,country:'Spain',countryCode:'ES',accommodationType:'entire_place',bedrooms:1,sleeps:2,minStayDays:1,cleaningFeeCents:null,address:null,createdAt:'2026-10-01T00:00:00Z',availability:[],unavailability:[],listings:[],calendars:[]});
 
 for (const [before, after] of [
-  ['P669-AAAA-AAAA-AAAA', 'P669-BBBB-BBBB-BBBB'],
-  ['P669-BBBB-BBBB-BBBB', 'P669-AAAA-AAAA-AAAA']
+  ['P669-AAAA-AAAA-AAAA-AAAA', 'P669-BBBB-BBBB-BBBB-BBBB'],
+  ['P669-BBBB-BBBB-BBBB-BBBB', 'P669-AAAA-AAAA-AAAA-AAAA']
 ]) for (const status of [200, 401]) test(`PM094 same-account profile ${before} → ${after} retires Host DOM and late ${status}`, async () => {
   const identity = id => ({accountId:'same-account', parrotId:id, displayName:'Owner'});
   let current = identity(before), reads = 0, releaseOld, releaseNew;
@@ -209,7 +209,7 @@ for (const [before, after] of [
 });
 
 test('PM138 R1: /me A→B clears private DOM/controllers/context before B dashboard resolves',async()=>{
-  let current={accountId:'account-a',username:'A',parrotId:'P669-AAAA-AAAA-AAAA'};
+  let current={accountId:'account-a',username:'A',parrotId:'P669-AAAA-AAAA-AAAA-AAAA'};
   let resolveB;
   const bDashboard=new Promise(resolve=>resolveB=resolve);
   const app=setup({'/auth/me':()=>({body:current}),'/dashboard':()=>current.accountId==='account-a'
@@ -220,7 +220,7 @@ test('PM138 R1: /me A→B clears private DOM/controllers/context before B dashbo
   let disposed=0;app.run('calendarVerificationPanels').push({dispose(){disposed++;}});
   app.run('propertyAddressEditors').set('old-form',{dispose(){disposed++;}});
   const before=app.calls.filter(x=>x==='/dashboard').length;
-  current={accountId:'account-b',username:'B',parrotId:'P669-BBBB-BBBB-BBBB'};
+  current={accountId:'account-b',username:'B',parrotId:'P669-BBBB-BBBB-BBBB-BBBB'};
   await app.run('window.ParrotCore.session.refresh()');
   assert.equal(app.run('accountId'),'account-b');
   assert.equal(app.nodes.get('host-properties').children.includes(oldCard),false);
@@ -240,11 +240,11 @@ test('PM138 R1: /me A→B clears private DOM/controllers/context before B dashbo
 });
 
 test('PM138 R1: delayed A dashboard cannot overwrite B dashboard or private DOM',async()=>{
-  let current={accountId:'account-a',parrotId:'P669-AAAA-AAAA-AAAA'},resolveA;
+  let current={accountId:'account-a',parrotId:'P669-AAAA-AAAA-AAAA-AAAA'},resolveA;
   const aDashboard=new Promise(resolve=>resolveA=resolve);
   const app=setup({'/auth/me':()=>({body:current}),'/dashboard':()=>current.accountId==='account-a'
     ? aDashboard : {body:{properties:[privateProperty('private-b','B')]}}});
-  await flushHost();current={accountId:'account-b',parrotId:'P669-BBBB-BBBB-BBBB'};
+  await flushHost();current={accountId:'account-b',parrotId:'P669-BBBB-BBBB-BBBB-BBBB'};
   await app.run('window.ParrotCore.session.refresh()');await flushHost();
   assert.equal(app.run('state.properties[0]?.id'),'private-b');
   const card=app.nodes.get('host-properties').children[0];
@@ -352,11 +352,11 @@ test('PM138 calendar rejects fabricated and obsolete snapshot objects, accepts r
 });
 
 for(const status of [200,401])test(`PM138 delayed old-account calendar snapshot ${status} cannot rebuild or expire B`,async()=>{
-  let current={accountId:'account-a',parrotId:'P669-AAAA-AAAA-AAAA'},resolveA;
+  let current={accountId:'account-a',parrotId:'P669-AAAA-AAAA-AAAA-AAAA'},resolveA;
   const pending=new Promise(resolve=>resolveA=resolve);
   const app=setup({'/auth/me':()=>({body:current}),'/dashboard':()=>({body:{properties:[privateProperty(current.accountId==='account-a'?calendarProperty:'private-b',current.accountId)]}}),
     [`/properties/${calendarProperty}/calendars`]:()=>pending});
-  await flushHost();current={accountId:'account-b',parrotId:'P669-BBBB-BBBB-BBBB'};
+  await flushHost();current={accountId:'account-b',parrotId:'P669-BBBB-BBBB-BBBB-BBBB'};
   await app.run('window.ParrotCore.session.refresh()');await flushHost();
   const card=app.nodes.get('host-properties').children[0];
   resolveA(status===200?{body:{calendars:[calendarView()]}}:{status:401,body:{error:'old A expired',code:'AUTHENTICATION_REQUIRED'}});await flushHost();
@@ -400,7 +400,7 @@ for(const status of [204,401])test(`PM138 old-account calendar command ${status}
   const app=calendarSetup({command:()=>pending});await flushHost();
   const command=app.run(`syncCalendar(${calendarCommand})`);
   await flushHost();
-  app.run('window.ParrotCore.session.setUser({accountId:"account-b",parrotId:"P669-BBBB-BBBB-BBBB"})');
+  app.run('window.ParrotCore.session.setUser({accountId:"account-b",parrotId:"P669-BBBB-BBBB-BBBB-BBBB"})');
   await flushHost();const before=app.calls.filter(r=>r==='/dashboard').length;
   app.nodes.get('host-status').textContent='B status';
   resolveCommand(status===204?{status:204}:{status:401,body:{code:'AUTHENTICATION_REQUIRED',error:'Old account'}});
@@ -412,8 +412,8 @@ for(const status of [204,401])test(`PM138 old-account calendar command ${status}
 
 test('Host retains private account summary and exposes the common editor without a second profile writer',async()=>{
   const app=setup({
-    '/auth/me':{body:{accountId:'owner-1',email:'private@example.test',username:'my-login',parrotId:'P669-AAAA-AAAA-AAAA',displayName:'Old host'}},
-    '/dashboard':{body:{profile:{id:'P669-AAAA-AAAA-AAAA',displayName:'Old host'},properties:[]}}
+    '/auth/me':{body:{accountId:'owner-1',email:'private@example.test',username:'my-login',parrotId:'P669-AAAA-AAAA-AAAA-AAAA',displayName:'Old host'}},
+    '/dashboard':{body:{profile:{id:'P669-AAAA-AAAA-AAAA-AAAA',displayName:'Old host'},properties:[]}}
   });
   await settle();
   assert.equal(app.nodes.get('host-profile').hidden,false);
@@ -426,10 +426,10 @@ test('Host retains private account summary and exposes the common editor without
 });
 
 test('PM-049: Host clears private BFCache DOM before session revalidation',async()=>{
-  let current={accountId:'owner-1',email:'private@example.test',username:'owner',parrotId:'P669-AAAA-AAAA-AAAA',displayName:'Host'};
+  let current={accountId:'owner-1',email:'private@example.test',username:'owner',parrotId:'P669-AAAA-AAAA-AAAA-AAAA',displayName:'Host'};
   const app=setup({
     '/auth/me':()=>current ? {body:current} : {status:401,body:{error:'unauthorized'}},
-    '/dashboard':{body:{profile:{id:'P669-AAAA-AAAA-AAAA',displayName:'Host'},properties:[]}}
+    '/dashboard':{body:{profile:{id:'P669-AAAA-AAAA-AAAA-AAAA',displayName:'Host'},properties:[]}}
   });
   await settle();
   assert.equal(app.nodes.get('host-profile').hidden,false);
@@ -447,8 +447,8 @@ test('PM-049: Host clears private BFCache DOM before session revalidation',async
 test('Host logout still clears the account-bound profile-return context after writer retirement',async()=>{
   const key='parrot669-profile-return';
   const app=setup({
-    '/auth/me':{body:{accountId:'owner-1',email:'private@example.test',username:'owner',parrotId:'P669-AAAA-AAAA-AAAA',displayName:'Owner'}},
-    '/dashboard':{body:{profile:{id:'P669-AAAA-AAAA-AAAA',displayName:'Owner'},properties:[]}}
+    '/auth/me':{body:{accountId:'owner-1',email:'private@example.test',username:'owner',parrotId:'P669-AAAA-AAAA-AAAA-AAAA',displayName:'Owner'}},
+    '/dashboard':{body:{profile:{id:'P669-AAAA-AAAA-AAAA-AAAA',displayName:'Owner'},properties:[]}}
   },'',{sessionData:{[key]:JSON.stringify({accountId:'owner-1',conversationId:'22222222-2222-4222-8222-222222222222',savedAt:Date.now()})}});
   await settle();assert.notEqual(app.run(`sessionStorage.getItem('${key}')`),null);
   await app.nodes.get('reset-host').emit('click');
@@ -1363,7 +1363,7 @@ test('property name can be edited, errors preserve it, successful save refreshes
 
 test('host navigation asks before dropping a draft and restores only this account’s object context',async()=>{
   const app=setup();await settle();
-  app.run('setAuthenticated({accountId:"host-a",email:"host@example.test",parrotId:"P669-AAAA-AAAA-AAAA",displayName:"Owner"});renderAuthState();state.properties=[{id:"property-1"}];expandedPropertyIds.add("property-1");unsavedHostChanges=true');
+  app.run('setAuthenticated({accountId:"host-a",email:"host@example.test",parrotId:"P669-AAAA-AAAA-AAAA-AAAA",displayName:"Owner"});renderAuthState();state.properties=[{id:"property-1"}];expandedPropertyIds.add("property-1");unsavedHostChanges=true');
   app.run('confirm=()=>false');
   const click=()=>app.run('document.emit("click",{target:{closest:()=>({isConnected:true,origin:"https://parrot669.com",pathname:"/messages.html"})},preventDefault(){this.cancelled=true}})');
   const rejected=await click();assert.equal(rejected,undefined);
@@ -1374,13 +1374,13 @@ test('host navigation asks before dropping a draft and restores only this accoun
   assert.equal(app.run('expandedPropertyIds.has("property-1")'),true);
   assert.equal(scroll,380);
   assert.equal(app.run('sessionStorage.values.size'),0);
-  app.run('sessionStorage.setItem("parrot669-host-return:host-a",JSON.stringify({ids:["property-1"],scrollY:300}));setAuthenticated({accountId:"host-b",email:"b@example.test",parrotId:"P669-BBBB-BBBB-BBBB",displayName:"Other owner"});expandedPropertyIds.clear();restoreHostContext()');
+  app.run('sessionStorage.setItem("parrot669-host-return:host-a",JSON.stringify({ids:["property-1"],scrollY:300}));setAuthenticated({accountId:"host-b",email:"b@example.test",parrotId:"P669-BBBB-BBBB-BBBB-BBBB",displayName:"Other owner"});expandedPropertyIds.clear();restoreHostContext()');
   assert.equal(app.run('expandedPropertyIds.size'),0);
 });
 
 test('return from Messages restores the saved position without smooth scrolling',async()=>{
   const app=setup({'/dashboard':{body:{properties:[]}}});await settle();
-  app.run('setAuthenticated({accountId:"host-a",email:"host@example.test",parrotId:"P669-AAAA-AAAA-AAAA",displayName:"Owner"});sessionStorage.setItem("parrot669-host-return:host-a",JSON.stringify({ids:[],scrollY:3329}))');
+  app.run('setAuthenticated({accountId:"host-a",email:"host@example.test",parrotId:"P669-AAAA-AAAA-AAAA-AAAA",displayName:"Owner"});sessionStorage.setItem("parrot669-host-return:host-a",JSON.stringify({ids:[],scrollY:3329}))');
   await app.run('syncDashboard()');
   assert.equal(app.run('window.scrollOptions.top'),3329);
   assert.equal(app.run('window.scrollOptions.behavior'),'instant');
@@ -1389,7 +1389,7 @@ test('return from Messages restores the saved position without smooth scrolling'
 
 test('return from Messages retries the saved position after late host layout growth',async()=>{
   const app=setup({'/dashboard':{body:{properties:[]}}},'',{layout:{scrollHeight:1200,innerHeight:600}});await settle();
-  app.run('setAuthenticated({accountId:"host-a",email:"host@example.test",parrotId:"P669-AAAA-AAAA-AAAA",displayName:"Owner"});sessionStorage.setItem("parrot669-host-return:host-a",JSON.stringify({ids:[],scrollY:2678}))');
+  app.run('setAuthenticated({accountId:"host-a",email:"host@example.test",parrotId:"P669-AAAA-AAAA-AAAA-AAAA",displayName:"Owner"});sessionStorage.setItem("parrot669-host-return:host-a",JSON.stringify({ids:[],scrollY:2678}))');
   await app.run('syncDashboard()');
   assert.equal(app.run('window.scrollY'),600);
   app.run('document.documentElement.scrollHeight=3614');
@@ -1402,7 +1402,7 @@ test('Messages property deep link opens only the owned card and returns to its c
   const first='11111111-1111-4111-8111-111111111111';
   const second='22222222-2222-4222-8222-222222222222';
   const conversation='33333333-3333-4333-8333-333333333333';
-  const routes={'/auth/me':{body:{accountId:'owner-a',email:'owner@example.test',parrotId:'P669-AAAA-AAAA-AAAA',displayName:'Owner'}},
+  const routes={'/auth/me':{body:{accountId:'owner-a',email:'owner@example.test',parrotId:'P669-AAAA-AAAA-AAAA-AAAA',displayName:'Owner'}},
     '/dashboard':{body:{properties:[privateProperty(first,'First home'),
       {...privateProperty(second,'Second home'),bedrooms:2,sleeps:3}]}}};
   const app=setup(routes,`?property=${second}&conversation=${conversation}`);
@@ -1564,7 +1564,7 @@ for(const status of [204,403])test(`late calendar connect ${status} cannot mutat
   let release;const pending=new Promise(resolve=>release=resolve);
   const app=connectSetup(()=>pending);await flushHost();
   const {submit}=await submitConnect(app);const work=submit();await flushHost();
-  app.run('window.ParrotCore.session.setUser({accountId:"replacement",parrotId:"P669-CCCC-CCCC-CCCC"})');
+  app.run('window.ParrotCore.session.setUser({accountId:"replacement",parrotId:"P669-CCCC-CCCC-CCCC-CCCC"})');
   await flushHost();
   const before=app.calls.filter(x=>x==='/dashboard').length;
   const message=app.nodes.get('host-status').textContent;

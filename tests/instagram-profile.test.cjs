@@ -5,7 +5,7 @@ const {createHttp}=require('../public/assets/shared/http.js');
 const {createSession}=require('../public/assets/shared/session.js');
 const {createStorage}=require('../public/assets/shared/storage.js');
 const deferred=()=>{let resolve;return {promise:new Promise(r=>resolve=r),resolve:v=>resolve(v)};};
-const user=(parrotId='P669-AAAA-AAAA-AAAA',accountId='account-a')=>({accountId,parrotId,displayName:'Owner'});
+const user=(parrotId='P669-AAAA-AAAA-AAAA-AAAA',accountId='account-a')=>({accountId,parrotId,displayName:'Owner'});
 const response=(body,status=200)=>new Response(JSON.stringify(body),{status});
 function fixture(){
   const calls=[],changes=[];let handler=()=>response(null);
@@ -36,8 +36,8 @@ test('first error is unknown, malformed success rejected, own prior snapshot exp
   assert.deepEqual(f.reader.state,{phase:'error',value:{userName:'Own.Name',verified:true},busy:false});
   assert.equal(JSON.stringify(f.reader.state).includes('CANARY'),false);assert.equal(f.calls.length,3);
 });
-for(const [next,status] of [[user('P669-BBBB-BBBB-BBBB'),200],[user('P669-BBBB-BBBB-BBBB'),401],
-  [user('P669-BBBB-BBBB-BBBB','account-b'),200],[user('P669-BBBB-BBBB-BBBB','account-b'),401]])
+for(const [next,status] of [[user('P669-BBBB-BBBB-BBBB-BBBB'),200],[user('P669-BBBB-BBBB-BBBB-BBBB'),401],
+  [user('P669-BBBB-BBBB-BBBB-BBBB','account-b'),200],[user('P669-BBBB-BBBB-BBBB-BBBB','account-b'),401]])
 test('late old owner '+next.accountId+'/'+status+' cannot paint or expire new identity',async()=>{
   const f=fixture(),held=deferred();f.reply(()=>held.promise);const old=f.reader.load();
   f.session.setUser(next);assert.equal(f.reader.state.value,undefined);

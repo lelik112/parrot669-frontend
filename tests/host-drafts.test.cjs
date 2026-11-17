@@ -10,7 +10,7 @@ const source = fs.readFileSync(path.join(root, 'public/assets/host.js'), 'utf8')
 const html = fs.readFileSync(path.join(root, 'public/host.html'), 'utf8');
 const deferred = () => {let resolve, reject; const promise = new Promise((a, b) => {resolve = a; reject = b;}); return {promise, resolve, reject};};
 const dashboardProfile = user => ({id:user.parrotId,displayName:user.displayName});
-const user = (id = 'account-a', name = 'Owner') => ({accountId:id, email:'owner@example.test', username:'owner', parrotId:id === 'account-a' ? 'P669-AAAA-AAAA-AAAA' : 'P669-BBBB-BBBB-BBBB', displayName:name});
+const user = (id = 'account-a', name = 'Owner') => ({accountId:id, email:'owner@example.test', username:'owner', parrotId:id === 'account-a' ? 'P669-AAAA-AAAA-AAAA-AAAA' : 'P669-BBBB-BBBB-BBBB-BBBB', displayName:name});
 const property = (id, title) => ({id, title, city:'Barcelona', cityNative:null, country:'Spain', countryCode:'ES', accommodationType:'entire_place', bedrooms:2, sleeps:4, minStayDays:1, cleaningFeeCents:null, createdAt:'2026-10-01T00:00:00Z', address:null, listings:[], availability:[], unavailability:[]});
 const tick = async () => {for (let i = 0; i < 12; i++) await new Promise(resolve => setImmediate(resolve));};
 

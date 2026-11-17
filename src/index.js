@@ -115,7 +115,7 @@ const PROPERTY_KEYS = new Set([
 const LISTING_KEYS = new Set(["platform", "url", "calendarControlStatus"]);
 // The public proxy validates the same wire grammar as the browser and backend.
 const isParrotId = value => typeof value === "string"
-  && /^P669-[A-HJ-NP-Z2-9]{4}(?:-[A-HJ-NP-Z2-9]{4}){2}$/.test(value) && value.length === 19;
+  && /^P669-[0-9A-F]{4}(?:-[0-9A-F]{4}){3}$/.test(value) && value.length === 24;
 const exactKeys = (value, allowed, required = []) =>
   value && typeof value === "object" && !Array.isArray(value)
   && Object.keys(value).every((key) => allowed.has(key))
@@ -155,10 +155,42 @@ const validPublicProfilePayload = (payload, expectedParrotId, expectedPropertyId
     && boundedText(listing.url, 2048)
     && boundedText(listing.calendarControlStatus, 80));
 };
+const validPublicRetryAfter = (value) => {
+  if (!value || value.length > 128) return false;
+  if (/^[0-9]+$/.test(value)) return true;
+  // RFC 9110 HTTP-date accepts IMF-fixdate and both obsolete wire formats.
+  // Validate a date without converting it to a delay or rewriting the forwarded value.
+  let canonical = value;
+  const obsolete = /^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday), ([0-9]{2})-([A-Z][a-z]{2})-([0-9]{2}) ([0-9]{2}:[0-9]{2}:[0-9]{2}) GMT$/.exec(value);
+  const asctime = /^([A-Z][a-z]{2}) ([A-Z][a-z]{2}) ([ 0-9][0-9]) ([0-9]{2}:[0-9]{2}:[0-9]{2}) ([0-9]{4})$/.exec(value);
+  if (obsolete) {
+    const currentYear = new Date().getUTCFullYear();
+    let year = Math.floor(currentYear / 100) * 100 + Number(obsolete[4]);
+    if (year > currentYear + 50) year -= 100;
+    canonical = `${obsolete[1].slice(0,3)}, ${obsolete[2]} ${obsolete[3]} ${year} ${obsolete[5]} GMT`;
+  } else if (asctime) {
+    canonical = `${asctime[1]}, ${asctime[3].replace(" ","0")} ${asctime[2]} ${asctime[5]} ${asctime[4]} GMT`;
+  }
+  if (!/^[A-Z][a-z]{2}, [0-9]{2} [A-Z][a-z]{2} [0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2} GMT$/.test(canonical)) return false;
+  // HTTP permits leap second 60; Date does not represent it. Check the same calendar instant at second 59.
+  const checked = canonical.replace(/:60 GMT$/, ":59 GMT");
+  return new Date(checked).toUTCString() === checked;
+};
 const publicProfileResponse = async (response, expectedParrotId, expectedPropertyId) => {
   if (response.status !== 200) {
     if (response.status === 404) return json({error:"Not found"}, 404);
     if (response.status === 401 || response.status === 403) return json({error:"Not available"}, 404);
+    if (response.status === 429 || response.status === 503) {
+      const result = json({error:"Public profile service unavailable"}, response.status);
+      const requestId = response.headers.get("X-Request-ID");
+      const retryAfter = response.headers.get("Retry-After");
+      // Only bounded opaque IDs and a delay/date are public; never copy the upstream error or cookies.
+      if (requestId && /^[A-Za-z0-9._-]{1,128}$/.test(requestId))
+        result.headers.set("X-Request-ID", requestId);
+      if (validPublicRetryAfter(retryAfter))
+        result.headers.set("Retry-After", retryAfter);
+      return result;
+    }
     return json({error:"Public profile service unavailable"}, 502);
   }
   let text;
