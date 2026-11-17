@@ -13,13 +13,13 @@
   <link rel="stylesheet" href="/assets/styles.css" />
   <link rel="stylesheet" href="/assets/messaging.css" />
 </head>
-<body class="messages-page" data-messaging-version="1">
+<body class="messages-page" data-messaging-version="2" data-messages-language-ready="false">
   <header class="host-topbar">
     <a class="brand" href="/" aria-label="PARROT 669 home"><span class="brand-copy"><strong>PARROT 669</strong><small data-msg-i18n="messages">Messages</small></span></a>
     <div class="host-topbar-actions">
       <div class="lang-switcher host-lang-switcher" aria-label="Language">
-        <button type="button" data-msg-lang="en">EN</button><button type="button" data-msg-lang="es">ES</button>
-        <button type="button" data-msg-lang="ca">CA</button><button type="button" data-msg-lang="ru">RU</button>
+        <button type="button" data-msg-lang="en" disabled>EN</button><button type="button" data-msg-lang="es" disabled>ES</button>
+        <button type="button" data-msg-lang="ca" disabled>CA</button><button type="button" data-msg-lang="ru" disabled>RU</button>
       </div>
       <div class="host-account-actions">
         <a class="host-auth-link" id="msg-login-link" href="#msg-auth" data-msg-i18n="login" hidden>Log in</a>
@@ -33,27 +33,17 @@
     <a href="/search.html" id="msg-search-link">Find availability</a>
     <a href="/host.html" class="housing-host-link" id="msg-host-link">For hosts</a>
     <a href="/messages.html" class="active messaging-nav-link" aria-current="page"><span data-msg-i18n="messages">Messages</span><span class="messaging-badge" data-msg-unread hidden></span></a>
+    <a href="/my-profile.html" data-profile-navigation-copy="nav.profile">My profile</a>
   </nav>
   <main class="messages-shell">
     <div class="messages-intro">
       <p class="eyebrow" data-msg-i18n="messagesEyebrow">PRIVATE CONVERSATIONS</p>
-      <h1><span data-msg-i18n="messagesTitleFirst">Plan the stay.</span> <span class="messages-title-accent" data-msg-i18n="messagesTitleAccent">Keep the conversation together.</span></h1>
+      <h1 class="messages-marketing-title"><span data-msg-i18n="messagesTitleFirst">Plan the stay.</span> <span class="messages-title-accent" data-msg-i18n="messagesTitleAccent">Keep the conversation together.</span></h1>
+      <h1 class="messages-working-title" data-msg-i18n="messages">Messages</h1>
       <p data-msg-i18n="messagesLead">Your conversations with hosts and guests live here.</p>
     </div>
     <p id="msg-status" class="messaging-status" role="status" aria-live="polite"></p>
     <button id="msg-session-retry" type="button" class="button button-small button-ghost" data-msg-i18n="retry" hidden>Try again</button>
-
-    <details id="msg-email-settings" class="messaging-email-settings" hidden>
-      <summary data-msg-i18n="emailSettings">Email notifications</summary>
-      <div class="messaging-email-controls">
-        <label class="messaging-toggle"><input id="msg-email-enabled" type="checkbox" disabled /><span data-msg-i18n="emailEnabled">Email me about unread messages</span></label>
-        <label class="messaging-email-language"><span data-msg-i18n="emailLanguage">Email language</span><select id="msg-email-language" disabled>
-          <option value="en">English</option><option value="es">Español</option><option value="ca">Català</option><option value="ru">Русский</option>
-        </select></label>
-      </div>
-      <p id="msg-email-status" class="messaging-status" role="status" aria-live="polite"></p>
-      <button id="msg-email-retry" type="button" class="text-button" data-msg-i18n="retry" hidden>Try again</button>
-    </details>
 
     <section id="msg-auth" class="messaging-auth" hidden>
       <p id="msg-auth-lead" data-msg-i18n="authLead">Log in to see your private conversations. To contact a host, start from a property in search.</p>
@@ -82,7 +72,8 @@
     <div class="messages-layout" id="messages-app" hidden>
       <aside id="msg-inbox" class="messages-inbox" aria-labelledby="msg-inbox-title">
         <div class="messages-inbox-heading"><h2 id="msg-inbox-title" data-msg-i18n="conversations">Conversations</h2></div>
-        <p id="msg-inbox-status" class="messaging-hint" role="status"></p>
+        <p id="msg-inbox-status" class="messaging-status" role="status" aria-live="polite"></p>
+        <button type="button" id="msg-inbox-retry" class="text-button" data-msg-i18n="retry" hidden>Try again</button>
         <div id="msg-list" class="messages-conversation-list"></div>
         <button type="button" id="msg-more" class="button button-small button-ghost" data-msg-i18n="loadMore" hidden>More conversations</button>
       </aside>
@@ -90,10 +81,10 @@
         <p id="msg-empty" class="messages-empty" data-msg-i18n="chooseConversation">Choose a conversation</p>
         <div id="msg-thread" class="messages-thread" hidden>
           <header class="messages-thread-heading">
+            <p id="msg-current-role" class="messages-current-role" hidden></p>
             <button type="button" id="msg-back" class="text-button messages-back" data-msg-i18n="backList">All conversations</button>
-            <div class="messages-thread-context"><h2 id="msg-property"></h2><p id="msg-other"></p><a id="msg-open-property" class="text-button messages-property-action" data-msg-i18n="openProperty" hidden>Open property ↗</a></div>
-            <a id="msg-own-profile" class="text-button messages-profile-link" href="/host.html?fromMessages=1#host-profile" data-msg-i18n="ownProfile" hidden>My host profile</a>
-            <button type="button" id="msg-block" class="text-button" hidden></button>
+            <div class="messages-thread-context"><h2 id="msg-property" tabindex="-1"></h2><p id="msg-other"></p></div>
+            <a id="msg-open-property" class="text-button messages-property-action" data-msg-i18n="openProperty" hidden>Open property ↗</a>
           </header>
           <button type="button" id="msg-earlier" class="text-button messages-earlier" data-msg-i18n="earlier" hidden>Earlier messages</button>
           <div id="msg-history" class="messages-history" role="log" aria-live="polite" aria-relevant="additions text" tabindex="0"></div>
@@ -108,12 +99,25 @@
             <label class="messages-body-label"><span data-msg-i18n="messageLabel">Your message</span><textarea name="body" rows="3" maxlength="8000" required data-msg-placeholder="placeholder" placeholder="Ask about the property or the stay…"></textarea></label>
             <div class="messages-compose-footer"><p class="messaging-hint" data-msg-i18n="notBooking">A message does not reserve the property.</p><button class="button button-small" id="msg-send" type="submit" data-msg-i18n="send">Send message</button></div>
           </form>
+          <div class="messages-thread-actions">
+            <a id="msg-own-profile" class="text-button messages-profile-link" href="/my-profile.html?fromMessages=1#host-profile" data-msg-i18n="ownProfile" hidden>My profile</a>
+            <button type="button" id="msg-block" class="text-button" hidden></button>
+          </div>
         </div>
       </section>
     </div>
+    <details id="msg-email-settings" class="messaging-email-settings" hidden>
+      <summary data-msg-i18n="emailSettings">Email notifications</summary>
+      <div class="messaging-email-controls">
+        <label class="messaging-toggle"><input id="msg-email-enabled" type="checkbox" disabled /><span data-msg-i18n="emailEnabled">Email me about unread messages</span></label>
+        <label class="messaging-email-language"><span data-msg-i18n="emailLanguage">Email language</span><select id="msg-email-language" disabled>
+          <option value="en">English</option><option value="es">Español</option><option value="ca">Català</option><option value="ru">Русский</option>
+        </select></label>
+      </div>
+      <p id="msg-email-status" class="messaging-status" role="status" aria-live="polite"></p>
+      <button id="msg-email-retry" type="button" class="text-button" data-msg-i18n="retry" hidden>Try again</button>
+    </details>
   </main>
-  <script src="/assets/messaging-common.js"></script>
-  <script src="/assets/messaging-email-settings.js"></script>
-  <script src="/assets/messages.js"></script>
+  <script type="module" src="/assets/entry-messages.js"></script>
 </body>
 </html>

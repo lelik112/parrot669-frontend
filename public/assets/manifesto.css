@@ -1,0 +1,133 @@
+/* Standalone reading page; shared palette and locally available font roles. */
+.manifesto-page{
+  background:var(--ink);
+  color:var(--text);
+}
+.manifesto-page .manifesto-header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  min-height:76px;
+  padding:0 5vw;
+  border-bottom:1px solid #243033;
+}
+.manifesto-page .manifesto-brand{
+  display:inline-flex;
+  align-items:center;
+  min-height:44px;
+  font-family:"Space Grotesk",sans-serif;
+  font-size:15px;
+  font-weight:700;
+  letter-spacing:.1em;
+}
+.manifesto-page .manifesto-nav{
+  display:flex;
+  flex-wrap:wrap;
+  gap:16px;
+  margin-left:-12px;
+  font-size:14px;
+}
+.manifesto-page .manifesto-nav a{
+  display:inline-flex;
+  align-items:center;
+  min-height:44px;
+  padding:0 12px;
+  color:#c8d0cd;
+  border-radius:4px;
+}
+.manifesto-page a:hover{color:var(--lime)}
+.manifesto-page a:focus-visible{
+  outline:2px solid var(--lime);
+  outline-offset:3px;
+  border-radius:4px;
+}
+.manifesto-page .manifesto-skip{
+  position:absolute;
+  z-index:1;
+  top:8px;
+  left:24px;
+  display:flex;
+  align-items:center;
+  min-height:44px;
+  padding:0 12px;
+  transform:translateY(-200%);
+  background:var(--lime);
+  color:var(--ink);
+  font-weight:700;
+}
+.manifesto-page .manifesto-skip:focus{transform:none}
+.manifesto-page .manifesto-content{
+  max-width:752px;
+  margin:0 auto;
+  padding:72px 24px 64px;
+  overflow-wrap:anywhere;
+}
+.manifesto-page h1{
+  margin:0;
+  font-family:"Space Grotesk",sans-serif;
+  font-size:48px;
+  font-weight:700;
+  line-height:58px;
+}
+.manifesto-page h1::after{
+  content:"";
+  display:block;
+  width:56px;
+  height:3px;
+  margin:14px 0 40px;
+  background:var(--lime);
+}
+.manifesto-page p{
+  margin:0;
+  font-size:20px;
+  line-height:32px;
+}
+.manifesto-page p+p{margin-top:28px}
+.manifesto-page .manifesto-closing{
+  margin:60px 0 0;
+  padding-top:24px;
+  border-top:1px solid #243033;
+  font-size:16px;
+}
+.manifesto-page .manifesto-closing a:first-child{margin-left:-12px}
+
+/* Home entry links; footer targets share one centered touch-box treatment. */
+.home-page #about .manifesto-entry{
+  grid-column:1;
+  grid-row:7;
+  justify-self:start;
+  display:inline-flex;
+  align-items:center;
+  min-height:44px;
+  color:#c8d0cd;
+  text-decoration:underline;
+  text-underline-offset:4px;
+}
+.home-page .footer-nav a{
+  display:inline-flex;
+  align-items:center;
+  min-height:44px;
+}
+.home-page .manifesto-entry:hover{color:var(--lime)}
+.home-page .manifesto-entry:focus-visible{
+  outline:2px solid var(--lime);
+  outline-offset:3px;
+  border-radius:4px;
+}
+@media(max-width:700px){
+  .manifesto-page .manifesto-header{
+    display:grid;
+    justify-content:start;
+    min-height:112px;
+    padding:0 24px;
+  }
+  .manifesto-page .manifesto-brand{font-size:14px}
+  .manifesto-page .manifesto-content{padding-top:30px}
+  .manifesto-page h1{font-size:32px;line-height:40px}
+  .manifesto-page h1::after{margin-top:18px}
+  .manifesto-page p{font-size:18px;line-height:29px}
+  .manifesto-page p+p{margin-top:26px}
+}
+@media(max-width:640px){
+  .home-page #about .manifesto-entry{grid-row:8}
+}

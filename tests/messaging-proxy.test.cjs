@@ -2,7 +2,7 @@ const test=require('node:test'),assert=require('node:assert/strict'),fs=require(
 const source=fs.readFileSync(path.join(__dirname,'../src/index.js'),'utf8').replace('export default {','globalThis.worker = {');
 const id='11111111-1111-4111-8111-111111111111';
 const env={PUBLIC_ORIGIN:'https://parrot669.com',API_ORIGIN:'https://api.example.test'};
-for(const [method,route] of [['GET',`/contact-options/${id}`],['GET','/settings'],['PUT','/settings'],['GET','/notification-settings'],['PUT','/notification-settings'],['GET','/unread'],
+for(const [method,route] of [['GET',`/contact-options/${id}`],['GET','/notification-settings'],['PUT','/notification-settings'],['GET','/unread'],
   ['GET','/conversations?limit=20&cursor=opaque%2Bcursor'],['POST','/conversations'],['GET',`/conversations/for-property/${id}`],
   ['GET',`/conversations/${id}`],['GET',`/conversations/${id}/messages?afterSequence=20`],['POST',`/conversations/${id}/messages`],
   ['PUT',`/conversations/${id}/read`],['PUT',`/conversations/${id}/block`]]) {
@@ -26,7 +26,8 @@ for(const [method,route] of [['GET',`/contact-options/${id}`],['GET','/settings'
 test('messaging rejects cross-origin mutations and routes outside its allowlist before fetching',async()=>{
   let calls=0;const sandbox={URL,Headers,Response,console,fetch:async()=>{calls++;throw Error('must not fetch');}};
   vm.createContext(sandbox);vm.runInContext(source,sandbox);
-  for(const [route,method,origin,status] of [['/settings','PUT','https://evil.test',403],['/settings','DELETE','https://parrot669.com',404],
+  for(const [route,method,origin,status] of [['/notification-settings','PUT','https://evil.test',403],['/notification-settings','DELETE','https://parrot669.com',404],
+    ['/settings','GET','https://parrot669.com',404],['/settings','PUT','https://parrot669.com',404],
     ['/admin','GET','https://parrot669.com',404],[`/conversations/${id}/block`,'POST','https://parrot669.com',404]]) {
     const result=await sandbox.worker.fetch(new Request('https://parrot669.com/api/messaging'+route,{method,headers:{Origin:origin}}),env);
     assert.equal(result.status,status);

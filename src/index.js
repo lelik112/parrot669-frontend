@@ -15,7 +15,8 @@ const ALLOWED_SERVICES = new Set([
 ]);
 
 const json = (data, status = 200) =>
-  new Response(JSON.stringify(data), {
+  new Response(JSON.stringify(status >= 400 ? {...data, code:data.code || ({400:"INVALID_REQUEST",401:"AUTHENTICATION_REQUIRED",
+    403:"FORBIDDEN",404:"NOT_FOUND",405:"INVALID_REQUEST",409:"CONFLICT",429:"RATE_LIMITED",500:"INTERNAL_ERROR"}[status] || "SERVICE_UNAVAILABLE")} : data), {
     status,
     headers: {
       "Content-Type": "application/json; charset=utf-8",
@@ -23,8 +24,8 @@ const json = (data, status = 200) =>
     },
   });
 
-const clean = (value, max) =>
-  typeof value === "string" ? value.trim().slice(0, max) : "";
+// Contact limits count UTF-16 code units after trim; never silently truncate.
+const clean = (value) => typeof value === "string" ? value.trim() : "";
 
 const escapeHtml = (value) =>
   value.replace(/[&<>"']/g, (c) => ({
@@ -69,8 +70,8 @@ const proxyBackend = async (request, targetPath, qaSecret, apiOrigin) => {
     const sessionCookie = cookie
       .split(";")
       .map((part) => part.trim())
-      .find((part) => part.startsWith("parrot_session="));
-    if (sessionCookie) headers.set("Cookie", sessionCookie);
+      .filter((part) => part.startsWith("parrot_session="));
+    if (sessionCookie.length) headers.set("Cookie", sessionCookie.join("; "));
   }
   headers.set("Accept", "application/json");
   if (qaSecret) {
@@ -92,6 +93,10 @@ const proxyBackend = async (request, targetPath, qaSecret, apiOrigin) => {
     "Content-Type": response.headers.get("Content-Type") || "application/json; charset=utf-8",
     "Cache-Control": "no-store",
   });
+  for (const name of ["X-Request-ID", "Retry-After"]) {
+    const value = response.headers.get(name);
+    if (value) responseHeaders.set(name, value);
+  }
   const setCookie = response.headers.get("Set-Cookie");
   if (setCookie) responseHeaders.set("Set-Cookie", setCookie);
 
@@ -99,6 +104,119 @@ const proxyBackend = async (request, targetPath, qaSecret, apiOrigin) => {
     status: response.status,
     headers: responseHeaders,
   });
+};
+
+const PUBLIC_PROFILE_MAX_BYTES = 64 * 1024;
+const PUBLIC_PROFILE_KEYS = new Set(["profile", "property"]);
+const PROFILE_KEYS = new Set(["parrotId", "displayName", "about", "instagram"]);
+const PROPERTY_KEYS = new Set([
+  "id", "title", "city", "cityNative", "accommodationType", "bedrooms", "sleeps", "minStayDays", "listings",
+]);
+const LISTING_KEYS = new Set(["platform", "url", "calendarControlStatus"]);
+// The public proxy validates the same wire grammar as the browser and backend.
+const isParrotId = value => typeof value === "string"
+  && /^P669-[0-9A-F]{4}(?:-[0-9A-F]{4}){3}$/.test(value) && value.length === 24;
+const exactKeys = (value, allowed, required = []) =>
+  value && typeof value === "object" && !Array.isArray(value)
+  && Object.keys(value).every((key) => allowed.has(key))
+  && required.every((key) => Object.prototype.hasOwnProperty.call(value, key));
+const boundedText = (value, max, {nullable = false} = {}) =>
+  (nullable && value === null)
+  || (typeof value === "string" && value.length <= max && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(value));
+const utf8Length = (value) => Array.from(value).reduce((total, character) => {
+  const point = character.codePointAt(0);
+  return total + (point <= 0x7f ? 1 : point <= 0x7ff ? 2 : point <= 0xffff ? 3 : 4);
+}, 0);
+const validPublicProfilePayload = (payload, expectedParrotId, expectedPropertyId) => {
+  if (!exactKeys(payload, PUBLIC_PROFILE_KEYS, ["profile", "property"])) return false;
+  const profile = payload.profile;
+  if (!exactKeys(profile, PROFILE_KEYS, ["parrotId", "displayName"])) return false;
+  if (!isParrotId(profile.parrotId) || profile.parrotId !== expectedParrotId) return false;
+  if (!boundedText(profile.displayName, 200) || profile.displayName.trim() === "") return false;
+  if (Object.prototype.hasOwnProperty.call(profile, "about")
+      && !boundedText(profile.about, 500, {nullable:true})) return false;
+  if (Object.prototype.hasOwnProperty.call(profile, "instagram") && profile.instagram !== null
+      && !(typeof profile.instagram === "string" && profile.instagram.length > 0 && profile.instagram.length <= 30
+        && !/[^A-Za-z0-9._]/.test(profile.instagram))) return false;
+  const property = payload.property;
+  if (property === null) return !expectedPropertyId;
+  if (!expectedPropertyId || !exactKeys(property, PROPERTY_KEYS, [...PROPERTY_KEYS])) return false;
+  if (!boundedText(property.id, 120) || property.id !== expectedPropertyId
+      || !boundedText(property.title, 300) || property.title.trim() === ""
+      || !boundedText(property.city, 200, {nullable:true}) || property.city !== null && property.city.trim() === ""
+      || !boundedText(property.cityNative, 200, {nullable:true})
+      || !boundedText(property.accommodationType, 80)
+      || ![property.bedrooms, property.sleeps, property.minStayDays]
+        .every((value) => Number.isSafeInteger(value) && value >= 0)
+      || !Array.isArray(property.listings) || property.listings.length > 20) return false;
+  return property.listings.every((listing) =>
+    exactKeys(listing, LISTING_KEYS, [...LISTING_KEYS])
+    && boundedText(listing.platform, 80)
+    && boundedText(listing.url, 2048)
+    && boundedText(listing.calendarControlStatus, 80));
+};
+const validPublicRetryAfter = (value) => {
+  if (!value || value.length > 128) return false;
+  if (/^[0-9]+$/.test(value)) return true;
+  // RFC 9110 HTTP-date accepts IMF-fixdate and both obsolete wire formats.
+  // Validate a date without converting it to a delay or rewriting the forwarded value.
+  let canonical = value;
+  const obsolete = /^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday), ([0-9]{2})-([A-Z][a-z]{2})-([0-9]{2}) ([0-9]{2}:[0-9]{2}:[0-9]{2}) GMT$/.exec(value);
+  const asctime = /^([A-Z][a-z]{2}) ([A-Z][a-z]{2}) ([ 0-9][0-9]) ([0-9]{2}:[0-9]{2}:[0-9]{2}) ([0-9]{4})$/.exec(value);
+  if (obsolete) {
+    const currentYear = new Date().getUTCFullYear();
+    let year = Math.floor(currentYear / 100) * 100 + Number(obsolete[4]);
+    if (year > currentYear + 50) year -= 100;
+    canonical = `${obsolete[1].slice(0,3)}, ${obsolete[2]} ${obsolete[3]} ${year} ${obsolete[5]} GMT`;
+  } else if (asctime) {
+    canonical = `${asctime[1]}, ${asctime[3].replace(" ","0")} ${asctime[2]} ${asctime[5]} ${asctime[4]} GMT`;
+  }
+  if (!/^[A-Z][a-z]{2}, [0-9]{2} [A-Z][a-z]{2} [0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2} GMT$/.test(canonical)) return false;
+  // HTTP permits leap second 60; Date does not represent it. Check the same calendar instant at second 59.
+  const checked = canonical.replace(/:60 GMT$/, ":59 GMT");
+  return new Date(checked).toUTCString() === checked;
+};
+const publicProfileResponse = async (response, expectedParrotId, expectedPropertyId) => {
+  if (response.status !== 200) {
+    if (response.status === 404) return json({error:"Not found"}, 404);
+    if (response.status === 401 || response.status === 403) return json({error:"Not available"}, 404);
+    if (response.status === 429 || response.status === 503) {
+      const result = json({error:"Public profile service unavailable"}, response.status);
+      const requestId = response.headers.get("X-Request-ID");
+      const retryAfter = response.headers.get("Retry-After");
+      // Only bounded opaque IDs and a delay/date are public; never copy the upstream error or cookies.
+      if (requestId && /^[A-Za-z0-9._-]{1,128}$/.test(requestId))
+        result.headers.set("X-Request-ID", requestId);
+      if (validPublicRetryAfter(retryAfter))
+        result.headers.set("Retry-After", retryAfter);
+      return result;
+    }
+    return json({error:"Public profile service unavailable"}, 502);
+  }
+  let text;
+  try { text = await response.text(); } catch { return json({error:"Public profile service unavailable"}, 502); }
+  if (utf8Length(text) > PUBLIC_PROFILE_MAX_BYTES)
+    return json({error:"Public profile service unavailable"}, 502);
+  let payload;
+  try { payload = JSON.parse(text); } catch { return json({error:"Public profile service unavailable"}, 502); }
+  return validPublicProfilePayload(payload, expectedParrotId, expectedPropertyId)
+    ? json(payload)
+    : json({error:"Public profile service unavailable"}, 502);
+};
+
+const publicProfilePageId = (pathname) => {
+  const match = /^\/p\/([^/]+)$/.exec(pathname);
+  if (!match) return null;
+  try {
+    const value = decodeURIComponent(match[1]);
+    return isParrotId(value)
+      && encodeURIComponent(value) === match[1] ? value : null;
+  } catch { return null; }
+};
+const publicProfileAssetRequest = (request, url) => {
+  if (!publicProfilePageId(url.pathname)) return request;
+  const assetUrl = new URL("/profile.html", url.origin);
+  return new Request(assetUrl, request);
 };
 
 export default {
@@ -121,13 +239,56 @@ export default {
     }
     if (qaOrigin && url.pathname === "/api/contact") return json({ error: "Forbidden" }, 403);
 
+    if (url.pathname === "/api/instagram") {
+      if (!apiOrigin) return json({error:"Backend origin is not configured"},503);
+      if (request.method !== "GET") return json({error:"Method not allowed"},405);
+      if (url.search) return json({error:"Invalid request"},400);
+      const origin=request.headers.get("Origin");
+      if (origin && origin!==url.origin) return json({error:"Forbidden"},403);
+      try {
+        const response=await proxyBackend(request,"/api/instagram",qaSecret,apiOrigin);
+        if (response.status!==200) return response;
+        const body=await response.text();
+        if (utf8Length(body)>4096) return json({error:"Instagram service unavailable"},502);
+        const value=JSON.parse(body);
+        const valid=value===null || exactKeys(value,new Set(["userName","verified"]),["userName","verified"])
+          && typeof value.userName==="string" && value.userName.length>0 && value.userName.length<=30
+          && !/[^A-Za-z0-9._]/.test(value.userName) && typeof value.verified==="boolean";
+        return valid ? new Response(body,{status:200,headers:response.headers})
+          : json({error:"Instagram service unavailable"},502);
+      } catch { return json({error:"Instagram service unavailable"},502); }
+    }
+
+    if (url.pathname.startsWith("/api/p/")) {
+      if (!apiOrigin) return json({error:"Backend origin is not configured"},503);
+      if (request.method !== "GET") return json({error:"Method not allowed"},405);
+      const origin=request.headers.get("Origin");
+      if (origin && origin!==url.origin) return json({error:"Forbidden"},403);
+      const parrotId=publicProfilePageId(url.pathname.slice(4));
+      const queryKeys=[...url.searchParams.keys()];
+      const propertyId=url.searchParams.get("property");
+      if (!parrotId || queryKeys.some(key=>!["property","language"].includes(key)) || url.searchParams.getAll("language").length>1
+          || url.searchParams.has("language") && !["en","es","ca","ru"].includes(url.searchParams.get("language")) || url.searchParams.getAll("property").length>1
+          || propertyId!==null && (!boundedText(propertyId,120) || !propertyId.trim() || /[\u0000-\u001f\u007f]/.test(propertyId))) return json({error:"Not found"},404);
+      const targetPath=`/api/p/${encodeURIComponent(parrotId)}`;
+      const upstreamUrl=new URL(request.url);
+      const parameters=new URLSearchParams();
+      if(propertyId)parameters.set("property",propertyId);
+      if(url.searchParams.has("language"))parameters.set("language",url.searchParams.get("language"));
+      upstreamUrl.search=parameters.toString();
+      try {
+        const response=await proxyBackend(new Request(upstreamUrl,request),targetPath,qaSecret,apiOrigin);
+        return await publicProfileResponse(response,parrotId,propertyId);
+      } catch { return json({error:"Public profile service unavailable"},502); }
+    }
+
     if (url.pathname.startsWith("/api/messaging/")) {
       if (!apiOrigin) return json({ error: "Backend origin is not configured" }, 503);
       const path = url.pathname.slice("/api/messaging".length);
       const id = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
       const allowed =
         (new RegExp(`^/contact-options/${id}$`, "i").test(path) && request.method === "GET") ||
-        (["/settings", "/notification-settings"].includes(path) && ["GET", "PUT"].includes(request.method)) ||
+        (path === "/notification-settings" && ["GET", "PUT"].includes(request.method)) ||
         (path === "/unread" && request.method === "GET") ||
         (path === "/conversations" && ["GET", "POST"].includes(request.method)) ||
         (new RegExp(`^/conversations/for-property/${id}$`, "i").test(path) && request.method === "GET") ||
@@ -181,6 +342,8 @@ export default {
           headers: {
             "Content-Type": response.headers.get("Content-Type") || "application/json; charset=utf-8",
             "Cache-Control": "no-store",
+            ...(response.headers.get("X-Request-ID") ? {"X-Request-ID":response.headers.get("X-Request-ID")} : {}),
+            ...(response.headers.get("Retry-After") ? {"Retry-After":response.headers.get("Retry-After")} : {}),
           },
         });
       } catch (error) {
@@ -209,16 +372,21 @@ export default {
         (path === "/auth/me" && request.method === "GET") ||
         (path === "/dashboard" && request.method === "GET") ||
         (path === "/profile" && request.method === "PATCH") ||
-        (["/geocode/autocomplete", "/geocode/countries"].includes(path) && request.method === "GET") ||
+        (path === "/public-profile" && ["GET", "PUT"].includes(request.method)) ||
+        (path === "/public-profile/preview" && request.method === "GET") ||
+        (path === "/public-profile/publish" && ["POST", "DELETE"].includes(request.method)) ||
+        (["/geocode/autocomplete", "/geocode/countries", "/geocode/cities", "/geocode/streets"].includes(path) && request.method === "GET") ||
+        (path === "/geocode/houses/confirm" && request.method === "POST") ||
         (path === "/properties" && request.method === "POST") ||
-        (/^\/properties\/[0-9a-f-]+$/i.test(path) && ["PUT", "DELETE"].includes(request.method)) ||
-        (/^\/properties\/[0-9a-f-]+\/listings$/i.test(path) && request.method === "POST") ||
+        (/^\/properties\/[0-9a-f-]+$/i.test(path) && ["PATCH", "DELETE"].includes(request.method)) ||
         (/^\/listings\/[0-9a-f-]+$/i.test(path) && ["PUT", "DELETE"].includes(request.method)) ||
         (/^\/properties\/[0-9a-f-]+\/availability$/i.test(path) && ["GET", "POST"].includes(request.method)) ||
         (/^\/availability\/[0-9a-f-]+$/i.test(path) && ["PUT", "DELETE"].includes(request.method)) ||
         (/^\/properties\/[0-9a-f-]+\/unavailability$/i.test(path) && ["GET", "POST"].includes(request.method)) ||
         (/^\/unavailability\/[0-9a-f-]+$/i.test(path) && ["PUT", "DELETE"].includes(request.method)) ||
-        (/^\/properties\/[0-9a-f-]+\/calendars$/i.test(path) && request.method === "POST") ||
+        (/^\/properties\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/public-links$/i.test(path) && ["POST", "PUT"].includes(request.method)) ||
+        (/^\/properties\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/calendars$/i.test(path) && request.method === "GET") ||
+        (/^\/calendars\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/activate$/i.test(path) && request.method === "POST") ||
         (/^\/calendars\/[0-9a-f-]+\/sync$/i.test(path) && request.method === "POST") ||
         (/^\/calendars\/[0-9a-f-]+\/verification$/i.test(path) && request.method === "GET") ||
         (/^\/calendars\/[0-9a-f-]+\/verification\/(start|check|cancel)$/i.test(path) && request.method === "POST") ||
@@ -229,7 +397,8 @@ export default {
       }
 
       try {
-        return await proxyBackend(request, path === "/profile" ? "/api/host/profile" : `/api${path}`, qaSecret, apiOrigin);
+        const profilePath = ["/profile", "/public-profile", "/public-profile/preview", "/public-profile/publish"].includes(path);
+        return await proxyBackend(request, profilePath ? `/api/host${path}` : `/api${path}`, qaSecret, apiOrigin);
       } catch (error) {
         console.error("Host API proxy failed", error?.message);
         return json({ error: "Host service unavailable" }, 502);
@@ -237,7 +406,16 @@ export default {
     }
 
 
-    if (qaOrigin && url.pathname.startsWith("/api/")) return json({ error: "Not found" }, 404);
+    if (url.pathname.startsWith("/p/")) {
+      if (!publicOrigin) return json({error:"Public origin is not configured"},503);
+      if (url.origin!==publicOrigin && !qaOrigin) return json({error:"Forbidden"},403);
+      if (request.method!=="GET" || !publicProfilePageId(url.pathname)) return json({error:"Not found"},404);
+      const response=await env.ASSETS.fetch(publicProfileAssetRequest(request,url));
+      const headers=new Headers(response.headers);headers.set("Cache-Control","no-store");
+      return new Response(response.body,{status:response.status,headers});
+    }
+
+    if (url.pathname.startsWith("/api/") && url.pathname !== "/api/contact") return json({ error: "Not found", code:"NOT_FOUND" }, 404);
     if (url.pathname !== "/api/contact") {
       return env.ASSETS.fetch(request);
     }
@@ -253,17 +431,23 @@ export default {
       return json({ ok: false, error: "Invalid JSON" }, 400);
     }
 
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return json({ ok: false, error: "Missing or invalid fields" }, 400);
+    }
+
     // Honeypot: real users never see/fill this field.
     if (body.website) {
       return json({ ok: true });
     }
 
-    const name = clean(body.name, MAX.name);
-    const contact = clean(body.contact, MAX.contact);
-    const service = clean(body.service, MAX.service);
-    const message = clean(body.message, MAX.message);
+    const name = clean(body.name);
+    const contact = clean(body.contact);
+    const service = clean(body.service);
+    const message = clean(body.message);
 
-    if (!name || !contact || !message || !ALLOWED_SERVICES.has(service)) {
+    if (!name || !contact || !message || !ALLOWED_SERVICES.has(service) ||
+        name.length > MAX.name || contact.length > MAX.contact ||
+        service.length > MAX.service || message.length > MAX.message) {
       return json({ ok: false, error: "Missing or invalid fields" }, 400);
     }
 
@@ -303,6 +487,9 @@ export default {
     const replyTo =
       /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact) ? contact : undefined;
 
+    const controller = new AbortController();
+    let timer;
+    let timedOut = false;
     try {
       const email = {
         from: env.RESEND_FROM,
@@ -313,14 +500,24 @@ export default {
       };
       if (replyTo) email.reply_to = replyTo;
 
-      const response = await fetch("https://api.resend.com/emails", {
+      // Match the existing browser HTTP boundary's 15s request convention.
+      // A deadline cannot prove non-delivery; no automatic retry is safe here.
+      const deadline = new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          timedOut = true;
+          controller.abort();
+          reject(new Error("Contact provider deadline"));
+        }, 15000);
+      });
+      const response = await Promise.race([fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${env.RESEND_API_KEY}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify(email),
-      });
+        signal: controller.signal,
+      }), deadline]);
 
       if (!response.ok) {
         console.error("Resend email failed", response.status);
@@ -328,9 +525,11 @@ export default {
       }
 
       return json({ ok: true });
-    } catch (error) {
-      console.error("Email send failed", error?.message);
-      return json({ ok: false, error: "Email delivery failed" }, 500);
+    } catch {
+      console.error(timedOut ? "Email acknowledgement timed out" : "Email outcome is unknown");
+      return json({ ok: false, error: "Email delivery outcome unknown" }, timedOut ? 504 : 502);
+    } finally {
+      clearTimeout(timer);
     }
   },
 };

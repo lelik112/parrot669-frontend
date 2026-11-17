@@ -1,3 +1,4 @@
+const hostCore = window.ParrotCore;
 const LANG_KEY = "parrot669-language";
 
 const copy = {
@@ -91,13 +92,15 @@ let sessionLoading = true;
 let authBusy = false;
 const expandedPropertyIds = new Set();
 let accountId = null;
+let presentedSessionEpoch = null;
+let dashboardLoad = Promise.resolve();
 let unsavedHostChanges = false;
 let confirmedExit = false;
 const returnKey = id => `parrot669-host-return:${id}`;
 const propertyNavigationParams = new URLSearchParams(window.location.search);
 const propertyNavigationUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const propertyNavigationId = propertyNavigationUuid.test(propertyNavigationParams.get("property") || "") ? propertyNavigationParams.get("property") : null;
-const propertyConversationId = propertyNavigationId && propertyNavigationUuid.test(propertyNavigationParams.get("conversation") || "") ? propertyNavigationParams.get("conversation") : null;
+let propertyNavigationId = propertyNavigationUuid.test(propertyNavigationParams.get("property") || "") ? propertyNavigationParams.get("property") : null;
+let propertyConversationId = propertyNavigationId && propertyNavigationUuid.test(propertyNavigationParams.get("conversation") || "") ? propertyNavigationParams.get("conversation") : null;
 let propertyNavigationPending = Boolean(propertyNavigationId);
 const navCopy = {
   en:{navProperties:"My properties",navTools:"Host tools",discardChanges:"Discard unsaved changes and leave this page?"},
@@ -122,7 +125,7 @@ document.addEventListener("click",event=>{
   if(unsavedHostChanges && !confirm(tr("discardChanges"))){event.preventDefault();return;}
   confirmedExit=true;
   if(link.pathname==="/messages.html" && state.authenticated && accountId){
-    try{sessionStorage.setItem(returnKey(accountId),JSON.stringify({ids:[...expandedPropertyIds],scrollY:window.scrollY}));}catch{}
+    try{hostCore.storage.session.setItem(returnKey(accountId),JSON.stringify({ids:[...expandedPropertyIds],scrollY:window.scrollY}));}catch{}
   }
 });
 window.addEventListener("beforeunload",event=>{
@@ -131,8 +134,8 @@ window.addEventListener("beforeunload",event=>{
 function restoreHostContext(){
   if(!accountId)return;
   try{
-    const key=returnKey(accountId),saved=JSON.parse(sessionStorage.getItem(key)||"null");
-    sessionStorage.removeItem(key);
+    const key=returnKey(accountId),saved=JSON.parse(hostCore.storage.session.getItem(key)||"null");
+    hostCore.storage.session.removeItem(key);
     if(!saved || !Array.isArray(saved.ids))return;
     const owned=new Set(state.properties.map(property=>property.id));
     saved.ids.filter(id=>typeof id==="string" && owned.has(id)).forEach(id=>expandedPropertyIds.add(id));
@@ -190,6 +193,26 @@ const periodUiCopy = {
 };
 Object.entries(periodUiCopy).forEach(([language, values]) => Object.assign(copy[language], values));
 
+Object.assign(copy.en,{selectProperty:"Selected property",workspaceActions:"Workspace actions",manageProfile:"My profile",sourcePanelTitle:"External listing",workingTitle:"For hosts",editPeriodGroup:"Edit period",conditionsGroup:"Property-wide conditions",conditionsHelp:"These conditions apply to every available period.",conditionsSaved:"Conditions saved.",conditionsSaving:"Saving conditions…",conditionsUnknown:"The save result is unconfirmed. Check the current values before saving again.",conditionsCheck:"Check result",unsavedLabel:"Unsaved",calendarSettings:"Calendar settings",closedDates:"Closed dates",propertyDetails:"Property details",viewCalendarStatus:"View calendar status",calendarProblemTitle:"Calendar sync failed",calendarProblemBody:"Your last confirmed dates remain available. Review the calendar status before updating it again."});
+Object.assign(copy.es,{selectProperty:"Vivienda seleccionada",workspaceActions:"Acciones",manageProfile:"Mi perfil",sourcePanelTitle:"Anuncio externo",workingTitle:"Para propietarios",editPeriodGroup:"Editar período",conditionsGroup:"Condiciones de toda la vivienda",conditionsHelp:"Estas condiciones se aplican a todos los períodos disponibles.",conditionsSaved:"Condiciones guardadas.",conditionsSaving:"Guardando condiciones…",conditionsUnknown:"El resultado no está confirmado. Comprueba los valores actuales antes de volver a guardar.",conditionsCheck:"Comprobar resultado",unsavedLabel:"Sin guardar",calendarSettings:"Ajustes del calendario",closedDates:"Fechas cerradas",propertyDetails:"Detalles de la vivienda",viewCalendarStatus:"Ver estado del calendario",calendarProblemTitle:"Falló la sincronización del calendario",calendarProblemBody:"Las últimas fechas confirmadas siguen disponibles. Revisa el estado antes de volver a actualizar.",});
+Object.assign(copy.ca,{selectProperty:"Habitatge seleccionat",workspaceActions:"Accions",manageProfile:"El meu perfil",sourcePanelTitle:"Anunci extern",workingTitle:"Per a propietaris",editPeriodGroup:"Edita el període",conditionsGroup:"Condicions de tot l'habitatge",conditionsHelp:"Aquestes condicions s'apliquen a tots els períodes disponibles.",conditionsSaved:"Condicions desades.",conditionsSaving:"Desant les condicions…",conditionsUnknown:"El resultat no està confirmat. Comprova els valors actuals abans de tornar a desar.",conditionsCheck:"Comprova el resultat",unsavedLabel:"Sense desar",calendarSettings:"Configuració del calendari",closedDates:"Dates tancades",propertyDetails:"Detalls de l'habitatge",viewCalendarStatus:"Mostra l'estat del calendari",calendarProblemTitle:"Ha fallat la sincronització del calendari",calendarProblemBody:"Les últimes dates confirmades continuen disponibles. Revisa l'estat abans de tornar a actualitzar."});
+Object.assign(copy.ru,{selectProperty:"Выбранный объект",workspaceActions:"Действия",manageProfile:"Мой профиль",sourcePanelTitle:"Внешнее объявление",workingTitle:"Владельцам",editPeriodGroup:"Изменить период",conditionsGroup:"Условия всего объекта",conditionsHelp:"Эти условия действуют для всех свободных периодов.",conditionsSaved:"Условия сохранены.",conditionsSaving:"Сохраняем условия…",conditionsUnknown:"Результат сохранения не подтверждён. Проверьте текущие значения перед повторной записью.",conditionsCheck:"Проверить результат",unsavedLabel:"Не сохранено",calendarSettings:"Настройки календаря",closedDates:"Закрытые даты",propertyDetails:"Данные объекта",viewCalendarStatus:"Статус календаря",calendarProblemTitle:"Не удалось обновить календарь",calendarProblemBody:"Последние подтверждённые даты остаются доступными. Проверьте состояние календаря перед новым обновлением."});
+Object.assign(copy.en,{conditionsMismatch:"The saved values differ from this draft. Review the current values before choosing to save again.",calendarProblemBody:"Review the confirmed calendar status before updating it again.",calendarUnknownTitle:"Calendar status is unknown",calendarUnknownBody:"The calendar could not be read. No saved dates or successful sync are confirmed by this result."});
+Object.assign(copy.es,{conditionsMismatch:"Los valores guardados no coinciden con este borrador. Revisa los valores actuales antes de volver a guardar.",calendarProblemBody:"Revisa el estado confirmado del calendario antes de volver a actualizar.",calendarUnknownTitle:"Se desconoce el estado del calendario",calendarUnknownBody:"No se pudo leer el calendario. Este resultado no confirma fechas guardadas ni una sincronización correcta."});
+Object.assign(copy.ca,{conditionsMismatch:"Els valors desats no coincideixen amb aquest esborrany. Revisa els valors actuals abans de tornar a desar.",calendarProblemBody:"Revisa l'estat confirmat del calendari abans de tornar-lo a actualitzar.",calendarUnknownTitle:"Es desconeix l'estat del calendari",calendarUnknownBody:"No s'ha pogut llegir el calendari. Aquest resultat no confirma dates desades ni una sincronització correcta."});
+Object.assign(copy.ru,{conditionsMismatch:"Сохранённые значения отличаются от черновика. Проверьте текущие значения перед новой записью.",calendarProblemBody:"Проверьте подтверждённый статус календаря перед новым обновлением.",calendarUnknownTitle:"Статус календаря неизвестен",calendarUnknownBody:"Календарь не удалось прочитать. Этот результат не подтверждает сохранённые даты или успешную синхронизацию."});
+Object.assign(copy.en,{nightCount:n=>`${n} night${n===1?"":"s"}`});
+Object.assign(copy.es,{nightCount:n=>`${n} noche${n===1?"":"s"}`});
+Object.assign(copy.ca,{nightCount:n=>`${n} nit${n===1?"":"s"}`});
+Object.assign(copy.ru,{nightCount:n=>`${n} ноч.`});
+const periodEditorCopy = {
+  en:{periodEditing:"Edit period",periodSaving:"Saving changes",periodSaved:"Changes saved",periodError:"Could not confirm saving",periodEdit:"Edit",periodSave:"Save changes",periodSavingAction:"Saving…",periodRetry:"Retry saving",periodCheck:"Check result",periodCancel:"Cancel",periodDraftKept:"Your entered values remain in the form.",periodUnknown:"The result is unconfirmed. Check the result before saving again. Cancel reloads the saved period; it does not undo server changes.",periodUnconfirmed:"The saved period differs from your changes. Check again or cancel to reload it.",periodEditHelp:v=>`Saved: ${v}. The last night is included.`},
+  es:{periodEditing:"Editar período",periodSaving:"Guardando cambios",periodSaved:"Cambios guardados",periodError:"No se pudo confirmar el guardado",periodEdit:"Editar",periodSave:"Guardar cambios",periodSavingAction:"Guardando…",periodRetry:"Reintentar guardar",periodCheck:"Comprobar resultado",periodCancel:"Cancelar",periodDraftKept:"Los valores introducidos siguen en el formulario.",periodUnknown:"El resultado no está confirmado. Compruébalo antes de guardar otra vez. Cancelar recarga el período guardado; no deshace cambios en el servidor.",periodUnconfirmed:"El período guardado difiere de tus cambios. Comprueba otra vez o cancela para recargarlo.",periodEditHelp:v=>`Guardado: ${v}. La última noche está incluida.`},
+  ca:{periodEditing:"Editar període",periodSaving:"Desant els canvis",periodSaved:"Canvis desats",periodError:"No s’ha pogut confirmar el desat",periodEdit:"Editar",periodSave:"Desar els canvis",periodSavingAction:"Desant…",periodRetry:"Tornar a desar",periodCheck:"Comprovar resultat",periodCancel:"Cancel·lar",periodDraftKept:"Els valors introduïts continuen al formulari.",periodUnknown:"El resultat no està confirmat. Comprova’l abans de tornar a desar. Cancel·lar recarrega el període desat; no desfà canvis al servidor.",periodUnconfirmed:"El període desat difereix dels teus canvis. Comprova’l de nou o cancel·la per recarregar-lo.",periodEditHelp:v=>`Desat: ${v}. L’última nit està inclosa.`},
+  ru:{periodEditing:"Изменить период",periodSaving:"Сохранение изменений",periodSaved:"Изменения сохранены",periodError:"Не удалось подтвердить сохранение",periodEdit:"Изменить",periodSave:"Сохранить изменения",periodSavingAction:"Сохраняем…",periodRetry:"Повторить сохранение",periodCheck:"Проверить результат",periodCancel:"Отмена",periodDraftKept:"Введённые данные остались в форме.",periodUnknown:"Результат не подтверждён. Проверьте его перед новой записью. Отмена загрузит сохранённый период, но не отменит изменения на сервере.",periodUnconfirmed:"Сохранённый период отличается от введённых данных. Проверьте снова или отмените редактирование, чтобы загрузить его.",periodEditHelp:v=>`Сохранено: ${v}. Последняя ночь включена.`}
+};
+Object.entries(periodEditorCopy).forEach(([language, values]) => Object.assign(copy[language], values));
+
 const addressCopy = {
   en:{addressRateLimited:"Too many address searches. Wait a moment, then try again.",addressChooseCountry:"Select a country",addressLoadingCountries:"Loading countries…",addressCountriesUnavailable:"Could not load countries. Try again.",addressCityPlaceholder:"Start typing the city",addressStreetLabel:"Street",addressStreetPlaceholder:"Start typing the street",addressHouseLabel:"House number",addressHousePlaceholder:"e.g. 40 or 40 bis",addressHouseRequired:"Enter the house number.",addressChooseCity:"Select a city from the suggestions.",addressChooseStreet:"Select a street from the suggestions.",addressNoCities:"No cities found in this country. Try a longer name.",addressNoStreets:"No streets found in this city. Try a longer name or its local spelling.",addressStepsHelp:"Choose country, city and street, then enter the house number. Only you can see the full address.",addressChange:"Change address",addressCancelChange:"Keep saved address",addressLabel:"Property address",addressPlaceholder:"Street, house number, city",addressHelp:"Start typing and select a suggestion. Country and city fill automatically. Only you can see the exact address.",countryLabel:"Country",addressSuggestions:"Address suggestions",addressLoading:"Looking for addresses…",addressChoose:"Select an address with a street and house number from the suggestions.",addressMore:"Enter at least 3 characters.",addressNoResults:"No complete address found. Enter the street, house number and city.",addressUnavailable:"Address suggestions are unavailable. Your input is saved — try again.",addressSignIn:"Sign in again to look up addresses.",addressSelected:"Address selected. Country and city filled automatically.",addressRetry:"Try again",addressTooLong:"Use a shorter search, up to 256 characters."},
   es:{addressRateLimited:"Demasiadas búsquedas. Espera un momento y vuelve a intentarlo.",addressChooseCountry:"Selecciona un país",addressLoadingCountries:"Cargando países…",addressCountriesUnavailable:"No se pudieron cargar los países. Vuelve a intentarlo.",addressCityPlaceholder:"Empieza a escribir la ciudad",addressStreetLabel:"Calle",addressStreetPlaceholder:"Empieza a escribir la calle",addressHouseLabel:"Número",addressHousePlaceholder:"p. ej. 40 o 40 bis",addressHouseRequired:"Introduce el número de la vivienda.",addressChooseCity:"Selecciona una ciudad de las sugerencias.",addressChooseStreet:"Selecciona una calle de las sugerencias.",addressNoCities:"No se encontraron ciudades en este país. Completa el nombre.",addressNoStreets:"No se encontraron calles en esta ciudad. Completa el nombre o usa su nombre local.",addressStepsHelp:"Selecciona país, ciudad y calle; después introduce el número. Solo tú puedes ver la dirección completa.",addressChange:"Cambiar dirección",addressCancelChange:"Conservar dirección",addressLabel:"Dirección de la vivienda",addressPlaceholder:"Calle, número, ciudad",addressHelp:"Empieza a escribir y selecciona una sugerencia. País y ciudad se rellenan automáticamente. Solo tú puedes ver la dirección exacta.",countryLabel:"País",addressSuggestions:"Sugerencias de direcciones",addressLoading:"Buscando direcciones…",addressChoose:"Selecciona una dirección con calle y número de las sugerencias.",addressMore:"Introduce al menos 3 caracteres.",addressNoResults:"No se encontró una dirección completa. Introduce calle, número y ciudad.",addressUnavailable:"Las sugerencias no están disponibles. Conservamos el texto; vuelve a intentarlo.",addressSignIn:"Vuelve a iniciar sesión para buscar direcciones.",addressSelected:"Dirección seleccionada. País y ciudad completados automáticamente.",addressRetry:"Reintentar",addressTooLong:"Acorta la búsqueda a un máximo de 256 caracteres."},
@@ -197,6 +220,86 @@ const addressCopy = {
   ru:{addressRateLimited:"Слишком много запросов адреса. Подождите немного и повторите поиск.",addressChooseCountry:"Выберите страну",addressLoadingCountries:"Загружаем страны…",addressCountriesUnavailable:"Не удалось загрузить страны. Попробуйте ещё раз.",addressCityPlaceholder:"Начните вводить город",addressStreetLabel:"Улица",addressStreetPlaceholder:"Начните вводить улицу",addressHouseLabel:"Номер дома",addressHousePlaceholder:"Например, 40 или 40 bis",addressHouseRequired:"Укажите номер дома.",addressChooseCity:"Выберите город из подсказок.",addressChooseStreet:"Выберите улицу из подсказок.",addressNoCities:"Города в этой стране не найдены. Уточните название.",addressNoStreets:"Улицы в этом городе не найдены. Уточните название или введите его на местном языке.",addressStepsHelp:"Выберите страну, город и улицу, затем укажите номер дома. Полный адрес видите только вы.",addressChange:"Изменить адрес",addressCancelChange:"Оставить прежний адрес",addressLabel:"Адрес объекта",addressPlaceholder:"Улица, номер дома, город",addressHelp:"Начните вводить адрес и выберите подсказку. Страна и город заполнятся автоматически. Точный адрес видите только вы.",countryLabel:"Страна",addressSuggestions:"Подсказки адресов",addressLoading:"Ищем адреса…",addressChoose:"Выберите адрес с улицей и номером дома из списка подсказок.",addressMore:"Введите хотя бы 3 символа.",addressNoResults:"Полный адрес не найден. Укажите улицу, номер дома и город.",addressUnavailable:"Подсказки адресов сейчас недоступны. Введённый текст сохранён — попробуйте ещё раз.",addressSignIn:"Войдите снова, чтобы найти адрес.",addressSelected:"Адрес выбран. Страна и город заполнены автоматически.",addressRetry:"Повторить поиск",addressTooLong:"Сократите поисковый запрос до 256 символов."}
 };
 Object.entries(addressCopy).forEach(([language, values]) => Object.assign(copy[language], values));
+// Exact accepted house-only copy; no unit wire/UI until its published contract exists.
+const houseCopy={
+  "ru": {
+    "addressHouseFind": "Найти дом",
+    "addressHouseUse": "Использовать этот адрес",
+    "addressHouseChanged": "Адрес изменён. Найдите дом заново.",
+    "addressHouseNotFound": "Дом не найден. Проверьте улицу и номер.",
+    "addressHouseUnavailable": "Сервис поиска не ответил. Это не означает, что дома нет.",
+    "addressHouseExpiry": "Подтвердите дом ещё раз. Введённый адрес остался в форме.",
+    "addressHouseDisclaimer": "Поиск адреса не подтверждает право сдавать жильё.",
+    "addressHouseSelected": "Адрес выбран для сохранения",
+    "addressHouseLoading": "Ищем дом…",
+    "addressCancelChange": "Отменить изменения адреса",
+    "addressSaveUnknown": "Ответ не получен. Адрес мог сохраниться. Не отправляйте изменения повторно.",
+    "addressHouseReview": "Проверьте найденные адреса и выберите один. Изменения ещё не сохранены.",
+    "addressHouseCancelLookup": "Отменить поиск",
+    "addressHouseCancelQuestion": "Отменить только черновик адреса? Остальные правки останутся.",
+    "addressHouseKeepDraft": "Продолжить редактирование",
+    "addressCurrentReview": "Посмотреть текущее состояние на сервере",
+    "addressCurrentState": "Загружено текущее состояние сервера. Это не доказывает исход сохранения с потерянным ответом."
+  },
+  "en": {
+    "addressHouseFind": "Find house",
+    "addressHouseUse": "Use this address",
+    "addressHouseChanged": "The address has changed. Find the house again.",
+    "addressHouseNotFound": "House not found. Check the street and number.",
+    "addressHouseUnavailable": "The address service did not respond. This does not mean the house does not exist.",
+    "addressHouseExpiry": "Confirm the house again. Your entered address is still in the form.",
+    "addressHouseDisclaimer": "Address lookup does not confirm the right to let this property.",
+    "addressHouseSelected": "Address selected for saving",
+    "addressHouseLoading": "Finding house…",
+    "addressCancelChange": "Cancel address changes",
+    "addressSaveUnknown": "No response received. The address may have been saved. Do not submit the changes again.",
+    "addressHouseReview": "Review the returned addresses, then choose one. Nothing has been saved.",
+    "addressHouseCancelLookup": "Cancel lookup",
+    "addressHouseCancelQuestion": "Discard only the address draft? Other edits will stay.",
+    "addressHouseKeepDraft": "Keep editing",
+    "addressCurrentReview": "Review current server state",
+    "addressCurrentState": "Current server state loaded. This does not establish the outcome of a lost save."
+  },
+  "es": {
+    "addressHouseFind": "Buscar edificio",
+    "addressHouseUse": "Usar esta dirección",
+    "addressHouseChanged": "La dirección ha cambiado. Vuelve a buscar el edificio.",
+    "addressHouseNotFound": "No se ha encontrado el edificio. Revisa la calle y el número.",
+    "addressHouseUnavailable": "El servicio de direcciones no ha respondido. Esto no significa que el edificio no exista.",
+    "addressHouseExpiry": "Confirma el edificio de nuevo. La dirección introducida sigue en el formulario.",
+    "addressHouseDisclaimer": "La búsqueda de la dirección no confirma el derecho a alquilar este alojamiento.",
+    "addressHouseSelected": "Dirección seleccionada para guardar",
+    "addressHouseLoading": "Buscando el edificio…",
+    "addressCancelChange": "Cancelar cambios de dirección",
+    "addressSaveUnknown": "No se ha recibido respuesta. La dirección puede haberse guardado. No vuelvas a enviar los cambios.",
+    "addressHouseReview": "Revisa las direcciones y elige una. No se ha guardado nada.",
+    "addressHouseCancelLookup": "Cancelar búsqueda",
+    "addressHouseCancelQuestion": "¿Descartar solo el borrador de dirección? Los demás cambios se conservan.",
+    "addressHouseKeepDraft": "Seguir editando",
+    "addressCurrentReview": "Consultar el estado actual del servidor",
+    "addressCurrentState": "Estado actual cargado. No confirma el resultado de un guardado sin respuesta."
+  },
+  "ca": {
+    "addressHouseFind": "Cercar l’edifici",
+    "addressHouseUse": "Utilitzar aquesta adreça",
+    "addressHouseChanged": "L’adreça ha canviat. Torna a cercar l’edifici.",
+    "addressHouseNotFound": "No s’ha trobat l’edifici. Revisa el carrer i el número.",
+    "addressHouseUnavailable": "El servei d’adreces no ha respost. Això no vol dir que l’edifici no existeixi.",
+    "addressHouseExpiry": "Confirma l’edifici de nou. L’adreça introduïda continua al formulari.",
+    "addressHouseDisclaimer": "La cerca de l’adreça no confirma el dret a llogar aquest allotjament.",
+    "addressHouseSelected": "Adreça seleccionada per desar",
+    "addressHouseLoading": "Cercant l’edifici…",
+    "addressCancelChange": "Cancel·lar els canvis d’adreça",
+    "addressSaveUnknown": "No s’ha rebut cap resposta. L’adreça pot haver-se desat. No tornis a enviar els canvis.",
+    "addressHouseReview": "Revisa les adreces i tria’n una. No s’ha desat res.",
+    "addressHouseCancelLookup": "Cancel·lar la cerca",
+    "addressHouseCancelQuestion": "Vols descartar només l’esborrany de l’adreça? La resta de canvis es conserva.",
+    "addressHouseKeepDraft": "Continuar editant",
+    "addressCurrentReview": "Consultar l’estat actual del servidor",
+    "addressCurrentState": "Estat actual carregat. No confirma el resultat d’un desament sense resposta."
+  }
+};
+Object.entries(houseCopy).forEach(([language,values])=>Object.assign(copy[language],values));
 
 const qaCopy={
   en:{heroLead:"Add a property and keep its physically available dates up to date. An Airbnb listing and calendar are optional.",verifyFirst:"Confirm your email using the link in the message, then log in. Check your spam folder too.",forgotPassword:"Forgot password?",titleRequired:"Enter a property name.",titleTooLong:"Use up to 160 characters for the property name."},
@@ -211,10 +314,7 @@ const listingConflictCopy={
   ru:{listingConflictThisProperty:"Это объявление Airbnb уже подключено к этому объекту.",listingConflictYourAccount:"Это объявление Airbnb уже добавлено к одному из ваших объектов. Проверьте свои объекты в кабинете.",listingConflictOtherAccount:"Это объявление Airbnb уже привязано к другому аккаунту PARROT. Если считаете это ошибкой, напишите нам — разберёмся.",listingConflictNeutral:"Объявление Airbnb уже подключено. Повторите попытку или напишите нам.",listingConflictContact:"Написать нам"}
 };
 const profileCopy={
-  en:{navProfile:"Host profile",profileTitle:"Host profile",profileHelp:"Your host name is visible to guests. Your email and login stay private.",profileName:"Public host name",profileSave:"Save name",profileAccount:"Account",profileSaved:"Host name saved.",profileReturn:"← Back to conversation"},
-  es:{navProfile:"Perfil de anfitrión",profileTitle:"Perfil de anfitrión",profileHelp:"Los huéspedes pueden ver tu nombre de anfitrión. El email y el usuario de acceso son privados.",profileName:"Nombre público del anfitrión",profileSave:"Guardar nombre",profileAccount:"Cuenta",profileSaved:"Nombre guardado.",profileReturn:"← Volver a la conversación"},
-  ca:{navProfile:"Perfil d'amfitrió",profileTitle:"Perfil d'amfitrió",profileHelp:"Els hostes poden veure el nom d'amfitrió. El correu i l'usuari d'accés són privats.",profileName:"Nom públic de l'amfitrió",profileSave:"Desar el nom",profileAccount:"Compte",profileSaved:"Nom desat.",profileReturn:"← Tornar a la conversa"},
-  ru:{navProfile:"Профиль хозяина",profileTitle:"Профиль хозяина",profileHelp:"Имя хозяина видно гостям. Email и логин остаются личными.",profileName:"Публичное имя хозяина",profileSave:"Сохранить имя",profileAccount:"Учётная запись",profileSaved:"Имя хозяина сохранено.",profileReturn:"← Вернуться к диалогу"}
+  en:{profileAccount:"Account"},es:{profileAccount:"Cuenta"},ca:{profileAccount:"Compte"},ru:{profileAccount:"Учётная запись"}
 };
 Object.entries(profileCopy).forEach(([language,values])=>Object.assign(copy[language],values));
 Object.entries(qaCopy).forEach(([language,values])=>Object.assign(copy[language],values));
@@ -236,18 +336,7 @@ const hostHero = document.getElementById("host-hero");
 const propertyPanel = document.getElementById("property-panel");
 const propertyNavigationNode = document.getElementById("host-property-context");
 const hostProfilePanel = document.getElementById("host-profile");
-const hostProfileReturn = document.getElementById("host-profile-return");
-const hostProfileForm = document.getElementById("host-profile-form");
 const profileReturnKey = "parrot669-profile-return";
-const profileReturnId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-function profileReturnContext(){
-  if (!state.authenticated || new URLSearchParams(window.location.search).get("fromMessages") !== "1" || window.location.hash !== "#host-profile") return null;
-  try {
-    const saved=JSON.parse(sessionStorage.getItem(profileReturnKey)||"null");
-    return saved?.accountId === accountId && profileReturnId.test(saved.conversationId || "") &&
-      saved.savedAt > Date.now()-86400000 ? saved : null;
-  } catch { return null; }
-}
 const propertyForm = document.getElementById("property-form");
 const hostAccountEmail = document.getElementById("host-account-email");
 const propertiesNode = document.getElementById("host-properties");
@@ -256,10 +345,321 @@ const langButtons = document.querySelectorAll("[data-host-lang]");
 const authModeButtons = document.querySelectorAll("[data-auth-mode]");
 const propertyAddressEditors = new Map();
 const calendarVerificationPanels = [];
+// Only Host owns these private, in-memory drafts. Identity changes discard them.
+const hostDrafts = new Map();
+// Calendar-command observation only. Host keeps requests, drafts, leases and rendering.
+const hostCalendarViews = (()=>{
+  const views=new Map(), tickets=new WeakMap();
+  const current=view=>!!view && state.authenticated && view.owner===accountId
+    && view.epoch===hostCore.session.epoch && state.properties.includes(view.property)
+    && views.get(view.property.id)===view;
+  const ticketFor=view=>{
+    const ticket=Object.freeze({property:view.property,epoch:view.epoch,command:view.command});
+    tickets.set(ticket,view);return ticket;
+  };
+  const freezeDisplay=value=>{
+    if(value && typeof value==="object"){
+      for(const child of Object.values(value))freezeDisplay(child);
+      Object.freeze(value);
+    }
+    return value;
+  };
+  const project=view=>view ? Object.freeze({command:view.command,phase:view.phase,
+    calendarId:view.calendarId,lastConfirmed:view.lastConfirmed,transportPending:view.transport.pending,
+    checking:!!view.checking,stopped:!!view.stopped}) : undefined;
+  return Object.freeze({
+    get size(){return views.size;},
+    // The ID observer also serves existing read-only diagnostic consumers.
+    get(id){return project(views.get(id));},
+    read(property){return project(views.get(property.id));},
+    begin(property,calendar,command){
+      if(!state.authenticated || !state.properties.includes(property)
+        || views.has(property.id) || hostPropertyWrites.has(property.id))return null;
+      const view={property,owner:accountId,epoch:hostCore.session.epoch,calendarId:calendar?.id || null,
+        command,phase:"pending",lastConfirmed:calendar ? freezeDisplay(JSON.parse(JSON.stringify(calendar))) : null,
+        transport:{pending:true}};
+      views.set(property.id,view);return ticketFor(view);
+    },
+    isCurrent(ticket){return current(tickets.get(ticket));},
+    transportSettled(ticket){
+      // Stop retires the UI ticket, but its replacement still observes this transport.
+      // A reset/forget leaves only an orphan record; settling it never recreates a view.
+      const view=tickets.get(ticket);if(view)view.transport.pending=false;
+    },
+    markUnknown(ticket){const view=tickets.get(ticket);if(current(view))view.phase="unknown";},
+    close(ticket){const view=tickets.get(ticket);if(current(view))views.delete(view.property.id);},
+    beginCheck(property){
+      const view=views.get(property.id);
+      if(!view)return null; // Preserve Host's GET-only check without an observation view.
+      if(!current(view) || view.property!==property || view.transport.pending || view.checking)return undefined;
+      view.checking=true;return ticketFor(view);
+    },
+    finishCheck(ticket,converged){
+      const view=tickets.get(ticket);if(!current(view))return;
+      if(converged)views.delete(view.property.id);
+      else view.checking=false;
+    },
+    stop(property){
+      const view=views.get(property.id);if(!current(view) || view.property!==property)return false;
+      views.set(property.id,{...view,phase:"unknown",stopped:true,checking:false});return true;
+    },
+    forgetProperty(id){views.delete(id);},
+    reset(){views.clear();},
+    pruneInvalid(){for(const [id,view] of views)if(!current(view))views.delete(id);}
+  });
+})();
+const hostViews = new Map();
+const hostPropertyWrites = new Map();
+const hostAddressViews = new Map();
+const hostVerificationViews = new Map();
+const hostResourceVersions = new WeakMap();
+const hostAvailabilityLoads = new WeakMap();
+
+function hostFields(form){
+  return Object.fromEntries([...form.querySelectorAll("input,select,textarea")]
+    .filter(node => node.name && !node.closest?.("[data-host-island]"))
+    .map(node => [node.name, node.type === "checkbox" ? node.checked : node.value]));
+}
+
+function hostDraft(form){
+  const key = `${accountId}:${form.dataset.hostDraftKey || form.id}`;
+  if (!hostDrafts.has(key)) {
+    const values = hostFields(form);
+    hostDrafts.set(key, {server:{...values}, values:{...values}, dirty:new Set(), versions:{}, operation:null});
+  }
+  return hostDrafts.get(key);
+}
+
+function hostAddressSnapshot(form){
+  return JSON.stringify([...form.querySelectorAll("input,select,textarea")]
+    .filter(node=>node.closest?.("[data-host-island]"))
+    .map(node=>[node.id,node.name,node.value]));
+}
+
+function captureHostDraft(form){
+  const draft = hostDraft(form);
+  for (const [name, value] of Object.entries(hostFields(form))) {
+    if (draft.values[name] !== value) draft.versions[name] = (draft.versions[name] || 0) + 1;
+    draft.values[name] = value;
+    if (value === draft.server[name]) draft.dirty.delete(name);
+    else draft.dirty.add(name);
+  }
+  return draft;
+}
+
+function hostDirtyState(){
+  unsavedHostChanges = [...hostDrafts.values()].some(draft => draft.addressDirty
+    || (draft.editor ? draft.editor.verifyOnly || hostEditorDirty(draft) : draft.dirty.size)) || hostCalendarViews.size>0;
+}
+
+function syncHostForm(form, server){
+  const draft = captureHostDraft(form);
+  draft.server = {...server};
+  for (const node of form.querySelectorAll("input,select,textarea")) {
+    if (!node.name || node.closest?.("[data-host-island]")) continue;
+    if (!draft.dirty.has(node.name)) draft.values[node.name] = server[node.name] ?? "";
+    const value = draft.values[node.name];
+    if (node.type === "checkbox") { if (node.checked !== value) node.checked = value; }
+    else if (node.value !== String(value ?? "")) node.value = value ?? "";
+    if (value === server[node.name]) draft.dirty.delete(node.name);
+    node.refreshDateHint?.();
+  }
+  form.hostRefresh?.();
+  hostDirtyState();
+}
+
+function beginHostSave(form, property = null){
+  const draft = captureHostDraft(form);
+  if (draft.operation || (property && hostPropertyWrites.has(property.id))) return null;
+  const operation = {form, draft, values:{...draft.values}, versions:{...draft.versions},
+    dirty:new Set(draft.dirty), addressDirty:!!draft.addressDirty,
+    addressVersion:draft.addressVersion || 0, addressValues:hostAddressSnapshot(form),
+    epoch:hostCore.session.epoch, account:accountId, property,
+    key:`${accountId}:${form.dataset.hostDraftKey || form.id}`};
+  draft.operation = operation;
+  form.dataset.hostOperation = "saving";
+  if (property) hostPropertyWrites.set(property.id, operation);
+  return operation;
+}
+
+function currentHostSave(operation){
+  return operation && operation.epoch === hostCore.session.epoch && operation.account === accountId
+    && hostDrafts.get(operation.key || operation.account+":"+(operation.form.dataset.hostDraftKey || operation.form.id))===operation.draft
+    && (!operation.property || state.properties.includes(operation.property));
+}
+
+function finishHostSave(operation, server){
+  if (!currentHostSave(operation)) return;
+  const draft = captureHostDraft(operation.form);
+  operation.form.dataset.hostOperation = "saved";
+  draft.addressDirty=(draft.addressVersion || 0)!==operation.addressVersion
+    || hostAddressSnapshot(operation.form)!==operation.addressValues;
+  for (const [name, value] of Object.entries(server)) {
+    draft.server[name] = value;
+    if (draft.versions[name] === operation.versions[name] && draft.values[name] === operation.values[name]) {
+      draft.dirty.delete(name);
+      draft.values[name] = value;
+    }
+  }
+  // Apply without treating an acknowledged value as another user edit.
+  for (const node of operation.form.querySelectorAll("input,select,textarea")) {
+    if (node.name && !node.closest?.("[data-host-island]") && !draft.dirty.has(node.name)) {
+      if (node.type === "checkbox") node.checked = draft.values[node.name];
+      else if (node.value !== String(draft.values[node.name] ?? "")) node.value = draft.values[node.name] ?? "";
+      node.refreshDateHint?.();
+    }
+  }
+  hostDirtyState();
+}
+
+function releaseHostSave(operation){
+  if (!operation) return;
+  if (operation.draft.operation === operation) operation.draft.operation = null;
+  if (operation.property && hostPropertyWrites.get(operation.property.id) === operation)
+    hostPropertyWrites.delete(operation.property.id);
+}
+
+function hostInput(event){
+  const form = event.target.closest?.("form");
+  if (!form || (!form.dataset.hostDraftKey && form !== propertyForm)) return;
+  const draft = captureHostDraft(form);
+  if (event.target.closest?.("[data-host-island]")) {draft.addressDirty = true; draft.addressVersion=(draft.addressVersion || 0)+1;}
+  hostDirtyState();
+}
+propertyPanel.addEventListener("input", hostInput);
+propertyPanel.addEventListener("change", hostInput);
+
+function hostMergeRows(previous, rows){
+  return rows.map(row => {
+    const current = previous?.find(item => item.id === row.id);
+    if (!current) return row;
+    Object.assign(current, row);
+    return current;
+  });
+}
+
+function hostMergeProperties(properties, baseline=hostConfirmationRevision){
+  const incoming=new Map(properties.filter(property=>!hostDeletedProperties.has(property.id)).map(property=>[property.id,property]));
+  // A read begun before a peer confirmation cannot remove that confirmed owner.
+  for (const previous of state.properties) {
+    const facts=hostConfirmations.get(previous.id);
+    if (!incoming.has(previous.id) && !hostDeletedProperties.has(previous.id) && facts
+      && (facts.conditions?.revision>baseline || [...facts.periods.values()].some(fact=>fact.revision>baseline)))
+      incoming.set(previous.id,previous);
+  }
+  return [...incoming.values()].map(property => {
+    const previous = state.properties.find(item => item.id === property.id);
+    const facts=hostConfirmations.get(property.id);
+    if (facts?.conditions?.revision>baseline) property={...property,...facts.conditions.value};
+    property={...property,availability:hostConfirmedRows(previous || property,property.availability || [],baseline)};
+    if (!previous) return property;
+    const availability = hostMergeRows(previous.availability, property.availability);
+    const unavailability = hostMergeRows(previous.unavailability, property.unavailability);
+    const calendars = property.calendars;
+    return Object.assign(previous, property, {availability, unavailability, calendars});
+  });
+}
+
+// Reconcile only the existing Host card template. Address/verification controllers
+// are opaque islands; their input nodes, listeners and async lifecycle stay owned there.
+function hostNodeKey(node){
+  return node.dataset?.hostKey || `${node.tagName}:${node.name || node.className || ""}`;
+}
+
+function patchHostView(current, next){
+  if (current.dataset?.hostIsland) return current;
+  const server = current.tagName === "FORM" ? hostFields(next) : null;
+  if (server) captureHostDraft(current);
+  const protectedControl = current.closest?.("form") && /^(INPUT|SELECT|TEXTAREA)$/.test(current.tagName);
+  const busy = current.closest?.("form") && hostDraft(current.closest("form")).operation;
+  const retainedAttribute = name => (protectedControl && name === "value")
+    || (busy && name === "disabled") || (current.tagName==="DETAILS" && name==="open")
+    || (server && ["aria-busy","data-host-operation"].includes(name));
+  for (const name of current.getAttributeNames()) {
+    if (!retainedAttribute(name) && !next.hasAttribute(name)) current.removeAttribute(name);
+  }
+  for (const name of next.getAttributeNames()) {
+    if (!retainedAttribute(name) && current.getAttribute(name) !== next.getAttribute(name))
+      current.setAttribute(name, next.getAttribute(name));
+  }
+  if (!next.children.length) {
+    if (!protectedControl && current.textContent !== next.textContent) current.textContent = next.textContent;
+    if(current.tagName === "INPUT" && current.type === "checkbox" && !current.closest?.("form"))
+      current.checked=next.checked;
+  } else {
+    const children = [...current.children], used = new Set();
+    let position = 0;
+    for (const child of [...next.children]) {
+      const existing = children.find(node => !used.has(node) && hostNodeKey(node) === hostNodeKey(child));
+      const node = existing ? patchHostView(existing, child) : child;
+      used.add(node);
+      if (current.children[position] !== node) current.insertBefore(node, current.children[position] || null);
+      position++;
+    }
+    for (const child of children) if (!used.has(child) && !child.classList.contains("host-form-error")) child.remove();
+  }
+  if (server) syncHostForm(current, server);
+  return current;
+}
+
+function disposeHostProperty(id){
+  hostViews.get(id)?.node.remove();
+  hostViews.delete(id);
+  hostCalendarViews.forgetProperty(id);
+  const address = hostAddressViews.get(id);
+  if (address) {address.editor.dispose(); propertyAddressEditors.delete(address.form); hostAddressViews.delete(id);}
+  for (const [key, panel] of hostVerificationViews) if (panel.propertyId === id) {
+    panel.dispose(); hostVerificationViews.delete(key);
+    const index = calendarVerificationPanels.indexOf(panel);
+    if (index >= 0) calendarVerificationPanels.splice(index, 1);
+  }
+  for (const key of hostDrafts.keys()) if (key.startsWith(`${accountId}:property:${id}:`)) hostRetireDraft(key);
+}
+
+function commitHostCard(property, card, expanded){
+  const previous = hostViews.get(property.id);
+  const node = previous ? patchHostView(previous.node, card) : card;
+  node.hidden=!expanded;
+  if (!previous) {
+    propertiesNode.append(node);
+    for (const form of node.querySelectorAll("form")) captureHostDraft(form);
+  }
+  const position=state.properties.indexOf(property);
+  if(propertiesNode.children[position]!==node){
+    const active=document.activeElement;
+    const selection=active && node.contains(active) ? {node:active,from:active.selectionStart,to:active.selectionEnd} : null;
+    propertiesNode.insertBefore(node,propertiesNode.children[position] || null);
+    if(selection && selection.node.isConnected){
+      selection.node.focus({preventScroll:true});
+      if(selection.from!=null && selection.to!=null)selection.node.setSelectionRange(selection.from,selection.to);
+    }
+  }
+  for (const child of node.children) if (!child.classList.contains("host-property-head")) child.hidden = !expanded;
+  hostViews.set(property.id, {node, expandedOnce:expanded || previous?.expandedOnce});
+  const address = hostAddressViews.get(property.id);
+  if (address) {
+    address.editor.setSaved(property.address);
+    if(address.editor.node.querySelector(".host-address-fields")?.hidden && property.countryCode)
+      address.editor.country.value=property.countryCode;
+    address.editor.updateLanguage();
+  }
+  for (const panel of hostVerificationViews.values()) if(panel.propertyId===property.id){
+    panel.updateLanguage?.(lang);
+    const title=node.querySelector(".host-calendar-sync")?.querySelector("h3");
+    if(title)title.textContent=panel.name;
+  }
+  for (const form of node.querySelectorAll("form")) {
+    const draft=captureHostDraft(form);form.hostRefresh?.();
+    if(draft.pendingSave?.addressCommand)hostHouseReview(draft.pendingSave);
+  }
+  hostDirtyState();
+}
 const newPropertyAddress = window.ParrotAddress.create({
   id:"new-property-address", tr, request:api, required:true, onUnauthorized:addressSessionExpired
 });
+newPropertyAddress.node.dataset.hostIsland="new-address";
 document.getElementById("property-address").append(newPropertyAddress.node);
+newPropertyAddress.refreshDisabled();
 
 function addressSessionExpired(){
   state = {...state, authenticated:false};
@@ -268,7 +668,7 @@ function addressSessionExpired(){
 }
 
 function loadLanguage(){
-  const saved = localStorage.getItem(LANG_KEY);
+  const saved = hostCore.storage.local.getItem(LANG_KEY);
   if (saved && copy[saved]) return saved;
   const browser = (navigator.language || "en").slice(0,2);
   return copy[browser] ? browser : "en";
@@ -280,8 +680,9 @@ function tr(key, ...args){
 }
 
 function applyLanguage(next){
+  const previous=lang;
   lang = copy[next] ? next : "en";
-  localStorage.setItem(LANG_KEY, lang);
+  hostCore.storage.local.setItem(LANG_KEY, lang);
   document.documentElement.lang = lang;
   document.title = tr("title");
 
@@ -299,6 +700,7 @@ function applyLanguage(next){
   newPropertyAddress.updateLanguage();
   renderProperties();
   window.ParrotMessaging?.setLanguage(lang);
+  if(previous!==lang && state.authenticated)void syncDashboard();
 }
 
 function saveState(){
@@ -323,47 +725,85 @@ function message(text, kind = ""){
 }
 
 async function api(path, options = {}){
-  const headers = new Headers(options.headers || {});
-  headers.set("Accept", "application/json");
-  if (options.body) headers.set("Content-Type", "application/json");
-
-  // Browser host API is namespaced under /api/host; the Worker strips /api/host
-  // and forwards the same request to the backend under /api.
-  const response = await fetch(`/api/host${path}`, {
-    ...options,
-    headers,
-    credentials:"same-origin"
-  });
-  if (response.status === 204) return null;
-
-  let data = null;
-  try { data = await response.json(); } catch {}
-  if (!response.ok) {
-    const detail = data?.error || data?.message || `HTTP ${response.status}`;
-    const knownErrors = {
-      "email verification required":"verifyFirst",
-      "title is required":"titleRequired",
-      "title is too long":"titleTooLong",
-      "select an address with a country and city":"addressChoose",
-      "select a full address with a street and house number":"addressChoose",
-      "availability period overlaps an existing period":"overlapError",
-      "unavailability period overlaps an existing block":"blockOverlap",
-      "to must be after from; checkout date is exclusive":"blockDateError",
-      "to must be after from; end date is exclusive":"blockDateError"
-    };
-    const error = new Error(knownErrors[detail] ? tr(knownErrors[detail]) : detail);
-    error.status = response.status;
-    error.code = typeof data?.code === "string" ? data.code : "";
+  const {hostOperation, ...requestOptions}=options;
+  options=requestOptions;
+  let ownedWrite, resource, epoch, currentResource=()=>true;
+  try {
+    if (path === "/auth/me") {
+      const user = await hostCore.session.refresh();
+      if (!user) throw Object.assign(new Error(tr("signIn")), {status:401, code:"AUTHENTICATION_REQUIRED"});
+      return user;
+    }
+    if (path.startsWith("/auth/")) return await hostCore.auth(path.slice(5), options);
+    // Explicit producer contracts; a 204 from any other operation is a protocol error.
+    const method = options.method || "GET";
+    const command204=method === "PATCH" && /^\/properties\/[^/]+$/.test(path);
+    const createProperty=method === "POST" && path==="/properties";
+    const empty = createProperty || command204 || method === "PUT" && /^\/(listings|availability)\/[^/]+$/.test(path)
+      || method === "DELETE" && /^\/(properties|listings|calendars|availability|unavailability)\/[^/]+$/.test(path)
+      || method === "PUT" && /^\/calendars\/[^/]+$/.test(path)
+      || method === "PUT" && /^\/properties\/[^/]+\/public-links$/.test(path)
+      || method === "POST" && /^\/calendars\/[^/]+\/(sync|activate)$/.test(path);
+    epoch = hostCore.session.epoch;
+    resource = state.properties.find(property => path === `/properties/${property.id}` || path.startsWith(`/properties/${property.id}/`)
+      || path === `/listings/${property.listing?.id}`
+      || property.availability?.some(period => path === `/availability/${period.id}`)
+      || property.unavailability?.some(period => path === `/unavailability/${period.id}`)
+      || property.calendars?.some(calendar => path.startsWith(`/calendars/${calendar.id}`)));
+    if (resource && method !== "GET") {
+      const active=hostPropertyWrites.get(resource.id);
+      if (active && active !== hostOperation) throw Object.assign(new Error(tr("loading")),{kind:"busy"});
+      if (!active) {
+        ownedWrite={propertyId:resource.id};
+        hostPropertyWrites.set(resource.id,ownedWrite);
+      }
+      hostResourceVersions.set(resource,(hostResourceVersions.get(resource) || 0)+1);
+    }
+    const resourceVersion=hostResourceVersions.get(resource) || 0;
+    const period=resource?.availability?.find(value=>path===`/availability/${value.id}`)
+      || resource?.unavailability?.find(value=>path===`/unavailability/${value.id}`);
+    const listingId=resource && path===`/listings/${resource.listing?.id}` ? resource.listing.id : null;
+    const calendarId=resource?.calendars?.find(calendar=>path===`/calendars/${calendar.id}` || path.startsWith(`/calendars/${calendar.id}/`))?.id;
+    currentResource=()=>!resource || (epoch===hostCore.session.epoch && state.properties.includes(resource)
+      && (method!=="GET" || resourceVersion===(hostResourceVersions.get(resource) || 0))
+      && (!period || [...(resource.availability || []),...(resource.unavailability || [])].includes(period))
+      && (!listingId || resource.listing?.id===listingId)
+      && (!calendarId || resource.calendars?.some(calendar=>calendar.id===calendarId)));
+    const jsonSuccess=method==="POST" && /^\/properties\/[^/]+\/(availability|unavailability)$/.test(path) ? 201 : 200;
+    const requestPath=path === "/dashboard" ? `${path}?language=${encodeURIComponent(lang)}` : path;
+    const value = await hostCore.session.request(`/api/host${requestPath}`, {...options, authenticated:true,
+      ...(empty ? {expected:"empty",successStatus:createProperty?201:204} : {successStatus:jsonSuccess}),
+      ...(path === "/dashboard" ? {validate:value => value && typeof value === "object" && Array.isArray(value.properties)} : {})});
+    if (!currentResource()) throw Object.assign(new Error("Stale Host resource"), {kind:"stale"});
+    if (method !== "GET") dashboardVersion++;
+    return value;
+  } catch (error) {
+    if (!currentResource())
+      throw Object.assign(new Error("Stale Host resource"), {kind:"stale"});
+    const keys = {EMAIL_VERIFICATION_REQUIRED:"verifyFirst", TITLE_REQUIRED:"titleRequired", TITLE_TOO_LONG:"titleTooLong",
+      ADDRESS_REQUIRED:"addressChoose", FULL_ADDRESS_REQUIRED:"addressChoose", AVAILABILITY_OVERLAP:"overlapError",
+      UNAVAILABILITY_OVERLAP:"blockOverlap"};
+    if(keys[error.code]) error.message = tr(keys[error.code]);
+    // INVALID_REQUEST is contextual in PM120; retain these two existing date
+    // explanations until the backend has a field-specific validation contract.
+    if(error.code === "INVALID_REQUEST" && ["to must be after from; checkout date is exclusive",
+      "to must be after from; end date is exclusive"].includes(error.message)) error.message=tr("blockDateError");
     throw error;
+  } finally {
+    if (ownedWrite && hostPropertyWrites.get(ownedWrite.propertyId) === ownedWrite)
+      hostPropertyWrites.delete(ownedWrite.propertyId);
   }
-  return data;
 }
 
 function setBusy(form, busy){
-  form?.querySelectorAll("button,input,select").forEach(node => node.disabled = busy);
+  form?.querySelectorAll("button").forEach(node => node.disabled = busy);
   if (!busy) {
     if (form === propertyForm) newPropertyAddress.refreshDisabled();
     propertyAddressEditors.get(form)?.refreshDisabled();
+    const draft=hostDrafts.get(`${accountId}:${form.dataset.hostDraftKey || form.id}`);
+    if(draft?.pendingCreate || draft?.pendingSave?.addressCommand){
+      const submit=form.querySelector('button[type="submit"]');if(submit)submit.disabled=true;
+    }
   }
 }
 
@@ -382,10 +822,10 @@ function setFormError(form, text = ""){
 }
 
 const listingConflictKeys={
-  airbnb_listing_already_connected_to_this_property:"listingConflictThisProperty",
-  airbnb_listing_already_connected_to_your_account:"listingConflictYourAccount",
-  airbnb_listing_connected_to_another_account:"listingConflictOtherAccount",
-  airbnb_listing_already_connected:"listingConflictNeutral"
+  AIRBNB_LISTING_ALREADY_CONNECTED_TO_THIS_PROPERTY:"listingConflictThisProperty",
+  AIRBNB_LISTING_ALREADY_CONNECTED_TO_YOUR_ACCOUNT:"listingConflictYourAccount",
+  AIRBNB_LISTING_CONNECTED_TO_ANOTHER_ACCOUNT:"listingConflictOtherAccount",
+  AIRBNB_LISTING_ALREADY_CONNECTED:"listingConflictNeutral"
 };
 
 function setListingFormError(form,error){
@@ -393,7 +833,7 @@ function setListingFormError(form,error){
   if(!key){setFormError(form,error.message);return error.message;}
   const text=tr(key);
   setFormError(form,text);
-  if(error.code==="airbnb_listing_connected_to_another_account"||error.code==="airbnb_listing_already_connected"){
+  if(error.code==="AIRBNB_LISTING_CONNECTED_TO_ANOTHER_ACCOUNT"||error.code==="AIRBNB_LISTING_ALREADY_CONNECTED"){
     const node=form.querySelector(".host-form-error");
     const link=document.createElement("a");
     link.className="host-form-support-link";
@@ -405,36 +845,46 @@ function setListingFormError(form,error){
 }
 
 function setAuthenticated(user){
-  accountId=user?.accountId || null;
-  window.ParrotMessaging?.setUser(user);
-  state = {
-    ...emptyState(),
-    authenticated:true,
-    accountEmail:String(user?.email || ""),
-    username:String(user?.username || ""),
-    profile:user?.profile || null
-  };
+  hostCore.session.setUser(user);
+}
+
+function clearPrivatePresentation(){
+  langButtons.forEach(button=>{button.hostFocus=null;});
+  for (const id of [...hostViews.keys()]) disposeHostProperty(id);
+  calendarVerificationPanels.splice(0).forEach(panel=>panel.dispose());
+  propertyAddressEditors.forEach(editor=>editor.dispose());
+  propertyAddressEditors.clear();
+  hostDrafts.clear();
+  hostPropertyWrites.clear();
+  hostCalendarViews.reset();
+  hostConfirmations.clear(); hostDeletedProperties.clear(); hostConfirmationRevision=0;
+  setBusy(propertyForm,false);
+  delete propertyForm.dataset.hostOperation;
+  state = emptyState();
+  renderAuthState();
+  renderProperties(); // Disposes property address/verification controllers and detached closures.
+  expandedPropertyIds.clear();
+  unsavedHostChanges = false;
+  propertyForm.reset?.();
+  newPropertyAddress.reset();
+  loginForm.elements.password.value = "";
+  registerForm.elements.password.value = "";
+  setFormError(propertyForm);
+  message("");
 }
 
 function renderAuthState(){
   const ready = Boolean(state.authenticated);
-  if (!ready && !sessionLoading) window.ParrotMessaging?.setUser(null);
   hostAuthLinks.hidden = sessionLoading || ready;
   hostAccountSession.hidden = !ready;
   hostHero.hidden = !ready;
   authDialog.hidden = sessionLoading || ready;
   propertyPanel.hidden = !ready;
   hostProfilePanel.hidden = !ready;
-  const returnContext=ready ? profileReturnContext() : null;
-  hostProfileReturn.hidden = !returnContext;
-  if(returnContext)hostProfileReturn.href=`/messages.html?conversation=${encodeURIComponent(returnContext.conversationId)}`;
-  else hostProfileReturn.href="#host-profile";
   hostAccountEmail.textContent = ready ? (state.username || tr("accountLabel")) : "";
   hostAccountEmail.removeAttribute("title");
   document.getElementById("host-profile-email").textContent = ready ? state.accountEmail : "";
   document.getElementById("host-profile-username").textContent = ready ? state.username : "";
-  if (ready && state.profile) hostProfileForm.elements.displayName.value = state.profile.displayName || "";
-  else hostProfileForm.elements.displayName.value = "";
 }
 
 function updateAuthDialog(){
@@ -463,49 +913,113 @@ function setAuthBusy(form, busy){
   authDialog.setAttribute("aria-busy", String(busy));
 }
 
-async function syncDashboard(){
+Object.assign(copy.ru, {"calendar": "Календарь Airbnb", "first_title": "Не удалось получить данные", "first_body": "Успешного обновления ещё не было. Блокировки из источника пока неизвестны.", "stale_title": "Не удалось обновить календарь", "stale_body": "Последние сохранённые данные остаются. Новые изменения не получены; сообщение исчезнет после успешного обновления.", "pending_title": "Обновляем календарь…", "pending_body": "Последние данные остаются на экране. Повторная команда пока недоступна.", "recovered_title": "Календарь обновлён", "recovered_body": "Показаны данные последнего успешного обновления.", "last_success": "Последнее успешное обновление", "never": "Ещё не было", "check": "Проверить состояние", "sync": "Обновить сейчас", "disable": "Выключить", "close_wait": "Прекратить ожидание", "close_note": "Это закроет ожидание на экране, но не отменит уже отправленную команду.", "empty": "Источник успешно прочитан. Внешних блокировок нет.", "initial_read_pending_title": "Проверяем источник перед добавлением", "initial_read_pending_body": "Календарь ещё не подтверждён созданным. Ожидание не означает сохранение или успех.", "create_unknown_title": "Не удалось подтвердить, добавлен ли календарь", "create_unknown_body": "Ответ на сохранение не получен. Календарь мог быть создан — не добавляйте его повторно.", "initial_empty_title": "Календарь добавлен", "initial_empty_body": "Источник успешно прочитан. Внешних заблокированных дат нет. Ручные блокировки и другие ограничения могут оставаться.", "mode_current": "Текущий режим", "mode_active": "Активный", "mode_active_effect": "Календарь обновляется. Подтверждённые внешние блокировки участвуют в доступности.", "mode_frozen": "Заморожен", "mode_frozen_effect": "Календарь не обновляется. Последние подтверждённые внешние блокировки продолжают участвовать.", "mode_disabled": "Отключён", "mode_disabled_effect": "Внешние блокировки этого календаря не участвуют в доступности.", "data_age": "Последние подтверждённые данные", "mode_change_pending_title": "Меняем режим…", "mode_change_pending_body": "Показан прежний подтверждённый режим. Новый режим ещё не подтверждён.", "mode_change_unknown_title": "Не удалось подтвердить новый режим", "mode_change_unknown_body": "Результат команды неизвестен. Не повторяйте изменение, пока проверка не установит состояние.", "availability_effect": "Влияние на доступность", "source_verification_separate": "Проверка источника — отдельный статус.", "mode_no_delete": "Режим не удаляет календарь и не превращает даты в ручные.", "effect_external_current": "ДА · внешние блокировки", "effect_external_retained": "ДА · сохранённые блокировки", "effect_external_none": "НЕТ · внешние блокировки", "freeze": "Заморозить", "activate": "Активировать", "historical_mode": "Последний подтверждённый режим", "historical_error": "Историческая ошибка синхронизации", "command_rejected": "Команда не принята. Проверьте текущее состояние.", "read_unknown": "Не удалось подтвердить текущее состояние календаря."});
+Object.assign(copy.en, {"calendar": "Airbnb calendar", "first_title": "Could not retrieve calendar data", "first_body": "No update has succeeded yet. Blocks from the source are still unknown.", "stale_title": "Could not update the calendar", "stale_body": "The last saved data remains. New changes were not retrieved; this message clears after a successful update.", "pending_title": "Updating the calendar…", "pending_body": "The last data remains on screen. Another update is unavailable for now.", "recovered_title": "Calendar updated", "recovered_body": "Showing data from the latest successful update.", "last_success": "Last successful update", "never": "None yet", "check": "Check state", "sync": "Update now", "disable": "Disable", "close_wait": "Stop waiting", "close_note": "This closes the waiting view but does not cancel a command already sent.", "empty": "The source was read successfully. There are no external blocks.", "initial_read_pending_title": "Checking source before adding", "initial_read_pending_body": "The calendar is not confirmed as created yet. Waiting does not mean saved or successful.", "create_unknown_title": "Could not confirm whether the calendar was added", "create_unknown_body": "No save response was received. The calendar may exist—do not add it again.", "initial_empty_title": "Calendar added", "initial_empty_body": "The source was read successfully. There are no external blocked dates. Manual blocks and other restrictions may remain.", "mode_current": "Current mode", "mode_active": "Active", "mode_active_effect": "The calendar refreshes. Confirmed external blocks affect availability.", "mode_frozen": "Frozen", "mode_frozen_effect": "The calendar does not refresh. The last confirmed external blocks still affect availability.", "mode_disabled": "Disabled", "mode_disabled_effect": "External blocks from this calendar do not affect availability.", "data_age": "Last confirmed data", "mode_change_pending_title": "Changing mode…", "mode_change_pending_body": "The previous confirmed mode remains shown. The new mode is not confirmed yet.", "mode_change_unknown_title": "Could not confirm the new mode", "mode_change_unknown_body": "The command outcome is unknown. Do not repeat the change until a check establishes the state.", "availability_effect": "Availability effect", "source_verification_separate": "Source verification is a separate status.", "mode_no_delete": "A mode does not delete the calendar or convert dates to manual blocks.", "effect_external_current": "YES · external blocks", "effect_external_retained": "YES · retained blocks", "effect_external_none": "NO · external blocks", "freeze": "Freeze", "activate": "Activate", "historical_mode": "Last confirmed mode", "historical_error": "Historical sync error", "command_rejected": "The command was not accepted. Check the current state.", "read_unknown": "Could not confirm the current calendar state."});
+Object.assign(copy.es, {"calendar": "Calendario de Airbnb", "first_title": "No se pudieron obtener los datos", "first_body": "Aún no se ha completado ninguna actualización. Se desconocen los bloqueos del origen.", "stale_title": "No se pudo actualizar el calendario", "stale_body": "Se conservan los últimos datos. No se obtuvieron cambios nuevos; el aviso desaparece tras una actualización correcta.", "pending_title": "Actualizando el calendario…", "pending_body": "Los últimos datos siguen en pantalla. Por ahora no se puede iniciar otra actualización.", "recovered_title": "Calendario actualizado", "recovered_body": "Se muestran los datos de la última actualización correcta.", "last_success": "Última actualización correcta", "never": "Todavía ninguna", "check": "Comprobar estado", "sync": "Actualizar ahora", "disable": "Desactivar", "close_wait": "Dejar de esperar", "close_note": "Se cierra la espera en pantalla, pero no se cancela una orden ya enviada.", "empty": "El origen se ha leído correctamente. No hay bloqueos externos.", "initial_read_pending_title": "Comprobando el origen antes de añadir", "initial_read_pending_body": "Aún no se ha confirmado que el calendario se haya creado. Esperar no significa guardado ni éxito.", "create_unknown_title": "No se pudo confirmar si se añadió el calendario", "create_unknown_body": "No se recibió respuesta al guardar. Puede que el calendario exista; no lo añadas de nuevo.", "initial_empty_title": "Calendario añadido", "initial_empty_body": "El origen se leyó correctamente. No hay fechas externas bloqueadas. Pueden quedar bloqueos manuales y otras restricciones.", "mode_current": "Modo actual", "mode_active": "Activo", "mode_active_effect": "El calendario se actualiza. Los bloqueos externos confirmados afectan a la disponibilidad.", "mode_frozen": "Congelado", "mode_frozen_effect": "El calendario no se actualiza. Los últimos bloqueos externos confirmados siguen afectando a la disponibilidad.", "mode_disabled": "Desactivado", "mode_disabled_effect": "Los bloqueos externos de este calendario no afectan a la disponibilidad.", "data_age": "Últimos datos confirmados", "mode_change_pending_title": "Cambiando el modo…", "mode_change_pending_body": "Se mantiene el modo confirmado anterior. El nuevo modo aún no está confirmado.", "mode_change_unknown_title": "No se pudo confirmar el nuevo modo", "mode_change_unknown_body": "El resultado del comando es desconocido. No repitas el cambio hasta comprobar el estado.", "availability_effect": "Efecto en la disponibilidad", "source_verification_separate": "La verificación del origen es un estado separado.", "mode_no_delete": "Un modo no elimina el calendario ni convierte las fechas en bloqueos manuales.", "effect_external_current": "SÍ · bloqueos externos", "effect_external_retained": "SÍ · bloqueos conservados", "effect_external_none": "NO · bloqueos externos", "freeze": "Congelar", "activate": "Activar", "historical_mode": "Último modo confirmado", "historical_error": "Error histórico de sincronización", "command_rejected": "El comando no se aceptó. Comprueba el estado actual.", "read_unknown": "No se pudo confirmar el estado actual del calendario."});
+Object.assign(copy.ca, {"calendar": "Calendari d’Airbnb", "first_title": "No s’han pogut obtenir les dades", "first_body": "Encara no hi ha cap actualització correcta. Es desconeixen els bloquejos de l’origen.", "stale_title": "No s’ha pogut actualitzar el calendari", "stale_body": "Es conserven les últimes dades. No s’han obtingut canvis nous; l’avís desapareix després d’una actualització correcta.", "pending_title": "S’està actualitzant el calendari…", "pending_body": "Les últimes dades continuen en pantalla. De moment no es pot iniciar una altra actualització.", "recovered_title": "Calendari actualitzat", "recovered_body": "Es mostren les dades de l’última actualització correcta.", "last_success": "Última actualització correcta", "never": "Encara cap", "check": "Comprovar l’estat", "sync": "Actualitzar ara", "disable": "Desactivar", "close_wait": "Deixar d’esperar", "close_note": "Es tanca l’espera a la pantalla, però no es cancel·la una ordre ja enviada.", "empty": "L’origen s’ha llegit correctament. No hi ha bloquejos externs.", "initial_read_pending_title": "Comprovant l’origen abans d’afegir", "initial_read_pending_body": "Encara no s’ha confirmat que el calendari s’hagi creat. Esperar no vol dir desat ni èxit.", "create_unknown_title": "No s’ha pogut confirmar si s’ha afegit el calendari", "create_unknown_body": "No s’ha rebut resposta en desar. El calendari pot existir; no el tornis a afegir.", "initial_empty_title": "Calendari afegit", "initial_empty_body": "L’origen s’ha llegit correctament. No hi ha dates externes bloquejades. Poden quedar bloquejos manuals i altres restriccions.", "mode_current": "Mode actual", "mode_active": "Actiu", "mode_active_effect": "El calendari s’actualitza. Els bloquejos externs confirmats afecten la disponibilitat.", "mode_frozen": "Congelat", "mode_frozen_effect": "El calendari no s’actualitza. Els últims bloquejos externs confirmats continuen afectant la disponibilitat.", "mode_disabled": "Desactivat", "mode_disabled_effect": "Els bloquejos externs d’aquest calendari no afecten la disponibilitat.", "data_age": "Últimes dades confirmades", "mode_change_pending_title": "Canviant el mode…", "mode_change_pending_body": "Es manté el mode confirmat anterior. El mode nou encara no està confirmat.", "mode_change_unknown_title": "No s’ha pogut confirmar el mode nou", "mode_change_unknown_body": "El resultat de l’ordre és desconegut. No repeteixis el canvi fins que una comprovació estableixi l’estat.", "availability_effect": "Efecte en la disponibilitat", "source_verification_separate": "La verificació de l’origen és un estat separat.", "mode_no_delete": "Un mode no elimina el calendari ni converteix les dates en bloquejos manuals.", "effect_external_current": "SÍ · bloquejos externs", "effect_external_retained": "SÍ · bloquejos conservats", "effect_external_none": "NO · bloquejos externs", "freeze": "Congela", "activate": "Activa", "historical_mode": "Últim mode confirmat", "historical_error": "Error històric de sincronització", "command_rejected": "L’ordre no s’ha acceptat. Comprova l’estat actual.", "read_unknown": "No s’ha pogut confirmar l’estat actual del calendari."});
+Object.assign(copy.en, {sourceSingleInputHelp:"Paste the private Airbnb iCal export link. PARROT derives the listing ID and public URL; the token is never displayed.",previewSource:"Preview link",saveSource:"Save source",replaceSource:"Replace source",previewRequired:"Preview this exact link before saving.",cancelPendingSource:"A verification is pending. Cancel it before replacing the calendar token?"});
+Object.assign(copy.es, {sourceSingleInputHelp:"Pega el enlace privado de exportación iCal de Airbnb. PARROT obtiene el ID y la URL pública; el token nunca se muestra.",previewSource:"Previsualizar enlace",saveSource:"Guardar origen",replaceSource:"Reemplazar origen",previewRequired:"Previsualiza este enlace exacto antes de guardarlo.",cancelPendingSource:"Hay una verificación pendiente. ¿Cancelarla antes de reemplazar el token?"});
+Object.assign(copy.ca, {sourceSingleInputHelp:"Enganxa l'enllaç privat d'exportació iCal d'Airbnb. PARROT n'obté l'ID i l'URL pública; el token no es mostra mai.",previewSource:"Previsualitzar enllaç",saveSource:"Desar origen",replaceSource:"Substituir origen",previewRequired:"Previsualitza aquest enllaç exacte abans de desar-lo.",cancelPendingSource:"Hi ha una verificació pendent. Vols cancel·lar-la abans de substituir el token?"});
+Object.assign(copy.ru, {sourceSingleInputHelp:"Вставьте приватную экспортную iCal-ссылку Airbnb. PARROT сам определит ID и публичную ссылку; токен нигде не показывается.",previewSource:"Проверить ссылку",saveSource:"Сохранить источник",replaceSource:"Заменить источник",previewRequired:"Перед сохранением проверьте именно эту ссылку.",cancelPendingSource:"Идёт проверка контроля. Отменить её перед заменой токена календаря?"});
+
+const calendarSnapshots = new WeakMap();
+let dashboardVersion = 0;
+function calendarSnapshot(value){
+  if(!value || !Array.isArray(value.calendars)) return false;
+  const ids = new Set();
+  return value.calendars.every(calendar => {
+    if(!calendar || typeof calendar.id !== "string"
+      || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(calendar.id)
+      || ids.has(calendar.id.toLowerCase()) || typeof calendar.provider !== "string"
+      || typeof calendar.enabled !== "boolean" || !["Active","Frozen","Disabled"].includes(calendar.mode)
+      || !Number.isSafeInteger(calendar.revision) || calendar.revision < 0
+      || calendar.provider!=="Airbnb" || !["Pending","Connected","Error"].includes(calendar.status)
+      || calendar.enabled!==(calendar.mode!=="Disabled")
+      || calendar.reservationBlocks!=null && (!Array.isArray(calendar.reservationBlocks)
+        || !calendar.reservationBlocks.every(block=>block && typeof block.from==="string" && typeof block.to==="string"))) return false;
+    ids.add(calendar.id.toLowerCase());
+    return true;
+  });
+}
+
+function calendarRevision(calendar){
+  const snapshot = calendar && calendarSnapshots.get(calendar);
+  if(!snapshot || snapshot.epoch !== hostCore.session.epoch || !state.authenticated
+    || !state.properties.some(property => property.id === snapshot.propertyId && !property.calendarReadError && property.calendars.includes(calendar))
+    || snapshot.revision!==calendar.revision || snapshot.mode!==calendar.mode)
+    throw new Error("Invalid server response");
+  return snapshot.revision;
+}
+
+async function syncDashboard(target=null){
+  const epoch = hostCore.session.epoch, locale=lang, version = ++dashboardVersion, confirmationBaseline=hostConfirmationRevision;
   message(tr("loading"));
   try {
     const dashboard = await api("/dashboard");
+    if(epoch !== hostCore.session.epoch || version !== dashboardVersion || locale!==lang) return;
+    let calendarError;
+    const properties = await Promise.all(dashboard.properties.map(async property => {
+      let calendars = [], calendarReadError=false;
+      try {
+        // Dashboard does not contain calendar mode/revision. Only the
+        // authenticated property snapshot is a command source.
+        const snapshot = await api(`/properties/${property.id}/calendars`, {validate:calendarSnapshot});
+        calendars = snapshot.calendars.map(calendar => {
+          const previous=state.properties.find(item=>item.id===property.id)?.calendars.find(item=>item.id===calendar.id);
+          if(previous && previous.revision>calendar.revision) throw housingAckError();
+          // Keep producer casing/mode intact. Only view comparisons may normalize.
+          const view = {...calendar};
+          calendarSnapshots.set(view, {propertyId:property.id, epoch, revision:calendar.revision,mode:calendar.mode});
+          return view;
+        });
+      } catch(error) {
+        if(error.kind === "stale" || error.status === 401) throw error;
+        calendarError ||= error; calendarReadError=true;
+        calendars = state.properties.find(item=>item.id===property.id)?.calendars || [];
+      }
+      const previous=state.properties.find(item=>item.id===property.id);
+      const previousProblems=previous?.calendarSyncProblems || (previous?.calendars || []).filter(calendar=>calendar.status==="Error");
+      const calendarSyncProblems=calendarReadError ? previousProblems : calendars.flatMap(calendar=>
+        calendar.status==="Error" ? [calendar] : calendar.status==="Pending" ? previousProblems.filter(problem=>problem.id===calendar.id) : []);
+      return {...property,
+        listing:Array.isArray(property.listings) ? (property.listings[0] || null) : null,
+        availability:hostReadPeriods(property.availability,property.id),
+        unavailability:hostReadPeriods(property.unavailability,property.id,false),
+        calendars, calendarReadError, calendarSyncProblems};
+    }));
+    if(epoch !== hostCore.session.epoch || version !== dashboardVersion || locale!==lang) return;
     if (dashboard.profile) {
       state.profile = dashboard.profile;
-      hostProfileForm.elements.displayName.value = dashboard.profile.displayName || "";
     }
-    state.properties = (dashboard.properties || []).map(property => ({
-      ...property,
-      listing: Array.isArray(property.listings) ? (property.listings[0] || null) : null,
-      availability: Array.isArray(property.availability) ? property.availability : [],
-      unavailability: Array.isArray(property.unavailability) ? property.unavailability : [],
-      calendars: Array.isArray(property.calendars) ? property.calendars : []
-    }));
+    state.properties = hostMergeProperties(properties,confirmationBaseline);
     const navigateToProperty = propertyNavigationPending;
-    const returningFromMessages = !navigateToProperty && profileReturnContext();
     let previousScroll = null;
     if(navigateToProperty){
       propertyNavigationPending = false;
       expandedPropertyIds.clear();
       if(state.properties.some(property=>property.id===propertyNavigationId)) expandedPropertyIds.add(propertyNavigationId);
-      try { sessionStorage.removeItem(returnKey(accountId)); } catch {}
-    }else if(!returningFromMessages) previousScroll=restoreHostContext();
-    renderProperties();
+      try { hostCore.storage.session.removeItem(returnKey(accountId)); } catch {}
+    }else previousScroll=restoreHostContext();
+    renderProperties(null,{noAutoSelect:!!target?.currentStateOnly});
     if(navigateToProperty) requestAnimationFrame(()=>{
       const card=Array.from(propertiesNode.children).find(node=>node.dataset.propertyId===propertyNavigationId);
       (card || propertyNavigationNode).scrollIntoView?.({block:"start",behavior:"auto"});
       card?.focus?.({preventScroll:true});
     });
-    else if(returningFromMessages)
-      requestAnimationFrame(()=>hostProfilePanel.scrollIntoView?.({block:"start"}));
     else if(previousScroll!==null && previousScroll!==undefined)
       restoreHostScroll(previousScroll);
-    message("");
+    message(calendarError?.message || "", calendarError ? "error" : "");
+    const current=target && state.properties.find(property=>property.id===target.propertyId);
+    return {applied:true,epoch,version,property:current,read:current && !current.calendarReadError ? "confirmed" : "unknown"};
   } catch (error) {
+    if(error.kind === "stale" || epoch !== hostCore.session.epoch || version !== dashboardVersion || locale!==lang) return;
     if (error.status === 401) {
       state = emptyState();
       state.properties = [];
       renderAuthState();
     }
     message(error.message, "error");
-    state.properties = [];
+    if (error.status === 401) state.properties = [];
     renderProperties();
   }
 }
@@ -527,6 +1041,10 @@ async function revalidateRestoredPage(){
   // BFCache restores the previous DOM verbatim. Clear every auth-sensitive
   // value synchronously, then rebuild it only from a fresh server session.
   sessionLoading = true;
+  hostDrafts.clear();
+  hostPropertyWrites.clear();
+  hostCalendarViews.reset();
+  hostConfirmations.clear(); hostDeletedProperties.clear(); hostConfirmationRevision=0;
   state = emptyState();
   accountId = null;
   expandedPropertyIds.clear();
@@ -559,7 +1077,7 @@ async function restoreSession(){
       });
       setAuthenticated(user);
       renderAuthState();
-      await syncDashboard();
+      await dashboardLoad;
       params.delete("verifyEmail");
       const query = params.toString();
       history.replaceState(null, "", window.location.pathname + (query ? `?${query}` : "") + window.location.hash);
@@ -582,7 +1100,7 @@ async function restoreSession(){
     const user = await api("/auth/me");
     setAuthenticated(user);
     renderAuthState();
-    await syncDashboard();
+    await dashboardLoad;
   } catch (error) {
     state = emptyState();
     renderAuthState();
@@ -593,29 +1111,6 @@ async function restoreSession(){
 }
 
 openLoginButton.addEventListener("click", () => openAuth("login"));
-hostProfileForm.addEventListener("submit", async event => {
-  event.preventDefault();
-  if (!state.authenticated) return;
-  setFormError(hostProfileForm);
-  setBusy(hostProfileForm, true);
-  try {
-    const profile = await api("/profile", {
-      method:"PATCH",
-      body:JSON.stringify({displayName:hostProfileForm.elements.displayName.value.trim()})
-    });
-    state.profile = profile;
-    hostProfileForm.elements.displayName.value = profile.displayName;
-    message(tr("profileSaved"), "success");
-  } catch (error) {
-    setFormError(hostProfileForm, error.message);
-    if (error.status === 401) {
-      state = emptyState();
-      renderAuthState();
-    }
-  } finally {
-    setBusy(hostProfileForm, false);
-  }
-});
 openRegisterButton.addEventListener("click", () => openAuth("register"));
 authModeButtons.forEach(button => button.addEventListener("click", () => openAuth(button.dataset.authMode)));
 
@@ -637,7 +1132,7 @@ loginForm.addEventListener("submit", async event => {
     });
     setAuthenticated(user);
     renderAuthState();
-    await syncDashboard();
+    await dashboardLoad;
     loginForm.elements.password.value = "";
     message(tr("loggedIn"), "success");
   } catch (error) {
@@ -681,21 +1176,49 @@ registerForm.addEventListener("submit", async event => {
   }
 });
 
+function hostHouseReview(operation){
+  if(!currentHostSave(operation))return;
+  const {form,draft}=operation;
+  let button=form.querySelector(".host-house-review");
+  if(!button){
+    button=document.createElement("button");button.type="button";button.className="text-button host-house-review";
+    form.append(button);
+  }
+  button.textContent=tr("addressCurrentReview");
+  button.onclick=async()=>{
+    if(!currentHostSave(operation) || draft.operation || operation.checking)return;
+    if(operation.property){await verifyPropertySettings(operation);return;}
+    operation.checking=true;button.disabled=true;
+    try{
+      const result=await syncDashboard({currentStateOnly:true});
+      if(!currentHostSave(operation) || !result?.applied)return;
+      if(!operation.receivedAck){form.dataset.hostOperation="unknown";setFormError(form,tr("addressSaveUnknown"));}
+      message(tr("addressCurrentState"));
+    }finally{operation.checking=false;if(currentHostSave(operation))button.disabled=false;}
+  };
+}
+
 propertyForm.addEventListener("submit", async event => {
   event.preventDefault();
+  const draft=hostDraft(propertyForm);
+  if(draft.pendingCreate){hostHouseReview(draft.pendingCreate);return;}
+  const operation=beginHostSave(propertyForm);
+  if (!operation) return;
+  propertyForm.querySelector(".host-house-review")?.remove();
 
   const form = new FormData(propertyForm);
   setFormError(propertyForm);
 
   try {
-    const address = newPropertyAddress.getValue();
+    let address;
+    try{address=newPropertyAddress.getValue();}catch(error){throw Object.assign(error,{kind:"validation",status:400});}
     setBusy(propertyForm, true);
     message(tr("addingProperty"));
-    const created = await api("/properties", {
+    operation.addressCommand=true;draft.pendingCreate=operation;
+    await api("/properties", {
       method:"POST",
       body:JSON.stringify({
         title:String(form.get("title") || "").trim(),
-        city:address.city,
         address,
         accommodationType:String(form.get("accommodationType") || "entire_place"),
         bedrooms:Number(form.get("bedrooms")),
@@ -703,33 +1226,24 @@ propertyForm.addEventListener("submit", async event => {
       })
     });
 
-    state.properties.push({
-      id:created.id,
-      title:created.title,
-      city:created.city,
-      countryCode:created.countryCode,
-      country:created.country,
-      address:created.address,
-      accommodationType:created.accommodationType,
-      bedrooms:created.bedrooms,
-      sleeps:created.sleeps,
-      minStayDays:created.minStayDays,
-      cleaningFeeCents:created.cleaningFeeCents,
-      listing:null,
-      availability:[],
-      unavailability:[],
-      calendars:[]
-    });
-    expandedPropertyIds.add(created.id);
-    propertyForm.elements.title.value = "";
-    newPropertyAddress.reset();
+    if (!currentHostSave(operation)) return;
+    finishHostSave(operation,{title:""});
+    operation.receivedAck=true;draft.pendingCreate=null;
+    if (!operation.draft.addressDirty) newPropertyAddress.reset();
     message(tr("propertyAdded"), "success");
-    renderProperties();
+    hostHouseReview(operation);
   } catch (error) {
-    setFormError(propertyForm, error.message);
-    message(error.message, "error");
+    if (!currentHostSave(operation) || error.kind === "stale") return;
+    const definite=error.kind==="validation" || error.status>=400 && error.status<500 && ![408,429].includes(error.status);
+    if(definite)draft.pendingCreate=null;
+    propertyForm.dataset.hostOperation=definite ? "failed" : "unknown";
+    setFormError(propertyForm, definite ? error.message : tr("addressSaveUnknown"));
+    if(!definite)hostHouseReview(operation);
+    if(error.status===400 && error.message==="confirm the house again")newPropertyAddress.invalidateConfirmation();
+    message(definite ? error.message : tr("addressSaveUnknown"), "error");
   } finally {
-    setBusy(propertyForm, false);
+    releaseHostSave(operation);
+    if(currentHostSave(operation))setBusy(propertyForm, false);
   }
 });
 
@@ -747,8 +1261,8 @@ resetButton.addEventListener("click", async () => {
     }
   }
   state = emptyState();
-  if(accountId){try{sessionStorage.removeItem(returnKey(accountId));}catch{}}
-  try{sessionStorage.removeItem(profileReturnKey);}catch{}
+  if(accountId){try{hostCore.storage.session.removeItem(returnKey(accountId));}catch{}}
+  try{hostCore.storage.session.removeItem(profileReturnKey);}catch{}
   accountId=null;
     newPropertyAddress.reset();
     unsavedHostChanges=false;
@@ -770,67 +1284,483 @@ function centsToEuros(value){
   return (Number(value)/100).toFixed(2).replace(/\.00$/,"");
 }
 
-async function updatePropertySettings(property, form){
-  setFormError(form);
-  const data=new FormData(form);
-  const payload={
-    accommodationType:data.has("accommodationType") ? String(data.get("accommodationType")||"entire_place") : property.accommodationType,
-    bedrooms:data.has("bedrooms") ? Number(data.get("bedrooms")) : Number(property.bedrooms),
-    sleeps:data.has("sleeps") ? Number(data.get("sleeps")) : Number(property.sleeps),
-    minStayDays:data.has("minStayDays") ? Number(data.get("minStayDays")) : Number(property.minStayDays||1),
-    cleaningFeeCents:data.has("cleaningFee") ? eurosToCents(data.get("cleaningFee")) : property.cleaningFeeCents
-  };
-  if(data.has("title")) payload.title=String(data.get("title")||"").trim();
-  try{
-    const addressEditor = propertyAddressEditors.get(form);
-    if (addressEditor) payload.address = addressEditor.getValue();
-    setBusy(form,true);
-    message(tr("loading"));
-    const updated=await api(`/properties/${property.id}`,{
-      method:"PUT",
-      body:JSON.stringify(payload)
-    });
-    property.title=updated.title;
-    property.accommodationType=updated.accommodationType;
-    property.bedrooms=updated.bedrooms;
-    property.sleeps=updated.sleeps;
-    property.minStayDays=updated.minStayDays;
-    property.cleaningFeeCents=updated.cleaningFeeCents;
-    property.city=updated.city;
-    property.countryCode=updated.countryCode;
-    property.country=updated.country;
-    property.address=updated.address;
-    saveState();
-    message(tr("propertySettingsSaved"),"success");
-    renderProperties();
-  }catch(error){setFormError(form,error.message);message(error.message,"error")}
-  finally{setBusy(form,false)}
+function housingAckError(){
+  return Object.assign(new Error("Invalid housing acknowledgement"), {kind:"protocol"});
 }
 
-async function addListing(property, form){
-  setFormError(form);
-  const data = new FormData(form);
-  setBusy(form, true);
-  message(tr("savingListing"));
+function propertyAck(value, id){
+  const integer=(field,min,max)=>Number.isInteger(value?.[field]) && value[field]>=min && value[field]<=max;
+  const optionalText=v=>v===null || typeof v==="string";
+  const address=a=>a===null || a && a.type==="full" && a.country
+    && typeof a.country.code==="string" && typeof a.country.name==="string"
+    && ["locality","street","houseNumber"].every(key=>typeof a[key]==="string")
+    && optionalText(a.localityNative);
+  if (!value || value.id!==id || !["title","country","countryCode","createdAt"].every(key=>typeof value[key]==="string")
+    || !optionalText(value.city) || !optionalText(value.cityNative)
+    || !["entire_place","private_room"].includes(value.accommodationType)
+    || !integer("bedrooms",1,20) || !integer("sleeps",1,40) || !integer("minStayDays",1,365)
+    || !(value.cleaningFeeCents===null || Number.isSafeInteger(value.cleaningFeeCents) && value.cleaningFeeCents>=0 && value.cleaningFeeCents<=10000000)
+    || !Object.hasOwn(value,"address") || !address(value.address)
+    || !Number.isFinite(Date.parse(value.createdAt))) throw housingAckError();
+  return value;
+}
 
-  try {
-    const created = await api(`/properties/${property.id}/listings`, {
-      method:"POST",
-      body:JSON.stringify({
-        platform:"Airbnb",
-        externalId:String(data.get("externalId") || "").trim()
-      })
-    });
-    property.listing = {id:created.id, platform:created.platform, externalId:created.externalId, url:created.url, showInSearch:created.showInSearch!==false};
-    saveState();
-    message(tr("listingSaved"), "success");
-    renderProperties();
-  } catch (error) {
-    const text=setListingFormError(form,error);
-    message(text, "error");
-  } finally {
-    setBusy(form, false);
+// S4 editor metadata lives on hostDrafts: no second map owns form values.
+// The confirmation ledger owns only server facts, scoped to this session.
+let hostConfirmationRevision = 0;
+let hostSelectionGeneration = 0;
+const hostConfirmations = new Map();
+const hostDeletedProperties = new Set();
+
+function hostConfirmation(property){
+  if (!hostConfirmations.has(property.id)) hostConfirmations.set(property.id, {periods:new Map(), conditions:null});
+  return hostConfirmations.get(property.id);
+}
+function hostConfirmedRows(property, rows, baseline){
+  const merged = new Map(rows.map(row => [row.id, row]));
+  for (const [id, fact] of hostConfirmation(property).periods) if (fact.revision > baseline) {
+    if (fact.value === null) merged.delete(id);
+    else merged.set(id, {...fact.value});
   }
+  // List reads cannot silently discard an unresolved or locally edited owner.
+  // Explicit confirmed absence, Cancel verification and DELETE can retire it.
+  for (const previous of property.availability || []) {
+    const draft=hostDrafts.get(hostPeriodKey(property,previous.id));
+    const fact=hostConfirmation(property).periods.get(previous.id);
+    if (!merged.has(previous.id) && !(fact?.revision>baseline && fact.value===null) && draft?.editor
+      && (draft.operation || draft.editor.phase==="saving" || draft.editor.verifyOnly || hostEditorDirty(draft)))
+      merged.set(previous.id,previous);
+  }
+  return [...merged.values()];
+}
+function hostConfirmPeriod(property, id, value){
+  hostConfirmation(property).periods.set(id, {revision:++hostConfirmationRevision, value:value && {...value}});
+}
+function hostConfirmConditions(property, value){
+  hostConfirmation(property).conditions = {revision:++hostConfirmationRevision,
+    value:{minStayDays:value.minStayDays, cleaningFeeCents:value.cleaningFeeCents}};
+}
+function hostRetireDraft(key){
+  const draft=hostDrafts.get(key);
+  if (draft?.editor) draft.editor.generation++;
+  hostDrafts.delete(key);
+}
+function hostPeriodKey(property, id){ return `${accountId}:property:${property.id}:availability:${id}`; }
+function hostEditor(form, kind, id){
+  const draft=hostDraft(form);
+  draft.editor ||= {kind, id, phase:"idle", verifyOnly:false, error:"", generation:0, submitted:null};
+  return draft.editor;
+}
+function hostEditorOwner(property, form){
+  const draft=captureHostDraft(form), editor=draft.editor;
+  return {property, form, draft, editor, generation:++editor.generation,
+    selection:hostSelectionGeneration, key:`${accountId}:${form.dataset.hostDraftKey}`, epoch:hostCore.session.epoch, account:accountId};
+}
+function currentHostEditor(owner){
+  return owner.epoch===hostCore.session.epoch && owner.account===accountId
+    && state.properties.includes(owner.property) && hostDrafts.get(owner.key)===owner.draft
+    && owner.editor.generation===owner.generation;
+}
+function hostEditorValues(kind, value){
+  return kind==="period" ? {from:value.from, to:plusDays(value.to,-1), nightlyPrice:centsToEuros(value.nightlyPriceCents)}
+    : {minStayDays:String(value.minStayDays), cleaningFee:centsToEuros(value.cleaningFeeCents)};
+}
+function hostEditorMoney(value, minimum){
+  const text=String(value ?? "").trim();
+  if (!text) return null;
+  const cents=eurosToCents(text);
+  if (!/^\d+(?:[.,]\d{1,2})?$/.test(text) || !Number.isSafeInteger(cents) || cents<minimum || cents>10000000)
+    throw Object.assign(new Error(tr("periodDraftKept")), {kind:"validation", status:400});
+  return cents;
+}
+function hostIsoDate(value){
+  return typeof value==="string" && /^\d{4}-\d{2}-\d{2}$/.test(value)
+    && Number.isFinite(Date.parse(value+"T00:00:00Z")) && new Date(value+"T00:00:00Z").toISOString().slice(0,10)===value;
+}
+function hostEditorPayload(kind, values){
+  if (kind==="conditions") {
+    const minStayDays=Number(values.minStayDays);
+    if (!/^\d+$/.test(String(values.minStayDays)) || !Number.isInteger(minStayDays) || minStayDays<1 || minStayDays>365)
+      throw Object.assign(new Error(tr("conditionsMismatch")), {kind:"validation", status:400});
+    return {minStayDays, cleaningFeeCents:hostEditorMoney(values.cleaningFee,0)};
+  }
+  if (!hostIsoDate(values.from) || !hostIsoDate(values.to) || values.to<values.from || values.to>="9999-12-31")
+    throw Object.assign(new Error(tr("blockDateError")), {kind:"validation", status:400});
+  // Form nights are inclusive. This is the single write boundary conversion.
+  return {...hostPeriodDates({get:name=>values[name]}), nightlyPriceCents:hostEditorMoney(values.nightlyPrice,1)};
+}
+function sameHostEditorValue(kind, a, b){
+  const fields=kind==="period" ? ["from","to","nightlyPriceCents"] : ["minStayDays","cleaningFeeCents"];
+  return fields.every(name=>a[name]===b[name]);
+}
+function hostEditorDirty(draft){
+  try {return !sameHostEditorValue(draft.editor.kind, hostEditorPayload(draft.editor.kind,draft.values),
+    hostEditorPayload(draft.editor.kind,draft.server));} catch {return true;}
+}
+function hostReadPeriods(rows, propertyId, priced=true){
+  if (!Array.isArray(rows)) throw housingAckError();
+  const ids=new Set();
+  return rows.map(row=>{
+    if(!row || typeof row.id!=="string" || !row.id || ids.has(row.id)
+      || row.propertyId!==propertyId || !hostIsoDate(row.period?.from) || !hostIsoDate(row.period?.to)
+      || row.period.to<=row.period.from || typeof row.createdAt!=="string" || !Number.isFinite(Date.parse(row.createdAt))
+      || priced && !(row.nightlyPriceCents===null || Number.isSafeInteger(row.nightlyPriceCents)
+        && row.nightlyPriceCents>=1 && row.nightlyPriceCents<=10000000))throw housingAckError();
+    ids.add(row.id);
+    return {...row,from:row.period.from,to:row.period.to};
+  });
+}
+function hostEditorSnapshot(owner){
+  return {form:owner.form, draft:owner.draft, property:owner.property, epoch:owner.epoch, account:owner.account,
+    values:{...owner.draft.values}, versions:{...owner.draft.versions}, addressVersion:owner.draft.addressVersion || 0,
+    addressValues:hostAddressSnapshot(owner.form)};
+}
+function hostEditorRefresh(owner){
+  if (!currentHostEditor(owner)) return;
+  owner.form.hostRefresh?.(); hostDirtyState();
+}
+function focusHostEditorResult(owner){
+  const activeForm=document.activeElement?.closest?.("form");
+  if (!currentHostEditor(owner) || owner.editor.kind!=="period" || owner.selection!==hostSelectionGeneration
+    || !expandedPropertyIds.has(owner.property.id) || activeForm && activeForm!==owner.form) return;
+  const control=["idle","saved"].includes(owner.editor.phase) ? ".host-period-edit"
+    : owner.editor.phase==="error" ? ".host-period-save" : null;
+  if(control)owner.form.querySelector(control)?.focus({preventScroll:true});
+}
+function hostEditorFailure(owner, error, ambiguous){
+  if (!currentHostEditor(owner)) return;
+  owner.editor.phase="error";
+  owner.editor.verifyOnly=ambiguous;
+  owner.editor.error=error.message;
+  owner.form.dataset.hostOperation=ambiguous ? "unknown" : "failed";
+  hostEditorRefresh(owner);
+  message(error.message,"error");
+  focusHostEditorResult(owner);
+}
+
+async function verifyHostEditor(owner, cancel=false){
+  if (!currentHostEditor(owner)) return;
+  const {property, editor, draft, form}=owner;
+  // Cancel snapshots the CURRENT generation, never the original submitted generation.
+  const snapshot=cancel ? hostEditorSnapshot(owner) : editor.submitted;
+  const baseline=hostConfirmationRevision;
+  editor.phase="saving"; editor.verifyOnly=true; editor.error="";
+  hostEditorRefresh(owner);
+  try {
+    let saved;
+    if (editor.kind==="period") {
+      const rows=hostReadPeriods(await api(`/properties/${property.id}/availability`),property.id);
+      if (!currentHostEditor(owner)) return;
+      saved=rows.find(value=>value.id===editor.id);
+      if (!saved && !cancel) throw new Error(tr("periodUnconfirmed"));
+      if (saved && !cancel && !sameHostEditorValue("period",saved,editor.wanted)) throw new Error(tr("periodUnconfirmed"));
+      hostConfirmPeriod(property,editor.id,saved || null);
+      property.availability=hostMergeRows(property.availability,hostConfirmedRows(property,rows,baseline));
+      if (!saved) {
+        hostRetireDraft(owner.key);
+        saveState(); renderProperties(); hostDirtyState();
+        return;
+      }
+    } else {
+      // Conditions merge only their own fields; a peer period write cannot roll them back.
+      saved=await readCurrentProperty(property,{checkVersion:false});
+      if (!currentHostEditor(owner)) return;
+      if (!cancel && !sameHostEditorValue("conditions",saved,editor.wanted)) throw new Error(tr("conditionsMismatch"));
+      hostConfirmConditions(property,saved);
+      // A property-wide ACK/read must not replace a peer period or detail draft.
+      property.minStayDays=saved.minStayDays; property.cleaningFeeCents=saved.cleaningFeeCents;
+    }
+    finishHostSave(snapshot,hostEditorValues(editor.kind,saved));
+    editor.verifyOnly=false; editor.error="";
+    editor.phase=hostEditorDirty(draft) ? "editing" : cancel ? "idle" : "saved";
+    editor.submitted=null; editor.wanted=null;
+    form.dataset.hostOperation=cancel ? "idle" : "saved";
+    saveState(); renderProperties(); hostEditorRefresh(owner);
+    focusHostEditorResult(owner);
+    if (!cancel) message(tr(editor.kind==="period" ? "periodSaved" : "conditionsSaved"),"success");
+  } catch (error) {
+    // Resource-version invalidation is a failed read, not loss of this editor owner.
+    // The owner/epoch/retirement guard decides whether there is still UI to update.
+    hostEditorFailure(owner,error,true);
+  }
+}
+
+async function saveHostEditor(property, form){
+  const draft=captureHostDraft(form), editor=draft.editor;
+  if (!editor || editor.phase==="saving") return;
+  if (editor.verifyOnly) return verifyHostEditor(hostEditorOwner(property,form));
+  if (!hostEditorDirty(draft)) {form.hostRefresh?.(); return;}
+  let wanted, payload;
+  try {
+    wanted=hostEditorPayload(editor.kind,draft.values);
+    payload={...wanted};
+    if (editor.kind==="conditions") {
+      const baseline=hostEditorPayload(editor.kind,draft.server);
+      for (const name of Object.keys(payload)) if (payload[name]===baseline[name]) delete payload[name];
+    }
+  } catch (error) {return hostEditorFailure(hostEditorOwner(property,form),error,false);}
+  const operation=beginHostSave(form,property);
+  // A busy peer did not attempt a write. Keep the draft and known commit state.
+  if (!operation) {setFormError(form,tr("loading")); return;}
+  const owner=hostEditorOwner(property,form);
+  editor.submitted=operation; editor.wanted=wanted;
+  editor.phase="saving"; editor.error=""; form.dataset.hostOperation="saving";
+  hostEditorRefresh(owner);
+  let acknowledged=false;
+  try {
+    await api(editor.kind==="period" ? `/availability/${editor.id}` : `/properties/${property.id}`, {
+      hostOperation:operation, method:editor.kind==="period" ? "PUT" : "PATCH",
+      body:JSON.stringify(editor.kind==="period" ? {period:{from:payload.from,to:payload.to},nightlyPriceCents:payload.nightlyPriceCents} : payload)});
+    if (!currentHostEditor(owner)) return;
+    acknowledged=true;
+  } catch (error) {
+    const definite=error.kind==="busy" || error.kind==="validation"
+      || error.status>=400 && error.status<500 && ![408,429].includes(error.status);
+    hostEditorFailure(owner,error,!definite);
+  } finally {
+    releaseHostSave(operation);
+  }
+  // The sole property mutation lease ends before any GET-only verification.
+  if (acknowledged && currentHostEditor(owner)) await verifyHostEditor(owner);
+}
+
+async function cancelHostEditor(property, form){
+  const draft=captureHostDraft(form), editor=draft.editor;
+  if (editor.phase==="saving") return;
+  const owner=hostEditorOwner(property,form);
+  if (editor.verifyOnly) return verifyHostEditor(owner,true);
+  finishHostSave(hostEditorSnapshot(owner),{...draft.server});
+  editor.phase="idle"; editor.error=""; editor.submitted=null; editor.wanted=null;
+  form.dataset.hostOperation="idle"; hostEditorRefresh(owner);
+  focusHostEditorResult(owner);
+}
+
+function setHostText(node, text){
+  if (node.textContent!==text) node.textContent=text;
+}
+
+function attachHostEditor(property, form, kind, id){
+  const editor=hostEditor(form,kind,id);
+  const heading=form.querySelector("h4") || document.createElement("h4");
+  if (!heading.parentElement) {heading.className="host-condition-heading"; form.insertBefore(heading,form.children[0] || null);}
+  const summary=document.createElement("p");
+  summary.className="host-inline-muted host-period-summary"; summary.dataset.hostKey="editor-summary";
+  const status=document.createElement("p");
+  status.className="host-editor-status"; status.dataset.hostKey="editor-status"; status.setAttribute("role","status");
+  const actions=form.querySelector(".host-period-actions") || document.createElement("div");
+  actions.className="host-period-actions";
+  const save=form.querySelector("button[type=submit]") || form.querySelector("button");
+  save.className="button button-small host-period-save";
+  const spinner=document.createElement("span"); spinner.className="host-period-spinner"; spinner.setAttribute("aria-hidden","true");
+  const saveText=document.createElement("span"); saveText.dataset.hostKey="save-label";
+  save.textContent=""; save.append(spinner,saveText);
+  const edit=document.createElement("button"); edit.type="button"; edit.className="button button-small host-period-edit";
+  const cancel=document.createElement("button"); cancel.type="button"; cancel.className="button button-small host-period-cancel";
+  edit.addEventListener("click",()=>{editor.phase="editing"; editor.error=""; form.hostRefresh(); form.querySelector("input")?.focus();});
+  cancel.addEventListener("click",()=>cancelHostEditor(property,form));
+  actions.append(edit,save,cancel);
+  form.append(summary,status,actions);
+  const error=document.createElement("p"); error.className="host-inline-error host-form-error"; error.setAttribute("role","alert"); error.hidden=true; form.append(error);
+  form.hostRefresh=()=>{
+    const draft=captureHostDraft(form), dirty=hostEditorDirty(draft), busy=editor.phase==="saving";
+    if (editor.phase==="saved" && dirty) editor.phase="editing";
+    const expanded=kind==="conditions" || !["idle","saved"].includes(editor.phase);
+    form.dataset.state=editor.phase; form.setAttribute("aria-busy",String(busy));
+    setHostText(heading,tr(kind==="conditions" ? "conditionsGroup" : expanded ? "periodEditing" : "savedPeriod")
+      + (dirty || editor.verifyOnly ? ` · ${tr("unsavedLabel")}` : ""));
+    for (const label of form.querySelectorAll("label")) label.hidden=!expanded;
+    for (const input of form.querySelectorAll("input")) input.readOnly=busy || editor.verifyOnly;
+    for (const button of form.querySelectorAll("button")) button.disabled=busy;
+    edit.hidden=kind==="conditions" || expanded;
+    setHostText(edit,tr("periodEdit"));
+    save.hidden=kind==="period" && !expanded;
+    save.disabled=busy || !editor.verifyOnly && !dirty;
+    spinner.hidden=!busy;
+    setHostText(saveText,tr(busy ? "periodSavingAction" : editor.verifyOnly ? "periodCheck" : editor.phase==="error" ? "periodRetry" : kind==="conditions" ? "saveStaySettings" : "periodSave"));
+    cancel.hidden=!expanded || kind==="conditions" && !dirty && !editor.verifyOnly && !busy;
+    setHostText(cancel,tr("periodCancel"));
+    status.textContent=tr(busy ? "periodSaving" : editor.phase==="saved" ? "periodSaved" : editor.verifyOnly ? (kind==="conditions" ? "conditionsUnknown" : "periodUnknown") : editor.phase==="error" ? "periodDraftKept" : kind==="conditions" ? "conditionsHelp" : "");
+    status.hidden=!status.textContent;
+    const server=draft.server;
+    const nights=(Date.parse(server.to)-Date.parse(server.from))/86400000+1;
+    summary.textContent=kind==="period" ? `${server.from} – ${server.to} · ${tr("nightCount",nights)} · ${server.nightlyPrice ? `€${server.nightlyPrice}` : tr("priceOptional")}` : "";
+    summary.hidden=kind==="conditions";
+    setFormError(form,editor.error);
+    hostDirtyState();
+  };
+  const changed=()=>{
+    captureHostDraft(form);
+    if (editor.phase!=="saving" && !editor.verifyOnly) {editor.phase="editing"; editor.error="";}
+    form.hostRefresh();
+  };
+  form.addEventListener("input",changed); form.addEventListener("change",changed);
+  form.addEventListener("submit",event=>{event.preventDefault(); return saveHostEditor(property,form);});
+  // Reconciliation calls hostRefresh on the live form, never this throwaway template.
+}
+function renderHostPeriod(property, period){
+  const row=document.createElement("form"); row.className="host-period host-period-editor";
+  row.dataset.hostKey=`availability:${period.id}`; row.dataset.hostDraftKey=`property:${property.id}:availability:${period.id}`;
+  periodHeading(row,"savedPeriod");
+  const from=document.createElement("input"); from.type="date"; from.name="from"; from.required=true; from.value=period.from;
+  const to=document.createElement("input"); to.type="date"; to.name="to"; to.required=true; to.value=plusDays(period.to,-1); to.min=period.from;
+  from.addEventListener("change",()=>{to.min=from.value; if(!to.value || to.value<from.value)to.value=from.value;to.refreshDateHint();});
+  const price=document.createElement("input"); price.type="number"; price.name="nightlyPrice"; price.min="0.01"; price.step="0.01"; price.value=centsToEuros(period.nightlyPriceCents);
+  const save=document.createElement("button"); save.type="submit";
+  const remove=document.createElement("button"); remove.type="button"; remove.className="text-button danger"; remove.textContent=tr("remove");
+  remove.addEventListener("click",()=>{const current=property.availability.find(value=>value.id===period.id); if(current)deleteAvailability(property,current);});
+  const actions=document.createElement("div"); actions.className="host-period-actions"; actions.append(save,remove);
+  row.append(hostDateLabel(from,"firstNight"),hostDateLabel(to,"lastNight"),hostPriceLabel(price),actions);
+  attachHostEditor(property,row,"period",period.id);
+  return row;
+}
+
+function hostDisclosure(property, key, title, content){
+  const details=document.createElement("details"); details.className="host-workspace-disclosure"; details.dataset.hostKey=`disclosure:${key}`;
+  details.id=`host-${key}-${property.id}`;
+  const summary=document.createElement("summary"); summary.textContent=tr(title);
+  details.append(summary,content); return details;
+}
+function renderHostSelector(selected){
+  const root=document.getElementById("host-property-selector");
+  if (!root) return;
+  root.hidden=!state.authenticated || !state.properties.length;
+  if (root.hidden) {root.replaceChildren(); return;}
+  const next=document.createElement("aside"); next.id=root.id; next.className=root.className;
+  const label=document.createElement("label"), caption=document.createElement("span"), select=document.createElement("select");
+  caption.textContent=tr("selectProperty"); select.id="host-property-select";
+  for (const property of state.properties) {
+    const option=document.createElement("option"); option.value=property.id; option.textContent=property.title; select.append(option);
+  }
+  select.value=selected;
+  const choose=id=>{
+    hostSelectionGeneration++;
+    expandedPropertyIds.clear(); expandedPropertyIds.add(id); renderProperties();
+    hostViews.get(id)?.node.querySelector(".host-property-heading")?.focus({preventScroll:true});
+  };
+  select.addEventListener("change",()=>choose(select.value)); label.append(caption,select);
+  const notices=document.createElement("div"); notices.className="host-property-calendar-notices";
+  for (const property of state.properties) {
+    const failed=property.calendarSyncProblems?.length || property.calendars?.some(calendar=>calendar.lastError || ["error","failed"].includes(String(calendar.status).toLowerCase()));
+    const unknown=property.calendarReadError;
+    if (!failed && !unknown) continue;
+    const item=document.createElement("div"); item.className="host-property-calendar-notice";
+    item.dataset.hostKey=`notice:${property.id}`;
+    const title=document.createElement("strong"); title.textContent=property.title;
+    const text=document.createElement("p"); text.className=unknown ? "host-property-calendar-unknown" : "host-property-sync-problem";
+    text.textContent=tr(unknown ? "calendarUnknownTitle" : "calendarProblemTitle");
+    const button=document.createElement("button"); button.type="button"; button.className="text-button host-property-open";
+    button.textContent=tr("viewCalendarStatus"); button.addEventListener("click",()=>{choose(property.id); const details=document.getElementById(`host-calendar-${property.id}`);if(details)details.open=true;});
+    item.append(title,text,button); notices.append(item);
+  }
+  const actions=document.createElement("nav"); actions.className="host-property-selector-actions"; actions.setAttribute("aria-label",tr("workspaceActions"));
+  for (const [target,key] of [["/my-profile.html","manageProfile"],["host-add-property","addProperty"]]) {
+    const link=document.createElement("a"); link.className="text-button"; link.href=target.startsWith("/")?target:`#${target}`; link.textContent=tr(key);
+    link.addEventListener("click",()=>{const node=document.getElementById(target);if(node?.tagName==="DETAILS")node.open=true;}); actions.append(link);
+  }
+  next.append(label,notices,actions);
+  patchHostView(root,next);
+  root.querySelector("select").value=selected || "";
+}
+
+async function readCurrentProperty(property,{checkVersion=true}={}){
+  const epoch=hostCore.session.epoch,locale=lang,version=hostResourceVersions.get(property) || 0;
+  const dashboard=await api("/dashboard");
+  if(epoch!==hostCore.session.epoch || locale!==lang || !state.properties.includes(property)
+    || checkVersion && version!==(hostResourceVersions.get(property) || 0))throw housingAckError();
+  const matches=dashboard.properties.filter(value=>value.id===property.id);
+  if(matches.length!==1)throw housingAckError();
+  return propertyAck(matches[0],property.id);
+}
+
+async function verifyPropertySettings(operation){
+  if(!currentHostSave(operation) || operation.draft.operation===operation)return;
+  const {form,property,draft}=operation;
+  if(operation.checking)return;
+  operation.checking=true;
+  setBusy(form,true);
+  try{
+    const updated=await readCurrentProperty(property);
+    if(!currentHostSave(operation) || draft.pendingSave!==operation)return;
+    if(operation.addressCommand && !operation.receivedAck){
+      property.address=updated.address;
+      propertyAddressEditors.get(form)?.setSaved(updated.address);
+      form.dataset.hostOperation="unknown";
+      setFormError(form,tr("addressSaveUnknown"));
+      hostHouseReview(operation);message(tr("addressCurrentState"));return;
+    }
+    // A GET establishes current submitted values, never historical command attribution.
+    for(const [field,value] of Object.entries(operation.payload))
+      if(field!=="address" && updated[field]!==value)throw housingAckError();
+    if(operation.addressCommand){
+      if(!updated.address || updated.address.type!=="full")throw housingAckError();
+      property.address=updated.address;
+    }
+    const acknowledged={};
+    for(const name of Object.keys(operation.values)){
+      const field=operation.fields[name];
+      if(field && Object.hasOwn(operation.payload,field)){
+        acknowledged[name]=name==="cleaningFee" ? centsToEuros(updated[field]) : String(updated[field]);
+        property[field]=updated[field];
+      }
+    }
+    finishHostSave(operation,acknowledged);
+    if(operation.addressCommand){
+      const view=propertyAddressEditors.get(form);
+      view?.setSaved(updated.address);
+      if(!draft.addressDirty)view?.acceptSaved(updated.address);
+      draft.addressAcknowledgedValues=hostAddressSnapshot(form);
+    }
+    draft.pendingSave=null;
+    form.querySelector(".host-house-review")?.remove();
+    message(tr("propertySettingsSaved"),"success");renderProperties();
+  }catch(error){
+    if(currentHostSave(operation)){
+      form.dataset.hostOperation="unknown";setFormError(form,error.message);
+      if(operation.addressCommand)hostHouseReview(operation);
+      message(tr("conditionsUnknown"),"error");
+    }
+  }finally{operation.checking=false;if(currentHostSave(operation))setBusy(form,false);}
+}
+
+async function updatePropertySettings(property, form){
+  const draft=hostDraft(form);
+  if(draft.pendingSave)return verifyPropertySettings(draft.pendingSave);
+  const operation=beginHostSave(form,property);
+  if(!operation)return;
+  const fields={title:"title",accommodationType:"accommodationType",bedrooms:"bedrooms",sleeps:"sleeps",
+    minStayDays:"minStayDays",cleaningFee:"cleaningFeeCents"},payload={};
+  for(const name of operation.dirty){
+    const field=fields[name];if(!field)continue;
+    const value=operation.values[name];
+    payload[field]=name==="cleaningFee" ? eurosToCents(value)
+      : ["bedrooms","sleeps","minStayDays"].includes(name) ? Number(value) : String(value??"");
+  }
+  setFormError(form);
+  let acknowledged=false;
+  try{
+    let address;
+    try{
+      address=operation.addressDirty || draft.addressAcknowledgedValues!==operation.addressValues
+        ? propertyAddressEditors.get(form)?.getValue() : undefined;
+    }catch(error){throw Object.assign(error,{kind:"validation",status:400});}
+    if(address!==undefined){payload.address=address;operation.addressCommand=true;}
+    operation.payload=payload;operation.fields=fields;draft.pendingSave=operation;
+    setBusy(form,true);
+    await api(`/properties/${property.id}`,{hostOperation:operation,method:"PATCH",body:JSON.stringify(payload)});
+    operation.receivedAck=true;
+    acknowledged=true;
+  }catch(error){
+    if(currentHostSave(operation) && error.kind!=="stale"){
+      const definite=error.kind==="validation" || error.kind==="busy"
+        || error.status>=400 && error.status<500 && ![408,429].includes(error.status);
+      if(definite)draft.pendingSave=null;
+      form.dataset.hostOperation=definite ? "failed" : "unknown";
+      setFormError(form,error.message);message(error.message,"error");
+      if(operation.addressCommand && !definite)hostHouseReview(operation);
+      if(error.status===400 && error.message==="confirm the house again")propertyAddressEditors.get(form)?.invalidateConfirmation();
+    }
+  }finally{releaseHostSave(operation);if(currentHostSave(operation))setBusy(form,false);}
+  if(acknowledged && currentHostSave(operation))await verifyPropertySettings(operation);
 }
 
 function plusDays(iso, days){
@@ -888,8 +1818,34 @@ function periodHeading(form, key){
   form.append(heading);
 }
 
+async function verifyManualPeriodWrite(property,form){
+  const draft=hostDraft(form),pending=draft.pendingPeriodWrite;
+  if(!pending || pending.checking || pending.operation.draft.operation===pending.operation || !currentHostSave(pending.operation))return;
+  pending.checking=true;setBusy(form,true);setFormError(form);
+  try{
+    const rows=hostReadPeriods(await api(`/properties/${property.id}/${pending.priced ? "availability" : "unavailability"}`),property.id,pending.priced);
+    if(!currentHostSave(pending.operation) || draft.pendingPeriodWrite!==pending)return;
+    // Without a returned creation ID, a matching date/text row is not command attribution.
+    if(!pending.id)throw new Error(tr("periodUnconfirmed"));
+    const saved=rows.find(row=>row.id===pending.id);
+    if(!saved || saved.from!==pending.wanted.from || saved.to!==pending.wanted.to)throw new Error(tr("periodUnconfirmed"));
+    const previous=property.unavailability.find(row=>row.id===pending.id);
+    if(!previous)throw housingAckError();
+    Object.assign(previous,saved);
+    finishHostSave(pending.operation,{from:saved.from,to:plusDays(saved.to,-1)});
+    delete draft.pendingPeriodWrite;renderProperties();message(tr("blockSaved"),"success");
+  }catch(error){
+    if(currentHostSave(pending.operation)){
+      form.dataset.hostOperation="unknown";setFormError(form,error.message);message(error.message,"error");
+    }
+  }finally{pending.checking=false;if(currentHostSave(pending.operation))setBusy(form,false);}
+}
+
 async function addAvailability(property, form){
+  if(hostDraft(form).pendingPeriodWrite)return verifyManualPeriodWrite(property,form);
   if (form.getAttribute("aria-busy") === "true") return;
+  const operation = beginHostSave(form, property);
+  if (!operation) return;
   const data = new FormData(form);
   setFormError(form);
   form.setAttribute("aria-busy", "true");
@@ -897,53 +1853,61 @@ async function addAvailability(property, form){
   message(tr("addingAvailability"));
 
   try {
-    await api(`/properties/${property.id}/availability`, {
+    const wanted={period:hostPeriodDates(data),nightlyPriceCents:eurosToCents(data.get("nightlyPrice"))};
+    operation.draft.pendingPeriodWrite={operation,priced:true,id:null,wanted:wanted.period};
+    const created=await api(`/properties/${property.id}/availability`, {
+      hostOperation:operation,
       method:"POST",
-      body:JSON.stringify({...hostPeriodDates(data), nightlyPriceCents:eurosToCents(data.get("nightlyPrice"))})
+      body:JSON.stringify(wanted)
     });
+    if (!currentHostSave(operation)) return;
+    const [saved]=hostReadPeriods([created],property.id);
+    if(saved.from!==wanted.period.from || saved.to!==wanted.period.to || saved.nightlyPriceCents!==wanted.nightlyPriceCents)
+      throw housingAckError();
+    delete operation.draft.pendingPeriodWrite;
+    finishHostSave(operation, {from:"", to:"", nightlyPrice:""});
     message(tr("availabilityAdded"), "success");
-    await refreshAvailability(property, true);
+    releaseHostSave(operation);
+    if (!await refreshAvailability(property, true) && currentHostSave(operation)) form.dataset.hostOperation="saved_refresh_failed";
   } catch (error) {
+    if (!currentHostSave(operation) || error.kind === "stale") return;
+    const definite=error.kind==="validation" || error.kind==="busy"
+      || error.status>=400 && error.status<500 && ![408,429].includes(error.status);
+    if(definite)delete operation.draft.pendingPeriodWrite;
+    form.dataset.hostOperation=definite ? "failed" : "unknown";
     setFormError(form, error.message);
     message(error.message, "error");
   } finally {
+    releaseHostSave(operation);
     form.removeAttribute("aria-busy");
     setBusy(form, false);
   }
 }
 
 async function refreshAvailability(property, rerender = false){
+  const epoch = hostCore.session.epoch, confirmationBaseline=hostConfirmationRevision;
+  const version=(hostAvailabilityLoads.get(property) || 0)+1;
+  hostAvailabilityLoads.set(property,version);
   try {
-    property.availability = await api(`/properties/${property.id}/availability`);
+    const periods = hostReadPeriods(await api(`/properties/${property.id}/availability`),property.id);
+    if (epoch !== hostCore.session.epoch || !state.properties.includes(property) || hostAvailabilityLoads.get(property)!==version) return;
+    property.availability = hostMergeRows(property.availability, hostConfirmedRows(property,periods,confirmationBaseline));
     property.availabilityError = "";
     if (rerender) renderProperties();
+    return true;
   } catch (error) {
+    if (error.kind === "stale" || epoch !== hostCore.session.epoch || !state.properties.includes(property)
+      || hostAvailabilityLoads.get(property)!==version) return;
     property.availabilityError = error.message;
     if (rerender) renderProperties();
+    return false;
   }
 }
 
 async function updateAvailability(property, period, form){
-  if (form.getAttribute("aria-busy") === "true") return;
-  const data = new FormData(form);
-  setFormError(form);
-  form.setAttribute("aria-busy", "true");
-  setBusy(form, true);
-  message(tr("updatingAvailability"));
-  try {
-    await api(`/availability/${period.id}`, {
-      method:"PUT",
-      body:JSON.stringify({...hostPeriodDates(data), nightlyPriceCents:eurosToCents(data.get("nightlyPrice"))})
-    });
-    message(tr("availabilityUpdated"), "success");
-    await refreshAvailability(property, true);
-  } catch (error) {
-    setFormError(form, error.message);
-    message(error.message, "error");
-  } finally {
-    form.removeAttribute("aria-busy");
-    setBusy(form, false);
-  }
+  // Compatibility for existing callers; the keyed draft is the sole editor owner.
+  hostEditor(form,"period",period.id);
+  return saveHostEditor(property,form);
 }
 
 async function deleteAvailability(property, period){
@@ -951,9 +1915,14 @@ async function deleteAvailability(property, period){
   message(tr("deletingAvailability"));
   try {
     await api(`/availability/${period.id}`, {method:"DELETE"});
+    if (!state.properties.includes(property)) return;
+    hostConfirmPeriod(property,period.id,null);
+    hostRetireDraft(hostPeriodKey(property,period.id));
+    property.availability=property.availability.filter(value=>value.id!==period.id);
     message(tr("availabilityDeleted"), "success");
-    await refreshAvailability(property, true);
+    renderProperties();
   } catch (error) {
+    if(error.kind === "stale") return;
     message(error.message, "error");
   }
 }
@@ -963,33 +1932,56 @@ async function deleteProperty(property){
   message(tr("deletingAvailability"));
   try {
     await api(`/properties/${property.id}`, {method:"DELETE"});
+    // Retirement happens only after a successful DELETE, before any late completion.
+    hostDeletedProperties.add(property.id); ++hostConfirmationRevision;
+    disposeHostProperty(property.id);
     state.properties = state.properties.filter(item => item.id !== property.id);
     expandedPropertyIds.delete(property.id);
     saveState();
     message(tr("propertyDeleted"), "success");
     renderProperties();
   } catch (error) {
+    if(error.kind === "stale") return;
     message(error.message, "error");
   }
 }
 
+const listingVisibilityChecks=new WeakMap();
 async function updateListingVisibility(property, checkbox){
-  if(!property.listing?.id) return;
+  if(!property.listing?.id || checkbox.disabled)return;
+  let operation=listingVisibilityChecks.get(property);
+  if(operation && (operation.epoch!==hostCore.session.epoch || operation.id!==property.listing.id)){
+    listingVisibilityChecks.delete(property);operation=null;
+  }
+  const checking=!!operation;
+  let commandAcknowledged=checking;
+  operation ||= {id:property.listing.id,wanted:checkbox.checked,epoch:hostCore.session.epoch};
+  const current=()=>operation.epoch===hostCore.session.epoch && state.properties.includes(property)
+    && property.listing?.id===operation.id;
   checkbox.disabled=true;
   try{
-    const updated=await api(`/listings/${property.listing.id}`,{
-      method:"PUT",
-      body:JSON.stringify({showInSearch:checkbox.checked})
-    });
-    property.listing.showInSearch=updated.showInSearch!==false;
+    if(!checking){
+      listingVisibilityChecks.set(property,operation);
+      await api(`/listings/${operation.id}`,{method:"PUT",body:JSON.stringify({showInSearch:operation.wanted})});
+      commandAcknowledged=true;
+    }
+    if(!current())return;
+    const saved=await readCurrentProperty(property);
+    if(!current())return;
+    const matches=saved.listings.filter(value=>value.id===operation.id);
+    if(matches.length!==1 || typeof matches[0].showInSearch!=="boolean"
+      || matches[0].showInSearch!==operation.wanted)throw housingAckError();
+    property.listing.showInSearch=matches[0].showInSearch;
     checkbox.checked=property.listing.showInSearch;
-    message(tr("listingVisibilitySaved"),"success");
+    listingVisibilityChecks.delete(property);message(tr("listingVisibilitySaved"),"success");
   }catch(error){
-    checkbox.checked=property.listing.showInSearch!==false;
-    message(error.message,"error");
-  }finally{
-    checkbox.disabled=false;
-  }
+    if(!current())return;
+    const definite=error.kind==="busy" || error.status>=400 && error.status<500 && ![408,429].includes(error.status);
+    if(!commandAcknowledged && definite){listingVisibilityChecks.delete(property);checkbox.checked=property.listing.showInSearch!==false;}
+    // Unknown outcomes retain requested state; another explicit action only checks with GET.
+    else checkbox.checked=operation.wanted;
+    message(definite && !commandAcknowledged ? error.message : tr("conditionsUnknown"),"error");
+  }finally{if(current())checkbox.disabled=false;}
 }
 
 async function deleteListing(property){
@@ -1003,55 +1995,284 @@ async function deleteListing(property){
     message(tr("listingDeleted"), "success");
     renderProperties();
   } catch (error) {
+    if(error.kind === "stale") return;
     message(error.message, "error");
   }
 }
 
-async function connectCalendar(property, form){
-  const data=new FormData(form);
-  setFormError(form);
-  setBusy(form,true);
-  message(tr("loading"));
+// S5 owns command metadata, never a second copy of mutable form values.
+function calendarSourceStamp(property){
+  return JSON.stringify((property.calendars || []).map(value=>[value.id,value.revision,value.mode]));
+}
+function sourceFormCurrent(property,form){
+  return state.authenticated && form.isConnected!==false && form.dataset.calendarOwner===accountId
+    && state.properties.includes(property) && !property.calendarReadError && !hostCalendarViews.read(property);
+}
+function sourcePreviewValid(value){
+  return value && Object.keys(value).length===2 && typeof value.listingId==="string"
+    && /^[0-9]{1,64}$/.test(value.listingId)
+    && value.publicUrl===`https://www.airbnb.com/rooms/${value.listingId}`;
+}
+function sourcePreviewMatches(property,draft){
+  const preview=draft.sourcePreview;
+  return preview && preview.value===String(draft.values.icalUrl || "").trim()
+    && preview.version===(draft.versions.icalUrl || 0) && preview.stamp===calendarSourceStamp(property);
+}
+async function previewCalendarSource(property,form){
+  if(!sourceFormCurrent(property,form))return;
+  const operation=beginHostSave(form,property);
+  if(!operation)return;
+  const draft=operation.draft,stamp=calendarSourceStamp(property);
+  delete draft.sourcePreview;form.hostRefresh?.();setFormError(form);
   try{
-    await api(`/properties/${property.id}/calendars`,{
-      method:"POST",
-      body:JSON.stringify({provider:"Airbnb",icalUrl:String(data.get("icalUrl")||"").trim()})
-    });
-    message(tr("calendarConnected"),"success");
-    await syncDashboard();
+    const value=String(operation.values.icalUrl || "").trim();
+    if(!value)return;
+    const preview=await api(`/properties/${property.id}/public-links`,{method:"POST",hostOperation:operation,
+      body:JSON.stringify({provider:"Airbnb",icalUrl:value}),validate:sourcePreviewValid});
+    if(!currentHostSave(operation) || draft!==hostDraft(form) || stamp!==calendarSourceStamp(property)
+      || draft.versions.icalUrl!==operation.versions.icalUrl || draft.values.icalUrl!==operation.values.icalUrl)return;
+    draft.sourcePreview={value,version:draft.versions.icalUrl || 0,stamp,...preview};
   }catch(error){
-    setFormError(form,error.message);
-    message(error.message,"error");
+    if(currentHostSave(operation) && error.kind!=="stale")setFormError(form,tr("previewRequired"));
+  }finally{releaseHostSave(operation);if(currentHostSave(operation))form.hostRefresh?.();}
+}
+function calendarErrorUnknown(error){
+  return error?.kind!=="http" || ![400,401,403,404,409,412,413,415,422].includes(error.status)
+    || typeof error.code!=="string" || !error.code;
+}
+async function reconcileCalendarView(view){
+  const read=await syncDashboard({propertyId:view.property.id});
+  if(!hostCalendarViews.isCurrent(view))return false;
+  if(!read?.applied || read.epoch!==view.epoch || read.property!==view.property || read.read!=="confirmed")return false;
+  // A confirmed empty GET resolves a delete, not an unconfirmed initial source save.
+  if(view.command==="source" && !(view.property.calendars || []).some(calendar=>calendar.provider==="Airbnb"))return false;
+  return true; // Current-state convergence, never attribution of a lost command.
+}
+async function connectCalendar(property,form){
+  if(!sourceFormCurrent(property,form))return;
+  const draft=captureHostDraft(form);
+  if(!sourcePreviewMatches(property,draft)){setFormError(form,tr("previewRequired"));return;}
+  const calendar=property.calendars?.find(value=>value.provider==="Airbnb");
+  if(calendar)try{calendarRevision(calendar);}catch{return;}
+  const view=hostCalendarViews.begin(property,calendar,"source");
+  if(!view)return;
+  renderProperties();
+  const operation=beginHostSave(form,property);
+  if(!operation){hostCalendarViews.close(view);renderProperties();return;}
+  const value=String(operation.values.icalUrl || "").trim(),stamp=calendarSourceStamp(property);
+  let sent=false;
+  setFormError(form);form.hostRefresh?.();
+  try{
+    if(calendar){
+      const verification=await api(`/calendars/${calendar.id}/verification`,{validate:value=>value &&
+        typeof value.status==="string" && ["required","pending","verified","failed","rejected","cancelled","expired","blocked"].includes(value.status.toLowerCase())});
+      if(!hostCalendarViews.isCurrent(view) || stamp!==calendarSourceStamp(property) || !sourcePreviewMatches(property,draft))return;
+      if(verification.status.toLowerCase()==="pending"){
+        if(!confirm(tr("cancelPendingSource")))return;
+        sent=true;
+        await api(`/calendars/${calendar.id}/verification/cancel`,{method:"POST",hostOperation:operation,
+          validate:value=>value && String(value.status).toLowerCase()==="cancelled"});
+      }
+    }
+    if(!hostCalendarViews.isCurrent(view) || stamp!==calendarSourceStamp(property) || !sourcePreviewMatches(property,draft))return;
+    sent=true;
+    await api(`/properties/${property.id}/public-links`,{method:"PUT",hostOperation:operation,
+      body:JSON.stringify({provider:"Airbnb",icalUrl:value})});
+    releaseHostSave(operation); // GET-only convergence does not own the mutation lock.
+    if(!hostCalendarViews.isCurrent(view))return;
+    hostCalendarViews.transportSettled(view);
+    if(await reconcileCalendarView(view)){
+      finishHostSave(operation,{icalUrl:""});delete draft.sourcePreview;hostCalendarViews.close(view);
+    }else hostCalendarViews.markUnknown(view);
+  }catch(error){
+    if(!hostCalendarViews.isCurrent(view))return;
+    if(sent && calendarErrorUnknown(error))hostCalendarViews.markUnknown(view);
+    else{hostCalendarViews.close(view);setListingFormError(form,{...error,message:tr("command_rejected")});}
+  }finally{
+    releaseHostSave(operation);hostCalendarViews.transportSettled(view);
+    if(hostCalendarViews.isCurrent(view) && !sent)hostCalendarViews.close(view);
+    if(view.epoch===hostCore.session.epoch && state.properties.includes(property)){
+      if(hostCalendarViews.isCurrent(view) && sent)hostCalendarViews.markUnknown(view);
+      renderProperties();form.hostRefresh?.();
+    }
   }
-  finally{setBusy(form,false)}
 }
-
-async function syncCalendar(calendar){
-  message(tr("loading"));
-  try{
-    await api(`/calendars/${calendar.id}/sync`,{method:"POST"});
-    message(tr("calendarSynced"),"success");
-    await syncDashboard();
-  }catch(error){message(error.message,"error")}
+function calendarSourceForm(property,calendar){
+  const fragment=document.createElement("div");fragment.className="host-source-control";
+  const help=document.createElement("p");help.className="host-inline-muted";help.textContent=tr("sourceSingleInputHelp");
+  const form=document.createElement("form");form.className="host-inline-form host-calendar-form host-source-form";
+  form.dataset.hostKey="calendar-connect";form.dataset.hostDraftKey=`property:${property.id}:calendar-connect`;
+  form.dataset.calendarOwner=accountId;
+  const input=document.createElement("input");input.type="url";input.name="icalUrl";input.required=true;
+  input.autocomplete="off";input.placeholder=tr("calendarUrl");input.setAttribute("aria-label",tr("calendarUrl"));
+  const preview=document.createElement("button");preview.type="button";preview.className="button button-small";
+  preview.dataset.hostKey="source-preview";preview.dataset.sourcePreviewButton="";
+  const save=document.createElement("button");save.type="submit";save.className="button button-small";save.dataset.sourceSave="";
+  const link=document.createElement("a");link.className="host-saved-link";link.dataset.sourcePreview="";
+  link.target="_blank";link.rel="noopener noreferrer";link.hidden=true;
+  form.append(input,preview,save,link);
+  form.hostRefresh=()=>{
+    const draft=captureHostDraft(form),valid=sourcePreviewMatches(property,draft);
+    const unavailable=!sourceFormCurrent(property,form),busy=!!draft.operation || unavailable;
+    input.disabled=busy;preview.disabled=busy || !String(draft.values.icalUrl || "").trim();save.disabled=busy || !valid;
+    setHostText(preview,tr("previewSource"));setHostText(save,tr(property.calendars?.length ? "replaceSource" : "saveSource"));
+    link.hidden=!valid;
+    if(valid){link.href=draft.sourcePreview.publicUrl;link.textContent=draft.sourcePreview.publicUrl;}
+    else{link.removeAttribute("href");link.textContent="";}
+    form.setAttribute("aria-busy",String(!!draft.operation));
+  };
+  const invalidate=()=>{delete hostDraft(form).sourcePreview;setFormError(form);form.hostRefresh();};
+  input.addEventListener("input",invalidate);input.addEventListener("change",invalidate);
+  preview.addEventListener("click",()=>previewCalendarSource(property,form));
+  form.addEventListener("submit",event=>{event.preventDefault();return connectCalendar(property,form);});
+  fragment.append(help,form);return fragment;
 }
-
-async function setCalendarEnabled(calendar, enabled){
-  message(tr("loading"));
-  try{
-    await api(`/calendars/${calendar.id}`,{method:"PUT",body:JSON.stringify({enabled})});
-    message(tr(enabled ? "calendarEnabled" : "calendarDisabled"),"success");
-    await syncDashboard();
-  }catch(error){message(error.message,"error")}
+function calendarLifecycleRequest(calendar,command){
+  const expectedRevision=calendarRevision(calendar);
+  if(command==="sync"){
+    if(calendar.mode!=="Active")throw new TypeError("Sync requires Active mode");
+    return {path:`/calendars/${calendar.id}/sync`,options:{method:"POST",body:JSON.stringify({expectedRevision})}};
+  }
+  if(command==="freeze" || command==="disable"){
+    if(command==="freeze" && calendar.mode==="Disabled")throw new TypeError("Disabled to Frozen is illegal");
+    return {path:`/calendars/${calendar.id}`,options:{method:"PUT",body:JSON.stringify({mode:command==="freeze" ? "Frozen" : "Disabled",expectedRevision})}};
+  }
+  if(command==="activate"){
+    if(calendar.mode==="Active")throw new TypeError("Activate requires a resting mode");
+    return {path:`/calendars/${calendar.id}/activate`,options:{method:"POST",body:JSON.stringify({expectedRevision})}};
+  }
+  if(command==="delete")return {path:`/calendars/${calendar.id}`,options:{method:"DELETE",body:JSON.stringify({expectedRevision})}};
+  throw new TypeError("Unknown calendar command");
 }
-
-async function disconnectCalendar(calendar){
-  if(!confirm(tr("disconnectCalendarConfirm"))) return;
-  message(tr("loading"));
+async function performCalendarLifecycle(calendar,command){
+  let request;
+  try{request=calendarLifecycleRequest(calendar,command);}catch(error){message(error.message,"error");return;}
+  const property=state.properties.find(item=>(item.calendars || []).includes(calendar));
+  if(!property || property.calendarReadError || String(calendar.status).toLowerCase()==="pending")return;
+  if(command==="delete" && !confirm(tr("disconnectCalendarConfirm")))return;
+  const view=hostCalendarViews.begin(property,calendar,command);if(!view)return;
+  renderProperties();
   try{
-    await api(`/calendars/${calendar.id}`,{method:"DELETE"});
-    message(tr("calendarDisconnected"),"success");
-    await syncDashboard();
-  }catch(error){message(error.message,"error")}
+    await api(request.path,request.options);
+    if(!hostCalendarViews.isCurrent(view))return;
+    hostCalendarViews.transportSettled(view);
+    if(await reconcileCalendarView(view))hostCalendarViews.close(view);
+    else hostCalendarViews.markUnknown(view);
+  }catch(error){
+    if(!hostCalendarViews.isCurrent(view))return;
+    if(calendarErrorUnknown(error) || error.status===412){
+      hostCalendarViews.markUnknown(view);hostCalendarViews.transportSettled(view);
+      if(await reconcileCalendarView(view))hostCalendarViews.close(view);
+      if(hostCalendarViews.isCurrent(view))hostCalendarViews.markUnknown(view);
+    }else hostCalendarViews.close(view);
+    message(calendarErrorUnknown(error) ? tr("read_unknown") : error.message,"error");
+  }finally{
+    hostCalendarViews.transportSettled(view);
+    if(view.epoch===hostCore.session.epoch && state.properties.includes(property))renderProperties();
+  }
+}
+async function checkCalendarLifecycle(property){
+  const view=hostCalendarViews.beginCheck(property);
+  if(view===undefined)return;
+  renderProperties();
+  if(view){
+    hostCalendarViews.finishCheck(view,await reconcileCalendarView(view));
+  }else await syncDashboard({propertyId:property.id});
+  if(state.authenticated && state.properties.includes(property))renderProperties();
+}
+function stopCalendarWaiting(property){
+  if(!hostCalendarViews.stop(property))return;
+  // Retire only UI ownership. Do not abort, replay or cancel the producer command.
+  renderProperties();
+}
+async function syncCalendar(calendar){return performCalendarLifecycle(calendar,"sync");}
+async function setCalendarEnabled(calendar,enabled){return performCalendarLifecycle(calendar,enabled ? "activate" : "disable");}
+async function disconnectCalendar(calendar){return performCalendarLifecycle(calendar,"delete");}
+
+function renderCalendarLifecycle(panel,property){
+  if(!property.calendarReadError)for(const [id,verification] of hostVerificationViews){
+    if(verification.propertyId===property.id && !property.calendars.some(calendar=>calendar.id===id)){
+      verification.dispose();hostVerificationViews.delete(id);
+      const index=calendarVerificationPanels.indexOf(verification);
+      if(index>=0)calendarVerificationPanels.splice(index,1);
+    }
+  }
+  const calendar=property.calendars?.find(value=>value.provider==="Airbnb"),view=hostCalendarViews.read(property);
+  const pending=view?.phase==="pending" || !view && String(calendar?.status).toLowerCase()==="pending";
+  const unknown=view?.phase==="unknown" || property.calendarReadError;
+  const historical=!!(view || pending || unknown),shown=view?.lastConfirmed || calendar;
+  const title=document.createElement("h3");title.textContent=tr("calendar");panel.append(title);
+  panel.dataset.propertyId=property.id;panel.dataset.calendarRevision=String(calendar?.revision ?? "");
+  const status=document.createElement("div");status.className="host-calendar-status host-calendar-lifecycle";
+  if(!shown && !view && !property.calendarReadError)status.className+=" host-calendar-unverified";
+  status.dataset.hostKey="calendar-lifecycle-status";status.dataset.phase=unknown ? "unknown" : pending ? "pending" : "confirmed";
+  status.dataset.mode=shown?.mode || "unconfirmed";status.setAttribute("role","status");status.setAttribute("aria-live","polite");
+  status.setAttribute("aria-busy",String(!!pending));
+  const heading=document.createElement("strong"),detail=document.createElement("p");
+  if(view?.command==="source"){
+    heading.textContent=tr(unknown ? "create_unknown_title" : "initial_read_pending_title");
+    detail.textContent=tr(unknown ? "create_unknown_body" : "initial_read_pending_body");
+  }else if(unknown || pending){
+    heading.textContent=tr(unknown ? "mode_change_unknown_title" : !view || view.command==="sync" ? "pending_title" : "mode_change_pending_title");
+    detail.textContent=tr(unknown ? "read_unknown" : "pending_body");
+  }else{heading.textContent=tr(shown ? "mode_"+shown.mode.toLowerCase() : "calendarNotConnectedUnverified");
+    detail.textContent=shown ? tr("mode_"+shown.mode.toLowerCase()+"_effect") : "";}
+  status.append(heading,detail);
+  if(shown){
+    const truth=document.createElement("p");truth.textContent=tr(historical ? "historical_mode" : "mode_current")+": "+tr("mode_"+shown.mode.toLowerCase());
+    const last=document.createElement("p");last.textContent=tr("last_success")+": "+formatSyncTime(shown.lastSuccessAt);
+    status.append(truth,last);
+    const syncError=shown.lastError || property.calendarSyncProblems?.find(problem=>problem.id===shown.id)?.lastError;
+    if(syncError){const error=document.createElement("p");error.textContent=(shown.mode==="Disabled" ? tr("historical_error")+": " : "")+syncError;status.append(error);}
+    if(!historical){
+      const outcome=document.createElement("p");
+      outcome.textContent=shown.status==="Connected" && shown.lastSuccessAt && Array.isArray(shown.reservationBlocks)
+        ? tr(shown.reservationBlocks.length ? "recovered_body" : "empty")
+        : shown.status==="Error" ? tr(shown.lastSuccessAt ? "stale_body" : "first_body") : "";
+      status.append(outcome);
+    }
+    if(Array.isArray(shown.reservationBlocks)){
+      const stats=document.createElement("p");stats.textContent=tr("reservationsImported",shown.reservationBlocks.length);status.append(stats);
+    }
+  }
+  panel.append(status);
+  const actions=document.createElement("div");actions.className="host-calendar-actions";
+  actions.dataset.hostKey="calendar-lifecycle-actions";
+  const controls=document.createElement("div");controls.className="host-calendar-control-group";
+  actions.append(controls);
+  const button=(action,key,fn,parent=actions)=>{
+    const node=document.createElement("button");node.type="button";node.className="button button-small";
+    if(action==="delete")node.className="text-button danger host-calendar-delete";
+    node.dataset.hostKey=`calendar:${calendar?.id || "none"}:${action}`;node.dataset.calendarAction=action;node.textContent=tr(key);
+    node.addEventListener("click",()=>{if(!propertiesNode.contains(node) || !state.properties.includes(property))return;
+      const current=property.calendars.find(value=>value.id===calendar?.id);return fn(current);});parent.append(node);return node;
+  };
+  if(historical){
+    const check=button("check","check",()=>checkCalendarLifecycle(property));check.disabled=!!(view?.transportPending || view?.checking);
+    if(view && !view.stopped)button("stop","close_wait",()=>stopCalendarWaiting(property));
+  }else if(calendar){
+    const sync=button("sync","syncNow",value=>syncCalendar(value),controls);sync.disabled=calendar.mode!=="Active";
+    if(calendar.mode!=="Active")button("activate","enableCalendar",value=>setCalendarEnabled(value,true),controls);
+    else button("disable","disableCalendar",value=>setCalendarEnabled(value,false),controls);
+    button("delete","disconnectCalendar",value=>disconnectCalendar(value));
+    if(calendar.mode==="Active")button("freeze","freeze",value=>performCalendarLifecycle(value,"freeze"));
+    else if(calendar.mode==="Frozen")button("disable","disableCalendar",value=>setCalendarEnabled(value,false));
+  }
+  panel.append(actions);
+  if(view){const note=document.createElement("p");note.textContent=tr("close_note");panel.append(note);}
+  if(calendar && window.ParrotCalendarVerification){
+    let verification=hostVerificationViews.get(calendar.id);
+    if(!verification){
+      const verificationCalendar={...calendar};
+      verification=window.ParrotCalendarVerification.create({calendar:verificationCalendar,request:api,language:lang,onUnauthorized:addressSessionExpired});
+      verification.propertyId=property.id;verification.calendar=verificationCalendar;hostVerificationViews.set(calendar.id,verification);calendarVerificationPanels.push(verification);
+    }
+    Object.assign(verification.calendar,calendar);
+    const wrapper=document.createElement("div");wrapper.dataset.hostKey=`verification-wrapper:${calendar.id}`;
+    wrapper.hidden=historical || calendar.mode!=="Active";if(wrapper.hidden)wrapper.setAttribute("inert","");
+    const island=verification.node.isConnected ? document.createElement("section") : verification.node;
+    island.dataset.hostKey=`verification:${calendar.id}`;island.dataset.hostIsland="verification";wrapper.append(island);panel.append(wrapper);
+  }
 }
 
 function formatSyncTime(value){
@@ -1062,25 +2283,44 @@ function formatSyncTime(value){
 }
 
 async function saveUnavailability(property, form, period = null){
+  if(hostDraft(form).pendingPeriodWrite)return verifyManualPeriodWrite(property,form);
   if (form.getAttribute("aria-busy") === "true") return;
+  const operation = beginHostSave(form, property);
+  if (!operation) return;
   const data = new FormData(form);
   setFormError(form);
   form.setAttribute("aria-busy", "true");
   setBusy(form, true);
   message(tr("loading"));
   try {
-    const saved = await api(period ? `/unavailability/${period.id}` : `/properties/${property.id}/unavailability`, {
+    const wanted=hostPeriodDates(data);
+    operation.draft.pendingPeriodWrite={operation,priced:false,id:period?.id || null,wanted};
+    const response = await api(period ? `/unavailability/${period.id}` : `/properties/${property.id}/unavailability`, {
+      hostOperation:operation,
       method:period ? "PUT" : "POST",
-      body:JSON.stringify(hostPeriodDates(data))
+      body:JSON.stringify(wanted)
     });
-    property.unavailability = [...(property.unavailability || []).filter(item => item.id !== saved.id), saved]
+    if (!currentHostSave(operation)) return;
+    const [saved]=hostReadPeriods([response],property.id,false);
+    if(period && saved.id!==period.id || saved.from!==wanted.from || saved.to!==wanted.to)throw housingAckError();
+    delete operation.draft.pendingPeriodWrite;
+    finishHostSave(operation, {from:period ? saved.from : "", to:period ? plusDays(saved.to,-1) : ""});
+    const previous=(property.unavailability || []).find(item=>item.id===saved.id);
+    const record=previous ? Object.assign(previous,saved) : saved;
+    property.unavailability = [...(property.unavailability || []).filter(item => item.id !== saved.id), record]
       .sort((a,b) => a.from.localeCompare(b.from) || a.to.localeCompare(b.to));
     renderProperties({propertyId:property.id,key:"blockSaved"});
     message(tr("blockSaved"), "success");
   } catch (error) {
+    if (!currentHostSave(operation) || error.kind === "stale") return;
+    const definite=error.kind==="validation" || error.kind==="busy"
+      || error.status>=400 && error.status<500 && ![408,429].includes(error.status);
+    if(definite)delete operation.draft.pendingPeriodWrite;
+    form.dataset.hostOperation=definite ? "failed" : "unknown";
     setFormError(form, error.message);
     message(error.message, "error");
   } finally {
+    releaseHostSave(operation);
     form.removeAttribute("aria-busy");
     setBusy(form, false);
   }
@@ -1098,6 +2338,7 @@ async function deleteUnavailability(property, period, form){
     renderProperties({propertyId:property.id,key:"blockDeleted"});
     message(tr("blockDeleted"), "success");
   } catch (error) {
+    if(error.kind === "stale") return;
     setFormError(form, error.message);
     message(error.message, "error");
   } finally {
@@ -1124,6 +2365,8 @@ function renderUnavailability(property, feedbackKey = null){
   function dateForm(period = null){
     const form = document.createElement("form");
     form.className = period ? "host-period host-unavailability-period" : "host-inline-form host-unavailability-add";
+    form.dataset.hostKey=period ? `unavailability:${period.id}` : "unavailability-add";
+    form.dataset.hostDraftKey=`property:${property.id}:${form.dataset.hostKey}`;
     if (period) periodHeading(form, "savedBlock");
     else if(property.unavailability?.length) periodHeading(form, "newBlock");
     function dateField(name, text, value){
@@ -1147,7 +2390,8 @@ function renderUnavailability(property, feedbackKey = null){
     save.textContent = tr(period ? "save" : "addBlock");
     save.hidden = Boolean(period);
     if (period) {
-      const changed = () => { save.hidden = from.value === period.from && to.value === lastNight; };
+      const changed = () => { save.hidden = from.value === period.from && to.value === plusDays(period.to, -1); };
+      form.hostRefresh=changed;
       [from, to].forEach(input => {
         input.addEventListener("input", changed);
         input.addEventListener("change", changed);
@@ -1183,7 +2427,12 @@ function renderUnavailability(property, feedbackKey = null){
 function renderPropertyNavigation(){
   const visible=Boolean(state.authenticated && propertyNavigationId);
   propertyNavigationNode.hidden=!visible;
-  if(!visible)return;
+  if(!visible){
+    document.getElementById("host-property-context-status").textContent="";
+    const back=document.getElementById("host-property-return");
+    back.removeAttribute("href");back.textContent="";back.hidden=true;
+    return;
+  }
   const owned=state.properties.some(property=>property.id===propertyNavigationId);
   document.getElementById("host-property-context-status").textContent=tr(owned?"propertyFromConversation":"propertyUnavailableHere");
   const back=document.getElementById("host-property-return");
@@ -1194,17 +2443,27 @@ function renderPropertyNavigation(){
   }else back.removeAttribute("href");
 }
 
-function renderProperties(blockFeedback = null){
-  unsavedHostChanges=false;
+function renderProperties(blockFeedback = null,{noAutoSelect=false}={}){
+  hostCalendarViews.pruneInvalid();
   if (!propertiesNode) return;
   renderPropertyNavigation();
-  calendarVerificationPanels.splice(0).forEach(panel=>panel.dispose());
-  propertyAddressEditors.forEach(editor => editor.dispose());
-  propertyAddressEditors.clear();
-  propertiesNode.replaceChildren();
+  for (const id of [...hostViews.keys()]) {
+    if (!state.authenticated || !state.properties.some(property => property.id === id)) disposeHostProperty(id);
+  }
+  for (const [id, panel] of hostVerificationViews) {
+    if (!state.properties.some(property => property.calendars?.some(calendar => calendar.id === id))) {
+      panel.dispose(); hostVerificationViews.delete(id);
+      const index=calendarVerificationPanels.indexOf(panel);
+      if(index>=0)calendarVerificationPanels.splice(index,1);
+    }
+  }
+  if (!state.authenticated) {propertiesNode.replaceChildren(); renderHostSelector(null); return;}
+  propertiesNode.querySelector(".host-empty")?.remove();
 
-  if (!state.authenticated) return;
-
+  const selected=[...expandedPropertyIds].find(id=>state.properties.some(property=>property.id===id))
+    || (propertyNavigationId || noAutoSelect ? null : state.properties[0]?.id);
+  expandedPropertyIds.clear(); if(selected)expandedPropertyIds.add(selected);
+  renderHostSelector(selected);
   if (!state.properties.length) {
     const empty = document.createElement("div");
     empty.className = "host-empty";
@@ -1216,14 +2475,16 @@ function renderProperties(blockFeedback = null){
   state.properties.forEach(property => {
     const expanded=expandedPropertyIds.has(property.id);
     const card = document.createElement("article");
-    card.className = `host-property ${expanded?"expanded":"collapsed"}`;
+    card.className = `host-property host-property-workspace ${expanded?"expanded":"collapsed"}`;
+    card.tabIndex=-1;
     card.dataset.propertyId=property.id;
 
     const head = document.createElement("div");
     head.className = "host-property-head";
     const title = document.createElement("div");
     const strong = document.createElement("strong");
-    strong.textContent = property.title;
+    strong.textContent = property.title; strong.className="host-property-heading";
+    strong.tabIndex=-1; strong.setAttribute("role","heading"); strong.setAttribute("aria-level","3");
     const meta = document.createElement("span");
     const sleeps = Number(property.sleeps || property.bedrooms || 1);
     const accommodationType = property.accommodationType === "private_room" ? tr("privateRoom") : tr("entirePlace");
@@ -1231,24 +2492,10 @@ function renderProperties(blockFeedback = null){
     title.append(strong, meta);
     const headActions=document.createElement("div");
     headActions.className="host-property-head-actions";
-    const togglePropertyButton=document.createElement("button");
-    togglePropertyButton.type="button";
-    togglePropertyButton.className="host-property-toggle";
-    togglePropertyButton.textContent=expanded?"▴":"▾";
-    togglePropertyButton.title=tr(expanded?"collapseProperty":"expandProperty");
-    togglePropertyButton.setAttribute("aria-label",tr(expanded?"collapseProperty":"expandProperty"));
-    togglePropertyButton.setAttribute("aria-expanded",String(expanded));
-    togglePropertyButton.addEventListener("click",()=>{
-      if(unsavedHostChanges && !confirm(tr("discardChanges")))return;
-      if(expanded) expandedPropertyIds.delete(property.id);
-      else expandedPropertyIds.add(property.id);
-      renderProperties();
-    });
-    headActions.append(togglePropertyButton);
     head.append(title, headActions);
     card.append(head);
-    if(!expanded){
-      propertiesNode.append(card);
+    if(!expanded && !hostViews.get(property.id)?.expandedOnce){
+      commitHostCard(property, card, expanded);
       return;
     }
 
@@ -1256,6 +2503,8 @@ function renderProperties(blockFeedback = null){
     settings.className="host-subpanel host-property-settings";
     const settingsForm=document.createElement("form");
     settingsForm.className="host-settings-form";
+    settingsForm.dataset.hostDraftKey=`property:${property.id}:settings`;
+    settingsForm.dataset.hostKey="settings";
     const titleLabel=document.createElement("label");
     titleLabel.className="host-property-title-field";
     const titleText=document.createElement("span");
@@ -1263,11 +2512,31 @@ function renderProperties(blockFeedback = null){
     const titleInput=document.createElement("input");
     titleInput.type="text";titleInput.name="title";titleInput.required=true;titleInput.maxLength=160;titleInput.value=property.title;
     titleLabel.append(titleText,titleInput);
-    const addressEditor = window.ParrotAddress.create({
+    const existingAddress = hostAddressViews.get(property.id);
+    const addressEditor = existingAddress?.editor || window.ParrotAddress.create({
       id:`property-address-${property.id}`, tr, request:api,
-      initial:property.address || null, location:property, onUnauthorized:addressSessionExpired
+      initial:property.address || null, location:property, onUnauthorized:addressSessionExpired,
+      onCancel:()=>{
+        const currentForm=hostAddressViews.get(property.id)?.form;
+        if(!currentForm)return;
+        const draft=hostDraft(currentForm);draft.addressDirty=false;
+        draft.addressVersion=(draft.addressVersion || 0)+1;
+        draft.addressAcknowledgedValues=hostAddressSnapshot(currentForm);setBusy(currentForm,false);hostDirtyState();
+      }
     });
-    propertyAddressEditors.set(settingsForm, addressEditor);
+    const addressNode = existingAddress ? document.createElement("div") : addressEditor.node;
+    addressNode.dataset.hostKey="address";
+    addressNode.dataset.hostIsland="address";
+    if (!existingAddress) {
+      hostAddressViews.set(property.id, {editor:addressEditor, form:settingsForm});
+      propertyAddressEditors.set(settingsForm, addressEditor);
+      addressEditor.change.addEventListener("click",()=>{
+        if(addressEditor.node.querySelector(".host-address-fields")?.hidden){
+          hostDraft(settingsForm).addressDirty=false;
+          hostDirtyState();
+        }
+      });
+    }
     const accommodationLabel=document.createElement("label");
     const accommodationText=document.createElement("span");
     accommodationText.textContent=tr("accommodationTypeLabel");
@@ -1294,7 +2563,7 @@ function renderProperties(blockFeedback = null){
     sleepsLabel.append(sleepsText,sleepsInput);
     const saveSettings=document.createElement("button");
     saveSettings.className="button button-small";saveSettings.type="submit";saveSettings.textContent=tr("savePropertySettings");
-    settingsForm.append(titleLabel,addressEditor.node,accommodationLabel,bedroomsLabel,sleepsLabel,saveSettings);
+    settingsForm.append(titleLabel,addressNode,accommodationLabel,bedroomsLabel,sleepsLabel,saveSettings);
     settingsForm.addEventListener("submit",event=>{event.preventDefault();updatePropertySettings(property,settingsForm)});
     settings.append(settingsForm);
 
@@ -1343,124 +2612,11 @@ function renderProperties(blockFeedback = null){
       listingControls.append(visibilityGroup,removeListing);
       actions.append(a, listingControls);
       listing.append(actions);
-    } else {
-      const form = document.createElement("form");
-      form.className = "host-inline-form";
-      const help = document.createElement("p");
-      help.className = "host-inline-muted host-listing-help";
-      help.textContent = tr("airbnbIdHelp");
-      listing.append(help);
-
-      const input = document.createElement("input");
-      input.type = "text";
-      input.inputMode = "numeric";
-      input.pattern = "[0-9]+";
-      input.name = "externalId";
-      input.required = true;
-      input.placeholder = tr("airbnbIdPlaceholder");
-      const button = document.createElement("button");
-      button.className = "button button-small";
-      button.type = "submit";
-      button.textContent = tr("saveAirbnb");
-      form.append(input, button);
-      form.addEventListener("submit", event => {
-        event.preventDefault();
-        addListing(property, form);
-      });
-      listing.append(form);
     }
-
+    listing.append(calendarSourceForm(property,externalCalendar));
     const syncPanel=document.createElement("div");
     syncPanel.className="host-subpanel host-calendar-sync";
-    const syncTitle=document.createElement("h3");
-    syncTitle.textContent=tr("calendarSync");
-    syncPanel.append(syncTitle);
-
-    if(externalCalendar){
-      const status=document.createElement("div");
-      status.className=`host-calendar-status ${externalCalendar.enabled===false ? "disabled" : (externalCalendar.status||"")}`;
-
-      const statusTop=document.createElement("div");
-      const statusLabel=document.createElement("strong");
-      statusLabel.textContent=externalCalendar.enabled===false
-        ? `Airbnb · ${tr("calendarDisabledStatus")}`
-        : (externalCalendar.status==="connected" ? `Airbnb · ${tr("calendarConnectedStatus")}` : `Airbnb · ${tr("calendarError")}`);
-      const last=document.createElement("span");
-      last.textContent=tr("lastSync",formatSyncTime(externalCalendar.lastSyncedAt));
-      statusTop.append(statusLabel,last);
-
-      const stats=document.createElement("div");
-      stats.className="host-calendar-stats";
-      const reservations=Array.isArray(externalCalendar.reservationBlocks)?externalCalendar.reservationBlocks:[];
-      const imported=document.createElement("span");
-      imported.textContent=tr("reservationsImported",reservations.length);
-      const ignored=document.createElement("span");
-      ignored.textContent=tr("ignoredBlocks",Number(externalCalendar.platformUnavailableCount||0));
-      stats.append(imported,ignored);
-
-      const actions=document.createElement("div");
-      actions.className="host-calendar-actions";
-      const controlGroup=document.createElement("div");
-      controlGroup.className="host-calendar-control-group";
-      const syncButton=document.createElement("button");
-      syncButton.type="button";syncButton.className="button button-small";syncButton.textContent=tr("syncNow");syncButton.disabled=externalCalendar.enabled===false;
-      syncButton.addEventListener("click",()=>syncCalendar(externalCalendar));
-      const toggleButton=document.createElement("button");
-      toggleButton.type="button";toggleButton.className="text-button";toggleButton.textContent=tr(externalCalendar.enabled===false ? "enableCalendar" : "disableCalendar");
-      toggleButton.addEventListener("click",()=>setCalendarEnabled(externalCalendar,externalCalendar.enabled===false));
-      const disconnectButton=document.createElement("button");
-      disconnectButton.type="button";disconnectButton.className="text-button danger host-calendar-delete";disconnectButton.textContent=tr("disconnectCalendar");
-      disconnectButton.addEventListener("click",()=>disconnectCalendar(externalCalendar));
-      controlGroup.append(syncButton,toggleButton);
-      actions.append(controlGroup,disconnectButton);
-
-      status.append(statusTop);
-      if(window.ParrotCalendarVerification){
-        const verification=window.ParrotCalendarVerification.create({calendar:externalCalendar,request:api,language:lang,onUnauthorized:addressSessionExpired,
-          onStatus:value=>{statusLabel.hidden=String(value.status||"").toLowerCase()==="verified" && externalCalendar.enabled!==false && externalCalendar.status==="connected";}});
-        calendarVerificationPanels.push(verification);
-        syncTitle.textContent=verification.name;
-        status.append(verification.node);
-      }
-      status.append(stats);
-      if(externalCalendar.lastError){
-        const err=document.createElement("p");err.className="host-inline-error";err.textContent=externalCalendar.lastError;status.append(err);
-      }
-
-      if(reservations.length){
-        const blocks=document.createElement("div");
-        blocks.className="host-calendar-blocks";
-        reservations.forEach(block=>{
-          const item=document.createElement("span");
-          item.textContent=`${block.from} → ${block.to}`;
-          blocks.append(item);
-        });
-        status.append(blocks);
-      }
-
-      syncPanel.append(status,actions);
-    }else{
-      if(property.listing?.url){
-        const status=document.createElement("div");
-        status.className="host-calendar-status host-calendar-unverified";
-        const statusLabel=document.createElement("strong");
-        statusLabel.textContent=tr("calendarNotConnectedUnverified");
-        status.append(statusLabel);
-        syncPanel.append(status);
-      }
-      const help=document.createElement("p");
-      help.className="host-inline-muted host-listing-help";
-      help.textContent=tr("calendarHelp");
-      const form=document.createElement("form");
-      form.className="host-inline-form host-calendar-form";
-      const input=document.createElement("input");
-      input.type="url";input.name="icalUrl";input.required=true;input.autocomplete="off";input.placeholder=tr("calendarUrl");
-      const button=document.createElement("button");
-      button.className="button button-small";button.type="submit";button.textContent=tr("connectCalendar");
-      form.append(input,button);
-      form.addEventListener("submit",event=>{event.preventDefault();connectCalendar(property,form)});
-      syncPanel.append(help,form);
-    }
+    renderCalendarLifecycle(syncPanel,property);
 
     const calendar = document.createElement("div");
     calendar.className = "host-subpanel host-availability-panel";
@@ -1474,6 +2630,8 @@ function renderProperties(blockFeedback = null){
 
     const staySettingsForm=document.createElement("form");
     staySettingsForm.className="host-settings-form host-stay-settings";
+    staySettingsForm.dataset.hostKey="stay-settings";
+    staySettingsForm.dataset.hostDraftKey=`property:${property.id}:stay-settings`;
     const minStayLabel=document.createElement("label");
     const minStayText=document.createElement("span");
     minStayText.textContent=tr("minStayLabel");
@@ -1489,11 +2647,13 @@ function renderProperties(blockFeedback = null){
     const saveStaySettings=document.createElement("button");
     saveStaySettings.className="button button-small";saveStaySettings.type="submit";saveStaySettings.textContent=tr("saveStaySettings");
     staySettingsForm.append(minStayLabel,cleaningLabel,saveStaySettings);
-    staySettingsForm.addEventListener("submit",event=>{event.preventDefault();updatePropertySettings(property,staySettingsForm)});
+    attachHostEditor(property,staySettingsForm,"conditions");
     calendar.append(staySettingsForm);
 
     const addForm = document.createElement("form");
     addForm.className = "host-inline-form host-dates";
+    addForm.dataset.hostKey="availability-add";
+    addForm.dataset.hostDraftKey=`property:${property.id}:availability-add`;
     periodHeading(addForm, "newPeriod");
     const fromInput = document.createElement("input");
     fromInput.type = "date";
@@ -1532,7 +2692,8 @@ function renderProperties(blockFeedback = null){
       err.className = "host-inline-error";
       err.textContent = property.availabilityError;
       periods.append(err);
-    } else if (!Array.isArray(property.availability)) {
+    }
+    if (!Array.isArray(property.availability)) {
       const loading = document.createElement("p");
       loading.className = "host-inline-muted";
       loading.textContent = tr("loading");
@@ -1544,73 +2705,15 @@ function renderProperties(blockFeedback = null){
       empty.textContent = tr("noPeriods");
       periods.append(empty);
     } else {
-      property.availability.forEach(period => {
-        const row = document.createElement("form");
-        row.className = "host-period";
-        periodHeading(row, "savedPeriod");
-
-        const from = document.createElement("input");
-        from.type = "date";
-        from.name = "from";
-        from.required = true;
-        from.value = period.from;
-        const to = document.createElement("input");
-        to.type = "date";
-        to.name = "to";
-        to.required = true;
-        const lastNight = plusDays(period.to, -1);
-        to.value = lastNight;
-        to.min = period.from;
-        from.addEventListener("change", () => {
-          to.min = from.value;
-          if (!to.value || to.value < from.value) to.value = from.value;
-          to.refreshDateHint();
-        });
-
-        const nightly=document.createElement("input");
-        nightly.type="number";nightly.min="0.01";nightly.step="0.01";nightly.placeholder=tr("nightlyPrice");nightly.value=centsToEuros(period.nightlyPriceCents);
-        nightly.name="nightlyPrice";
-
-        const save = document.createElement("button");
-        save.type = "submit";
-        save.className = "button button-small host-period-save";
-        save.textContent = tr("save");
-        save.hidden = true;
-        const originalNightly = centsToEuros(period.nightlyPriceCents);
-        const syncSaveVisibility = () => {
-          save.hidden =
-            from.value === period.from &&
-            to.value === lastNight &&
-            nightly.value === originalNightly;
-        };
-        [from,to,nightly].forEach(input => {
-          input.addEventListener("input", syncSaveVisibility);
-          input.addEventListener("change", syncSaveVisibility);
-        });
-        row.addEventListener("submit", event => {
-          event.preventDefault();
-          return updateAvailability(property, period, row);
-        });
-
-        const remove = document.createElement("button");
-        remove.type = "button";
-        remove.className = "text-button danger";
-        remove.textContent = tr("remove");
-        remove.addEventListener("click", () => deleteAvailability(property, period));
-
-        const actions = document.createElement("div");
-        actions.className = "host-period-actions";
-        actions.append(save, remove);
-        row.append(hostDateLabel(from, "firstNight"), hostDateLabel(to, "lastNight"), hostPriceLabel(nightly), actions);
-        periods.append(row);
-      });
+      property.availability.forEach(period => periods.append(renderHostPeriod(property,period)));
     }
 
     calendar.append(periods);
-    card.append(settings, listing);
-    if(property.listing) card.append(syncPanel);
     card.append(calendar);
-    card.append(renderUnavailability(property, blockFeedback?.propertyId===property.id ? blockFeedback.key : null));
+    card.append(hostDisclosure(property,"closed","closedDates",renderUnavailability(property, blockFeedback?.propertyId===property.id ? blockFeedback.key : null)));
+    card.append(hostDisclosure(property,"calendar","calendarSettings",syncPanel));
+    card.append(hostDisclosure(property,"source","sourcePanelTitle",listing));
+    card.append(hostDisclosure(property,"details","propertyDetails",settings));
     const footer = document.createElement("div");
     footer.className = "host-property-footer";
     const deletePropertyButton = document.createElement("button");
@@ -1620,15 +2723,57 @@ function renderProperties(blockFeedback = null){
     deletePropertyButton.addEventListener("click", () => deleteProperty(property));
     footer.append(deletePropertyButton);
     card.append(footer);
-    propertiesNode.append(card);
+    commitHostCard(property, card, expanded);
   });
+  const liveKeys=new Set([propertyForm.id,
+    ...[...propertiesNode.querySelectorAll("form")].map(form=>form.dataset.hostDraftKey)]);
+  for(const key of hostDrafts.keys()) if(key.startsWith(`${accountId}:`) && !liveKeys.has(key.slice(String(accountId).length+1)))
+    hostDrafts.delete(key);
+  hostDirtyState();
 }
 
+langButtons.forEach(btn => btn.addEventListener("pointerdown", () => {
+  const node=document.activeElement;
+  btn.hostFocus=node && /^(INPUT|TEXTAREA)$/.test(node.tagName)
+    ? {node,from:node.selectionStart,to:node.selectionEnd,epoch:hostCore.session.epoch} : null;
+}));
 langButtons.forEach(btn => btn.addEventListener("click", () => {
+  const previous=btn.hostFocus;
+  btn.hostFocus=null;
   if(btn.dataset.hostLang===lang)return;
-  if(unsavedHostChanges && !confirm(tr("discardChanges")))return;
   applyLanguage(btn.dataset.hostLang);
+  if(previous && previous.epoch===hostCore.session.epoch && previous.node.isConnected){
+    previous.node.focus({preventScroll:true});
+    if(previous.from!==null && previous.to!==null)previous.node.setSelectionRange(previous.from,previous.to);
+  }
 }));
 
+hostCore.session.subscribe(({user, reason, epoch}) => {
+  if(user) {
+    const changed = accountId !== user.accountId || presentedSessionEpoch !== epoch;
+    presentedSessionEpoch = epoch;
+    if(changed) {
+      const previous = accountId;
+      clearPrivatePresentation();
+      if(previous) {
+        propertyNavigationPending = false;
+        propertyNavigationId = null; propertyConversationId = null;
+        hostCore.storage.session.removeItem(profileReturnKey);
+        hostCore.storage.session.removeItem(returnKey(previous));
+      }
+    }
+    accountId = user.accountId;
+    state = {...(changed ? emptyState() : state), authenticated:true,
+      accountEmail:String(user.email || ""), username:String(user.username || ""), profile:{id:user.parrotId,displayName:user.displayName}};
+    renderAuthState();
+    if(changed) dashboardLoad = syncDashboard();
+  } else {
+    clearPrivatePresentation(); accountId = null;
+    if(reason === "revalidate" || reason === "expired") {
+      loginForm.elements.password.value = "";
+      registerForm.elements.password.value = "";
+    }
+  }
+});
 applyLanguage(lang);
 boot();

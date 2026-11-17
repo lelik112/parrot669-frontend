@@ -6,13 +6,23 @@ const {JSDOM} = require('jsdom');
 
 const file = name => fs.readFileSync(path.join(__dirname, '../public', name), 'utf8');
 const flush = async () => { for (let i=0; i<4; i++) await new Promise(resolve=>setImmediate(resolve)); };
-const deferred = () => { let resolve; const promise=new Promise(r=>resolve=r); return {promise,resolve}; };
+const deferred = () => { let resolve,reject; const promise=new Promise((res,rej)=>{resolve=res;reject=rej}); return {promise,resolve,reject}; };
 const response = data => new Response(JSON.stringify(data));
+const cityKeys={"Barcelona": "R100", "Sant Cugat del Vallès": "R101", "Minsk": "R102", "Current ES": "R103", "Stale ES": "R104", "Stale BY": "R105"};
+const cityKey=name=>cityKeys[name];
+const cityRow=name=>({countryCode:name==='Minsk'||name==='Stale BY'?'BY':'ES',municipalityKey:cityKey(name),name,nativeName:null});
+const cityLabel=key=>Object.keys(cityKeys).find(name=>cityKeys[name]===key);
 const property = city => ({propertyId:city,propertyTitle:`Home in ${city}`,city,bedrooms:1,sleeps:2,links:[]});
 
-async function harness(t, {handler=()=>undefined, saved=null, messaging=false, sessionUser=null, ownerProfiles={}}={}) {
+async function harness(t, {handler=()=>undefined, saved=null, messaging=false, sessionUser=null, ownerProfiles={},
+  ignoreCityAbort=false, configureStorage=()=>{}}={}) {
   const dom=new JSDOM(file('search.html'),{url:'https://parrot669.com/search',runScripts:'outside-only'});
-  t.after(()=>dom.window.close());
+  const tasks=[];
+  const drain=async()=>{
+    // Await application operations, including descendants added by their continuations.
+    for(let index=0;index<tasks.length;index++) await tasks[index];
+  };
+  t.after(async()=>{try{await drain();}finally{dom.window.close();}});
   const w=dom.window, calls=[];
   let activeSessionUser=sessionUser;
   w.localStorage.setItem('parrot669-language','ru');
@@ -21,21 +31,40 @@ async function harness(t, {handler=()=>undefined, saved=null, messaging=false, s
     const url=new URL(raw,w.location.origin);
     calls.push(url);
     const custom=await handler(url);
-    if(custom!==undefined) return custom instanceof Response?custom:response(custom);
+    if(custom!==undefined) return custom instanceof Response||typeof custom?.json==='function'?custom:response(custom);
     if(url.pathname==='/api/host/auth/me') return activeSessionUser?response(activeSessionUser):new Response(JSON.stringify({error:'unauthorized'}),{status:401});
     if(url.pathname==='/api/host/auth/logout' && options.method==='POST') return new Response(null,{status:204});
     if(url.pathname.startsWith('/api/messaging/contact-options/')) {
       const id=decodeURIComponent(url.pathname.split('/').at(-1));
-      return response({acceptingNewConversations:false,hostProfileId:ownerProfiles[id]||'host'});
+      return response({acceptingNewConversations:false,hostProfileId:ownerProfiles[id]||'P669-BBBB-BBBB-BBBB-BBBB'});
     }
     if(url.pathname==='/api/locations/countries') return response([{code:'ES',name:'Spain'},{code:'BY',name:'Belarus'}]);
     if(url.pathname==='/api/locations/cities') return response((url.searchParams.get('country')==='ES'?
-      ['Barcelona','Sant Cugat del Vallès']:['Minsk']).map(name=>({name})));
-    if(url.pathname==='/api/search') return response([property(url.searchParams.get('city'))]);
+      ['Barcelona','Sant Cugat del Vallès']:['Minsk']).map(cityRow));
+    if(url.pathname==='/api/search') return response([property(cityLabel(url.searchParams.get('municipalityKey')))]);
     throw Error(`Unexpected request: ${raw}`);
+  };
+  configureStorage(w);
+  require('./helpers/core.cjs').installCore(w);
+  const citySignals=[],http=w.ParrotCore.http;
+  w.ParrotCore.http=(path,options={})=>{
+    if(path.startsWith('/api/locations/cities?')){
+      citySignals.push(options.signal);
+      if(ignoreCityAbort) options={...options,signal:undefined};
+    }
+    return http(path,options);
   };
   if(messaging) w.eval(file('assets/messaging-common.js'));
   w.eval(file('assets/search.js'));
+  // Classic-script functions remain the real implementation; only the fixture owns their promises.
+  for(const name of ['loadLocations','loadCities','runSearch']){
+    const operation=w[name];
+    w[name]=(...args)=>{
+      const task=operation(...args);
+      tasks.push(task);
+      return task;
+    };
+  }
   await flush();
   const form=w.document.getElementById('availability-form');
   const change=(control,value,event='change')=>{
@@ -43,18 +72,327 @@ async function harness(t, {handler=()=>undefined, saved=null, messaging=false, s
     control.dispatchEvent(new w.Event(event,{bubbles:true}));
   };
   const submit=async()=>{form.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));await flush();};
-  const h={w,form,calls,change,submit,$:id=>w.document.getElementById(id),setSessionUser:value=>{activeSessionUser=value;},
+  const h={w,form,calls,citySignals,change,submit,drain,$:id=>w.document.getElementById(id),setSessionUser:value=>{activeSessionUser=value;},
     results:w.document.getElementById('availability-results'),
     searches:()=>calls.filter(url=>url.pathname==='/api/search'),
     language:lang=>w.document.querySelector(`[data-search-lang="${lang}"]`).click()};
   h.barcelona=async()=>{
     change(form.elements.country,'ES');await flush();
-    change(form.elements.city,'Barcelona');
+    change(form.elements.city,cityKey('Barcelona'));
     change(form.elements.from,'2026-10-01');change(form.elements.to,'2026-10-08');
     await submit();
   };
   return h;
 }
+
+test('fixture drain owns deferred locale countries, descendant cities and confirmed search through completion',async t=>{
+  const countries=deferred(),cities=deferred(),search=deferred();
+  const countryStarted=deferred(),cityStarted=deferred(),searchStarted=deferred();
+  let hold=false;
+  const h=await harness(t,{handler:url=>{
+    if(!hold)return;
+    if(url.pathname==='/api/locations/countries'){countryStarted.resolve();return countries.promise;}
+    if(url.pathname==='/api/locations/cities'){cityStarted.resolve();return cities.promise;}
+    if(url.pathname==='/api/search'){searchStarted.resolve();return search.promise;}
+  }});
+  await h.barcelona();
+  hold=true;
+  h.language('es');
+  await countryStarted.promise;
+  let drained=false;
+  const completion=h.drain().then(()=>{drained=true;});
+  await Promise.resolve();
+  assert.equal(drained,false,'country request still owns live DOM');
+  countries.resolve([{code:'ES',name:'España'},{code:'BY',name:'Bielorrusia'}]);
+  await cityStarted.promise;
+  assert.equal(drained,false,'descendant city request must finish');
+  cities.resolve([cityRow('Barcelona')]);
+  await searchStarted.promise;
+  assert.equal(drained,false,'confirmed locale search must finish too');
+  search.resolve([property('Barcelona')]);
+  await completion;
+  assert.equal(drained,true);
+  assert.equal(h.w.document.documentElement.lang,'es');
+  assert.equal(h.form.elements.city.value,cityKey('Barcelona'));
+  assert.match(h.results.textContent,/Home in Barcelona/);
+  assert.equal(h.searches().at(-1).searchParams.get('language'),'es');
+});
+
+const cityNames = select => [...select.options].filter(option=>option.value).map(option=>option.textContent);
+const pendingJsonResponse = pending => ({ok:true,status:200,json:()=>pending.promise});
+
+test('PM140: generation owns ABA success/error even if transport ignores cancellation',async t=>{
+  for(const outcome of ['success','http','network','json'])await t.test(outcome,async t=>{
+    const requests=[],parse=deferred();
+    const h=await harness(t,{ignoreCityAbort:true,handler:url=>{
+      if(url.pathname==='/api/locations/cities'){
+        const d=deferred();requests.push(d);return d.promise;
+      }
+    }});
+    h.change(h.form.elements.country,'ES');await flush();
+    if(outcome==='json'){requests[0].resolve(pendingJsonResponse(parse));await flush();}
+    h.change(h.form.elements.country,'BY');await flush();
+    h.change(h.form.elements.country,'ES');await flush();
+    assert.equal(h.citySignals[0].aborted,true);assert.equal(h.citySignals[1].aborted,true);
+    assert.equal(h.citySignals[2].aborted,false);
+    requests[2].resolve([cityRow('Current ES')]);await flush();
+    requests[1].resolve([cityRow('Stale BY')]);
+    if(outcome==='success')requests[0].resolve([cityRow('Stale ES')]);
+    if(outcome==='http')requests[0].resolve(new Response('{}',{status:503}));
+    if(outcome==='network')requests[0].reject(new Error('stale network'));
+    if(outcome==='json')parse.reject(new Error('stale JSON'));
+    await flush();
+    assert.deepEqual(cityNames(h.form.elements.city),['Current ES']);
+    assert.equal(h.form.querySelector('[type="submit"]').disabled,false);
+    assert.equal(h.results.querySelector('.availability-state.error'),null);
+  });
+});
+
+test('PM140: superseded bootstrap cannot retire a newer explicit search',async t=>{
+  const old=deferred(),requests=[];
+  const h=await harness(t,{ignoreCityAbort:true,
+    saved:{country:'ES',municipalityKey:cityKey('Barcelona'),from:'2026-10-01',to:'2026-10-08',searched:true},
+    handler:url=>{
+      if(url.pathname==='/api/locations/cities'){
+        requests.push(url.searchParams.get('country'));
+        return requests.length===1?old.promise:[cityRow('Minsk')];
+      }
+    }});
+  h.change(h.form.elements.country,'BY');await flush();await h.submit();
+  assert.equal(h.searches().length,1);assert.match(h.results.textContent,/Home in Minsk/);
+  old.resolve([cityRow('Barcelona')]);await flush();
+  assert.equal(h.searches().length,1);assert.match(h.results.textContent,/Home in Minsk/);
+  assert.equal(JSON.parse(h.w.localStorage.getItem('parrot669-search-state')).searched,true);
+  h.change(h.$('filter-accommodation-type'),'private_room');await flush();
+  assert.equal(h.searches().length,2);assert.equal(h.searches().at(-1).searchParams.get('municipalityKey'),cityKey('Minsk'));
+});
+
+test('PM140: blocked storage getters or quota failures do not prevent manual search and contact',async t=>{
+  for(const failure of ['getters','quota'])await t.test(failure,async t=>{
+    const h=await harness(t,{messaging:true,configureStorage:w=>{
+      if(failure==='getters')for(const key of ['localStorage','sessionStorage'])
+        Object.defineProperty(w,key,{configurable:true,get(){throw new w.DOMException('Synthetic blocked storage','SecurityError');}});
+      else w.Storage.prototype.setItem=()=>{throw new w.DOMException('Synthetic quota','QuotaExceededError');};
+    }});
+    await h.barcelona();
+    assert.equal(h.searches().length,1);assert.match(h.results.textContent,/Home in Barcelona/);
+    assert.equal(new URL(h.results.querySelector('.message-property-link').href).searchParams.get('property'),'Barcelona');
+    assert.equal(h.form.querySelector('[type="submit"]').disabled,false);
+  });
+});
+
+test('PM-117: only the latest ES to BY location request can commit in either completion order',async t=>{
+  for(const reverse of [false,true]) await t.test(reverse?'BY finishes before stale ES':'stale ES finishes before BY',async t=>{
+    const requests=[];
+    const h=await harness(t,{handler:url=>{
+      if(url.pathname==='/api/locations/cities'){
+        const pending=deferred();requests.push({country:url.searchParams.get('country'),pending});return pending.promise;
+      }
+    }});
+    h.change(h.form.elements.country,'ES');await flush();
+    h.change(h.form.elements.country,'BY');await flush();
+    const es=requests.find(request=>request.country==='ES');
+    const by=requests.find(request=>request.country==='BY');
+    const finishEs=()=>es.pending.resolve(response([cityRow('Barcelona'),cityRow('Sant Cugat del Vallès')]));
+    const finishBy=()=>by.pending.resolve(response([cityRow('Minsk')]));
+    if(reverse){finishBy();await flush();finishEs();}
+    else{finishEs();await flush();assert.deepEqual(cityNames(h.form.elements.city),[]);finishBy();}
+    await flush();
+    assert.equal(h.form.elements.country.value,'BY');
+    assert.deepEqual(cityNames(h.form.elements.city),['Minsk']);
+    assert.equal(h.form.elements.city.value,cityKey('Minsk'));
+    assert.equal(h.form.querySelector('[type="submit"]').disabled,false);
+  });
+});
+
+test('PM-117: an ABA country sequence is fenced by generation rather than country equality',async t=>{
+  const requests=[];
+  const h=await harness(t,{handler:url=>{
+    if(url.pathname==='/api/locations/cities'){
+      const pending=deferred();requests.push({country:url.searchParams.get('country'),pending});return pending.promise;
+    }
+  }});
+  h.change(h.form.elements.country,'ES');await flush();
+  h.change(h.form.elements.country,'BY');await flush();
+  h.change(h.form.elements.country,'ES');await flush();
+  requests[2].pending.resolve(response([cityRow('Current ES')]));await flush();
+  requests[0].pending.resolve(response([cityRow('Stale ES')]));
+  requests[1].pending.resolve(response([cityRow('Stale BY')]));await flush();
+  assert.equal(h.form.elements.country.value,'ES');
+  assert.deepEqual(cityNames(h.form.elements.city),['Current ES']);
+  assert.equal(h.form.elements.city.value,cityKey('Current ES'));
+});
+
+test('PM-117: ordinary preferred, single, multiple and empty city outcomes stay deterministic',async t=>{
+  const preferred=await harness(t,{saved:{country:'ES',municipalityKey:cityKey('Barcelona'),searched:false}});
+  assert.equal(preferred.form.elements.city.value,cityKey('Barcelona'),'restore uses the exact stable municipality key');
+  preferred.change(preferred.form.elements.country,'BY');await flush();
+  assert.equal(preferred.form.elements.city.value,cityKey('Minsk'),'a single city remains selected');
+  preferred.change(preferred.form.elements.country,'ES');await flush();
+  assert.equal(preferred.form.elements.city.value,'','multiple cities do not invent a selection');
+
+  const empty=await harness(t,{handler:url=>url.pathname==='/api/locations/cities'?[]:undefined});
+  empty.change(empty.form.elements.country,'ES');await flush();
+  assert.equal(empty.form.elements.city.disabled,true);
+  assert.deepEqual(cityNames(empty.form.elements.city),[]);
+  await empty.submit();
+  assert.equal(empty.searches().length,0,'an empty current location is not searchable');
+});
+
+test('PM-117: clearing country invalidates pending success or failure and rejects programmatic submit',async t=>{
+  for(const outcome of ['success','failure']) await t.test(outcome,async t=>{
+    const pending=deferred();
+    const h=await harness(t,{handler:url=>url.pathname==='/api/locations/cities'?pending.promise:undefined});
+    h.change(h.form.elements.from,'2026-10-01');h.change(h.form.elements.to,'2026-10-08');
+    h.change(h.form.elements.country,'ES');await flush();
+    await h.submit();
+    assert.equal(h.searches().length,0,'pending location is not searchable');
+    h.change(h.form.elements.country,'');await flush();
+    if(outcome==='success') pending.resolve(response([cityRow('Barcelona')]));
+    else pending.reject(new Error('stale after clear'));
+    await flush();
+    assert.deepEqual(cityNames(h.form.elements.city),[]);
+    assert.equal(h.form.elements.city.disabled,true);
+    assert.equal(h.results.querySelector('.availability-state.error'),null);
+    await h.submit();
+    assert.equal(h.searches().length,0,'cleared location stays unsearchable');
+  });
+});
+
+test('PM-117: stale HTTP, network and deferred JSON errors are inert',async t=>{
+  for(const failure of ['http','network','json']) await t.test(failure,async t=>{
+    const requests=[];
+    const h=await harness(t,{handler:url=>{
+      if(url.pathname==='/api/locations/cities'){
+        const pending=deferred();requests.push({country:url.searchParams.get('country'),pending});return pending.promise;
+      }
+    }});
+    h.change(h.form.elements.country,'ES');await flush();
+    h.change(h.form.elements.country,'BY');await flush();
+    if(failure==='json'){
+      const parse=deferred();requests[0].pending.resolve(pendingJsonResponse(parse));await flush();
+      requests[1].pending.resolve(response([cityRow('Minsk')]));await flush();
+      parse.reject(new Error('stale parse'));await flush();
+    }else{
+      requests[1].pending.resolve(response([cityRow('Minsk')]));await flush();
+      if(failure==='http') requests[0].pending.resolve(new Response('{}',{status:503}));
+      else requests[0].pending.reject(new Error('stale network'));
+      await flush();
+    }
+    assert.deepEqual(cityNames(h.form.elements.city),['Minsk']);
+    assert.equal(h.form.elements.city.value,cityKey('Minsk'));
+    assert.equal(h.results.querySelector('.availability-state.error'),null);
+  });
+});
+
+test('PM-117: current location failure blocks submit and a later current success recovers',async t=>{
+  const requests=[];
+  const h=await harness(t,{handler:url=>{
+    if(url.pathname==='/api/locations/cities'){
+      const pending=deferred();requests.push(pending);return pending.promise;
+    }
+  }});
+  h.change(h.form.elements.from,'2026-10-01');h.change(h.form.elements.to,'2026-10-08');
+  h.change(h.form.elements.country,'ES');await flush();
+  requests[0].resolve(new Response('{}',{status:503}));await flush();
+  assert(h.results.querySelector('.availability-state.error'));
+  await h.submit();
+  assert.equal(h.searches().length,0,'failed location is not searchable');
+  h.change(h.form.elements.country,'BY');await flush();
+  requests[1].resolve(response([cityRow('Minsk')]));await flush();
+  assert.equal(h.results.querySelector('.availability-state.error'),null);
+  assert.equal(h.form.querySelector('[type="submit"]').disabled,false);
+});
+
+test('PM-117: user edits during saved restore win and prevent stale auto-search',async t=>{
+  const saved={country:'ES',municipalityKey:cityKey('Barcelona'),from:'2026-10-01',to:'2026-10-08',bedrooms:'1',sleeps:'1',searched:true};
+  const requests=[];
+  const h=await harness(t,{saved,handler:url=>{
+    if(url.pathname==='/api/locations/cities'){
+      const pending=deferred();requests.push({country:url.searchParams.get('country'),pending});return pending.promise;
+    }
+  }});
+  assert.equal(requests[0].country,'ES');
+  h.change(h.form.elements.country,'BY');
+  h.change(h.form.elements.from,'2026-10-02');
+  h.change(h.form.elements.bedrooms,'2');await flush();
+  requests.find(request=>request.country==='BY').pending.resolve(response([cityRow('Minsk')]));await flush();
+  requests.find(request=>request.country==='ES').pending.resolve(response([cityRow('Barcelona')]));await flush();
+  assert.equal(h.searches().length,0);
+  assert.equal(h.form.elements.country.value,'BY');
+  assert.equal(h.form.elements.city.value,cityKey('Minsk'));
+  assert.equal(h.form.elements.from.value,'2026-10-02');
+  assert.equal(h.form.elements.bedrooms.value,'2');
+  assert.deepEqual(JSON.parse(h.w.localStorage.getItem('parrot669-search-state')),{...saved,country:'BY',municipalityKey:cityKey('Minsk'),from:'2026-10-02',bedrooms:'2',accommodationType:'any',pricedOnly:false,minPrice:'',maxPrice:'',searched:false});
+});
+
+test('PM-117 correction: every out-of-form filter retires a pending confirmed restore',async t=>{
+  const saved={country:'ES',municipalityKey:cityKey('Barcelona'),from:'2026-10-01',to:'2026-10-08',bedrooms:'1',sleeps:'1',searched:true};
+  const cases=[
+    {
+      name:'accommodation type change',
+      id:'filter-accommodation-type',
+      mutate:h=>h.change(h.$('filter-accommodation-type'),'private_room','change'),
+      expected:{accommodationType:'private_room'}
+    },
+    {
+      name:'priced-only change',
+      id:'filter-priced-only',
+      mutate:h=>{
+        h.$('filter-priced-only').checked=true;
+        h.$('filter-priced-only').dispatchEvent(new h.w.Event('change',{bubbles:true}));
+      },
+      expected:{pricedOnly:true}
+    },
+    {
+      name:'minimum price input',
+      id:'filter-price-from',
+      mutate:h=>h.change(h.$('filter-price-from'),'10.01','input'),
+      expected:{minPrice:'10.01'}
+    },
+    {
+      name:'maximum price change',
+      id:'filter-price-to',
+      mutate:h=>h.change(h.$('filter-price-to'),'20.09','change'),
+      expected:{maxPrice:'20.09'}
+    }
+  ];
+  for(const scenario of cases) await t.test(scenario.name,async t=>{
+    const cities=deferred();
+    const h=await harness(t,{saved,handler:url=>url.pathname==='/api/locations/cities'?cities.promise:undefined});
+    scenario.mutate(h);
+    await flush();
+    cities.resolve(response([cityRow('Barcelona'),cityRow('Sant Cugat del Vallès')]));
+    await flush();
+    const stored=JSON.parse(h.w.localStorage.getItem('parrot669-search-state'));
+    assert.equal(h.searches().length,0,'late restore must not search after the filter edit');
+    assert.equal(stored.searched,false,'the confirmed restore intent is retired');
+    assert.equal(h.form.elements.country.value,'ES');
+    assert.equal(h.form.elements.city.value,cityKey('Barcelona'));
+    for(const [key,value] of Object.entries(scenario.expected)) assert.equal(stored[key],value);
+    if(scenario.id==='filter-priced-only') assert.equal(h.$(scenario.id).checked,true);
+    else assert.equal(h.$(scenario.id).value,Object.values(scenario.expected)[0]);
+  });
+});
+
+test('PM-117: locale change during a pending location request keeps current copy and focus',async t=>{
+  const pending=deferred();
+  const h=await harness(t,{handler:url=>url.pathname==='/api/locations/cities'?pending.promise:undefined});
+  h.form.elements.from.focus();
+  h.change(h.form.elements.country,'ES');await flush();
+  h.language('es');
+  assert.equal(h.w.document.activeElement,h.form.elements.from);
+  assert.equal(h.form.elements.city.options[0].textContent,'Elige una ciudad');
+  // The harness creates a fresh Response per fetch; never share one consumable body across locales.
+  pending.resolve([cityRow('Barcelona')]);await flush();
+  assert.equal(h.form.elements.city.options[0].textContent,'Elige una ciudad');
+  assert.deepEqual(cityNames(h.form.elements.city),['Barcelona']);
+  assert.deepEqual(h.calls.filter(url=>url.pathname==='/api/locations/cities').map(url=>url.searchParams.get('language')),['ru','es']);
+  assert.equal(h.form.elements.city.value,cityKey('Barcelona'));
+  assert.equal(h.results.querySelector('.availability-state.error'),null);
+  assert.equal(h.searches().length,0,'locale relabel does not submit an unconfirmed search');
+  assert.equal(h.w.document.activeElement,h.form.elements.from);
+});
 
 test('PM-048: search copy stays concise and the price-only label toggles its checkbox in every language',async t=>{
   const h=await harness(t);
@@ -80,11 +418,15 @@ test('PM-048: search copy stays concise and the price-only label toggles its che
   assert.equal(checkbox.checked,false);
   document.querySelector('label.price-filter').click();
   assert.equal(checkbox.checked,true);
+  await h.drain();
+  assert.equal(h.form.elements.country.disabled,false);
+  assert.equal(h.w.document.documentElement.lang,'ru');
+  assert.equal(h.results.querySelector('.availability-state.error'),null);
 });
 
 test('PM-049: Search logout clears identity and owned-card state without leaving the page',async t=>{
-  const h=await harness(t,{messaging:true,sessionUser:{accountId:'account',username:'tester',email:'private@example.test',profile:{id:'owner'}},
-    ownerProfiles:{owned:'owner'},handler:url=>url.pathname==='/api/search' ? [{...property('Barcelona'),propertyId:'owned'}] : undefined});
+  const h=await harness(t,{messaging:true,sessionUser:{accountId:'account',username:'tester',email:'private@example.test',parrotId:'P669-AAAA-AAAA-AAAA-AAAA'},
+    ownerProfiles:{owned:'P669-AAAA-AAAA-AAAA-AAAA'},handler:url=>url.pathname==='/api/search' ? [{...property('Barcelona'),propertyId:'owned'}] : undefined});
   await h.barcelona();
   assert.equal(h.$('search-account-indicator').textContent,'tester');
   assert.equal(h.w.document.body.textContent.includes('private@example.test'),false);
@@ -113,10 +455,14 @@ test('PM-050: anonymous Search exposes localized login and registration deep lin
     assert.equal(h.$('search-login').textContent,login);
     assert.equal(h.$('search-register').textContent,register);
   }
+  await h.drain();
+  assert.equal(h.form.elements.country.disabled,false);
+  assert.equal(h.w.document.documentElement.lang,'ru');
+  assert.equal(h.results.querySelector('.availability-state.error'),null);
 });
 
 test('PM-049: Search clears a BFCache account snapshot before revalidating the session',async t=>{
-  const h=await harness(t,{messaging:true,sessionUser:{accountId:'account',username:'tester',profile:{id:'owner'}}});
+  const h=await harness(t,{messaging:true,sessionUser:{accountId:'account',username:'tester',parrotId:'P669-AAAA-AAAA-AAAA-AAAA'}});
   assert.equal(h.$('search-account').hidden,false);
   h.setSessionUser(null);
   const event=new h.w.Event('pageshow');
@@ -146,8 +492,8 @@ test('PM-024: every search card has a working contact link when legacy opt-in is
 
 test('BUG-019: signed-in username and owned property are clear in every language; other contact and sign-out stay correct',async t=>{
   const ownId='own-property',otherId='other-property';
-  const h=await harness(t,{messaging:true,sessionUser:{accountId:'account',username:'fixture-owner',profile:{id:'owner-profile'}},
-    ownerProfiles:{[ownId]:'owner-profile',[otherId]:'other-profile'},handler:url=>url.pathname==='/api/search' ? [
+  const h=await harness(t,{messaging:true,sessionUser:{accountId:'account',username:'fixture-owner',parrotId:'P669-AAAA-AAAA-AAAA-AAAA'},
+    ownerProfiles:{[ownId]:'P669-AAAA-AAAA-AAAA-AAAA',[otherId]:'P669-BBBB-BBBB-BBBB-BBBB'},handler:url=>url.pathname==='/api/search' ? [
       {...property('Barcelona'),propertyId:ownId}, {...property('Barcelona'),propertyId:otherId}
     ]:undefined});
   await h.barcelona();
@@ -188,9 +534,9 @@ test('BUG-019: signed-in username and owned property are clear in every language
 test('GEO-001: changing city hides old cards; filters cannot search the old city',async t=>{
   const h=await harness(t);await h.barcelona();
   assert.match(h.results.textContent,/Home in Barcelona/);
-  h.change(h.form.elements.city,'Barcelona');
+  h.change(h.form.elements.city,cityKey('Barcelona'));
   assert.equal(h.results.querySelectorAll('article').length,1,'unchanged values keep the results');
-  h.change(h.form.elements.city,'Sant Cugat del Vallès');
+  h.change(h.form.elements.city,cityKey('Sant Cugat del Vallès'));
   assert.equal(h.results.querySelectorAll('article').length,0);
   assert.match(h.results.textContent,/Параметры изменены/);
   assert.equal(JSON.parse(h.w.localStorage.getItem('parrot669-search-state')).searched,false);
@@ -198,11 +544,11 @@ test('GEO-001: changing city hides old cards; filters cannot search the old city
   assert.equal(h.searches().length,1,'do not run an old query after a draft edit');
   h.language('es');
   assert.match(h.results.textContent,/Has cambiado los datos/);
-  await h.submit();
+  await flush();await h.submit();
   assert.match(h.results.textContent,/Home in Sant Cugat del Vallès/);
   assert.equal(h.searches().at(-1).searchParams.get('accommodationType'),'private_room');
   h.change(h.$('filter-accommodation-type'),'entire_place');await flush();
-  assert.equal(h.searches().at(-1).searchParams.get('city'),'Sant Cugat del Vallès');
+  assert.equal(h.searches().at(-1).searchParams.get('municipalityKey'),cityKey('Sant Cugat del Vallès'));
   assert.equal(h.searches().at(-1).searchParams.get('accommodationType'),'entire_place');
 });
 
@@ -223,10 +569,10 @@ test('country, stay dates and capacity edits also invalidate previous results',a
 test('a late response cannot restore old-city cards or unlock a newer pending search',async t=>{
   const old=deferred(),fresh=deferred();
   const h=await harness(t,{handler:url=>url.pathname==='/api/search'?
-    (url.searchParams.get('city')==='Barcelona'?old.promise:fresh.promise):undefined});
+    (url.searchParams.get('municipalityKey')===cityKey('Barcelona')?old.promise:fresh.promise):undefined});
   await h.barcelona();
   assert.match(h.results.textContent,/Ищем свободные даты/);
-  h.change(h.form.elements.city,'Sant Cugat del Vallès');
+  h.change(h.form.elements.city,cityKey('Sant Cugat del Vallès'));
   assert.match(h.results.textContent,/Параметры изменены/);
   assert.equal(h.$('filter-priced-only').disabled,false);
   await h.submit();
@@ -245,7 +591,7 @@ test('a late old-city response after editing remains hidden until an explicit se
   const late=deferred();
   const h=await harness(t,{handler:url=>url.pathname==='/api/search'?late.promise:undefined});
   await h.barcelona();
-  h.change(h.form.elements.city,'Sant Cugat del Vallès');
+  h.change(h.form.elements.city,cityKey('Sant Cugat del Vallès'));
   late.resolve([property('Barcelona')]);await flush();
   assert.equal(h.results.querySelectorAll('article').length,0);
   assert.match(h.results.textContent,/Параметры изменены/);
@@ -269,9 +615,9 @@ test('a filter replacing a pending search releases controls, including invalid p
 });
 
 test('search drafts are preserved without auto-submit; confirmed searches still restore',async t=>{
-  const draft={country:'ES',city:'Sant Cugat del Vallès',from:'2026-10-01',to:'2026-10-08',searched:false};
+  const draft={country:'ES',municipalityKey:cityKey('Sant Cugat del Vallès'),from:'2026-10-01',to:'2026-10-08',searched:false};
   const h=await harness(t,{saved:draft});
-  assert.equal(h.form.elements.city.value,draft.city);
+  assert.equal(h.form.elements.city.value,draft.municipalityKey);
   assert.equal(h.searches().length,0);
   const confirmed=await harness(t,{saved:{...draft,searched:true}});
   assert.equal(confirmed.searches().length,1);
@@ -288,6 +634,10 @@ test('GEO-002: country and city use their translated native labels in all four l
       assert.equal(control.labels[0].querySelector('span').textContent,expected);
     }
   }
+  await h.drain();
+  assert.equal(h.form.elements.country.disabled,false);
+  assert.equal(h.w.document.documentElement.lang,'en');
+  assert.equal(h.results.querySelector('.availability-state.error'),null);
 });
 
 test('PM-002: Airbnb stays clickable while calendar status is honest; invalid links are ignored',async t=>{
@@ -325,7 +675,7 @@ test('PM-037: 367 nights preserve dates and filters, translate, restore and allo
   assert.equal(restored.searches().length,0);
   assert.match(restored.results.textContent,/366 ночей/);
   assert.equal(restored.form.elements.to.value,'2029-01-02');
-  h.change(h.form.elements.to,'2029-01-01');await h.submit();
+  await flush();h.change(h.form.elements.to,'2029-01-01');await h.submit();
   assert.equal(h.searches().length,count+1);
   assert.equal(h.searches().at(-1).searchParams.get('to'),'2029-01-01');
   assert.equal(h.searches().at(-1).searchParams.get('bedrooms'),'2');
@@ -333,7 +683,7 @@ test('PM-037: 367 nights preserve dates and filters, translate, restore and allo
 
 test('PM-037: backend range rejection uses localized message and keeps the form',async t=>{
   const h=await harness(t,{handler:url=>url.pathname==='/api/search'?
-    new Response(JSON.stringify({error:'A search request can cover at most 366 nights'}),{status:400}):undefined});
+    new Response(JSON.stringify({error:'A search request can cover at most 366 nights',code:'SEARCH_RANGE_TOO_LONG'}),{status:400}):undefined});
   await h.barcelona();
   assert.match(h.results.textContent,/366 ночей/);
   assert.equal(h.form.elements.from.value,'2026-10-01');
@@ -356,4 +706,50 @@ test('PM-037: ordinary and leap-year boundary searches keep exact dates through 
     assert.equal(contact.searchParams.get('from'),'2028-01-01');
     assert.equal(contact.searchParams.get('to'),end);
   }
+});
+
+
+test('A homonyms remain distinct identities; a same-ID locale relabel preserves selected key and search intent',async t=>{
+  const late=deferred();let deferRussian=false;
+  const h=await harness(t,{handler:url=>{
+    if(url.pathname==='/api/locations/cities'){
+      if(deferRussian && url.searchParams.get('language')==='ru')return late.promise;
+      return [{countryCode:'ES',municipalityKey:'R100',name:url.searchParams.get('language')==='es'?'Nombre español':'Same name',nativeName:'Native'},
+        {countryCode:'ES',municipalityKey:'R999',name:'Same name',nativeName:null}];
+    }
+  }});
+  h.change(h.form.elements.country,'ES');await flush();
+  assert.deepEqual([...h.form.elements.city.options].filter(o=>o.value).map(o=>o.value),['R100','R999']);
+  h.change(h.form.elements.city,'R100');h.change(h.form.elements.from,'2026-10-01');h.change(h.form.elements.to,'2026-10-08');await h.submit();
+  deferRussian=true;h.language('en');await flush();h.language('ru');await flush();h.language('es');await flush();
+  assert.equal(h.form.elements.city.value,'R100');assert.equal(h.form.elements.from.value,'2026-10-01');assert.equal(h.form.elements.to.value,'2026-10-08');
+  assert.equal(h.form.elements.city.selectedOptions[0].textContent,'Nombre español · Native');
+  const query=h.searches().at(-1).searchParams;
+  assert.equal(query.get('municipalityKey'),'R100');assert.equal(query.has('city'),false);assert.equal(query.get('language'),'es');
+  late.resolve([{countryCode:'ES',municipalityKey:'R100',name:'Late RU',nativeName:null}]);await flush();
+  assert.equal(h.form.elements.city.selectedOptions[0].textContent,'Nombre español · Native');
+  const stored=JSON.parse(h.w.localStorage.getItem('parrot669-search-state'));
+  assert.equal(stored.municipalityKey,'R100');assert.equal(Object.hasOwn(stored,'city'),false);
+});
+test('A legacy label-only saved search never guesses the municipality or auto-submits',async t=>{
+  const h=await harness(t,{saved:{country:'ES',city:'Barcelona',from:'2026-10-01',to:'2026-10-08',searched:true}});
+  assert.equal(h.form.elements.city.value,'');assert.equal(h.searches().length,0);
+  h.change(h.form.elements.city,cityKey('Barcelona'));await h.submit();
+  assert.equal(h.searches().length,1);assert.equal(h.searches()[0].searchParams.get('municipalityKey'),'R100');
+});
+for(const rows of [[{name:'Barcelona'}],[{countryCode:'BY',municipalityKey:'R100',name:'Wrong country',nativeName:null}],
+  [{countryCode:'ES',municipalityKey:'Barcelona',name:'Label is not an ID',nativeName:null}],
+  [cityRow('Barcelona'),cityRow('Barcelona')]])test('A malformed catalog remains unsearchable '+JSON.stringify(rows),async t=>{
+  const h=await harness(t,{handler:url=>url.pathname==='/api/locations/cities'?rows:undefined});
+  h.change(h.form.elements.country,'ES');await flush();await h.submit();
+  assert.equal(h.searches().length,0);assert.equal(h.form.querySelector('[type="submit"]').disabled,true);
+});
+test('A canonical public IDs preserve all 64 digits including zeroes and reject query/fragment/65-digit variants',async t=>{
+  const id='0'+'7'.repeat(63),url=`https://www.airbnb.com/rooms/${id}`;
+  const h=await harness(t,{handler:u=>u.pathname==='/api/search'?[{...property('Barcelona'),city:null,cityNative:'Barcelona native',
+    links:[{url,externalId:id},{url:url+'?secret=private',externalId:id},{url:url+'#private',externalId:id},
+      {url:url+'7',externalId:id+'7'}]}]:undefined});await h.barcelona();
+  assert.equal(h.results.querySelectorAll('.availability-link').length,1);assert.equal(h.results.querySelector('.availability-link').href,url);
+  assert.equal(h.results.querySelector('.availability-card-city').textContent,'Barcelona native');
+  assert.equal(h.results.textContent.includes('null'),false);
 });

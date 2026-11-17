@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#071516">
+  <meta name="description" content="Public PARROT 669 profile">
+  <title>Public profile — PARROT 669</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/public-profile.css">
+</head>
+<body>
+  <header class="profile-topbar">
+    <a class="profile-brand" href="/" aria-label="PARROT 669 home">PARROT 669</a>
+    <nav aria-label="Primary">
+      <a href="/search.html" data-i18n="search">Search</a>
+      <a href="/messages.html" data-i18n="messages">Messages</a>
+      <a href="/host.html" data-i18n="hosting">Hosting</a>
+    </nav>
+    <div class="profile-languages" aria-label="Language">
+      <button type="button" data-lang="en" lang="en">EN</button>
+      <button type="button" data-lang="es" lang="es">ES</button>
+      <button type="button" data-lang="ca" lang="ca">CA</button>
+      <button type="button" data-lang="ru" lang="ru">RU</button>
+    </div>
+  </header>
+
+  <main id="main" class="profile-shell">
+    <a id="profile-back" class="profile-back" href="/search.html">← <span data-i18n="back">Back</span></a>
+
+    <section id="profile-loading" class="profile-state profile-loading" aria-live="polite">
+      <p class="profile-kicker" data-i18n="loading">Loading public profile</p>
+      <div class="skeleton skeleton-wide"></div>
+      <div class="skeleton"></div>
+      <span class="sr-only" data-i18n="loading">Loading public profile</span>
+    </section>
+
+    <section id="profile-error" class="profile-state" hidden aria-live="assertive">
+      <p class="profile-kicker" data-i18n="errorLabel">Error</p>
+      <h1 data-i18n="errorTitle">We couldn't load this profile.</h1>
+      <p data-i18n="errorText">Try again or return to the previous page.</p>
+      <div class="profile-actions">
+        <button id="profile-retry" class="button button-primary" type="button" data-i18n="retry">Try again</button>
+        <a class="button button-secondary profile-back-link" href="/search.html" data-i18n="back">Back</a>
+      </div>
+    </section>
+
+    <section id="profile-unavailable" tabindex="-1" class="profile-state profile-state-danger" hidden>
+      <p class="profile-kicker" data-i18n="unavailableLabel">Profile unavailable</p>
+      <h1 data-i18n="unavailableTitle">This profile isn't public.</h1>
+      <p data-i18n="unavailableText">It may be hidden or the link may no longer be valid.</p>
+      <a class="button button-secondary profile-back-link" href="/search.html" data-i18n="back">Back</a>
+    </section>
+
+    <article id="profile-content" hidden>
+      <section class="profile-card profile-person" aria-labelledby="profile-name">
+        <div id="profile-avatar" class="profile-avatar" aria-hidden="true"></div>
+        <div class="profile-person-copy">
+          <p class="profile-kicker" data-i18n="publicProfile">Public profile</p>
+          <h1 id="profile-name" tabindex="-1"></h1>
+          <p id="profile-id" class="profile-id"></p>
+        </div>
+        <section id="profile-instagram-section" class="profile-about" hidden>
+          <h2>Instagram</h2><a id="profile-instagram" target="_blank" rel="noopener noreferrer"></a>
+        </section>
+        <section id="profile-about-section" class="profile-about" aria-labelledby="profile-about-title">
+          <h2 id="profile-about-title" data-i18n="about">About</h2>
+          <p id="profile-about"></p>
+        </section>
+      </section>
+
+      <section id="profile-property" class="profile-card profile-property" hidden aria-labelledby="profile-property-title">
+        <p class="profile-kicker" data-i18n="selectedProperty">Selected property</p>
+        <div class="profile-property-layout">
+          <div>
+            <h2 id="profile-property-title"></h2>
+            <p id="profile-property-meta" class="profile-property-meta"></p>
+            <dl class="profile-facts">
+              <div><dt data-i18n="bedrooms">Bedrooms</dt><dd id="profile-bedrooms"></dd></div>
+              <div><dt data-i18n="sleeps">Sleeps</dt><dd id="profile-sleeps"></dd></div>
+              <div><dt data-i18n="minStay">Minimum stay</dt><dd id="profile-min-stay"></dd></div>
+            </dl>
+          </div>
+          <div class="profile-property-actions">
+            <div id="profile-listings" class="profile-listings"></div>
+            <a id="profile-contact" class="button button-primary" href="/messages.html" data-i18n="contact">Message host</a>
+            <a id="profile-edit" class="button button-primary" href="/host.html?profile=1" hidden data-i18n="edit">Edit my profile</a>
+            <p class="profile-contact-note" data-i18n="contactNote">Your dates and draft stay with the conversation.</p>
+          </div>
+        </div>
+      </section>
+
+      <p id="profile-person-only" class="profile-person-only" hidden data-i18n="personOnly">
+        No property was selected. This page shows the public person only.
+      </p>
+    </article>
+  </main>
+  <script type="module" src="/assets/entry-profile.js"></script>
+</body>
+</html>

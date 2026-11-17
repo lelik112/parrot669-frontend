@@ -5,10 +5,28 @@
   const app = $("messages-app"), historyNode = $("msg-history"), form = $("msg-compose");
   const loginForm = $("msg-login-form"), registerForm = $("msg-register-form");
   const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const record = value => value !== null && typeof value === "object" && !Array.isArray(value);
+  const isUuid = value => typeof value === "string" && uuid.test(value);
+  const isParrotId = window.ParrotCore.isParrotId;
+  const sameUuid = (a,b) => isUuid(a) && isUuid(b) && a.toLowerCase() === b.toLowerCase();
+  // Validate the producer ACK and this pending attempt before deleting any draft.
+  function sendAcknowledged(value, attempt, senderProfileId) {
+    const firstSend = attempt.endpoint === "/conversations";
+    if (!record(value) || firstSend && !isUuid(value.conversationId)) return false;
+    const item = firstSend ? value.message : value, payload = attempt.payload;
+    return record(item) && isUuid(item.id)
+      && Number.isInteger(item.sequence) && item.sequence > 0 && item.sequence <= 2147483647
+      && isParrotId(item.senderProfileId) && item.senderProfileId === senderProfileId
+      && sameUuid(item.clientMessageId, payload.clientMessageId)
+      && typeof item.body === "string" && item.body === payload.body
+      && item.from === (payload.from ?? null) && item.to === (payload.to ?? null)
+      && typeof item.createdAt === "string" && Number.isFinite(Date.parse(item.createdAt));
+  }
   let actor = null, accountVersion = 0, threadVersion = 0, inboxVersion = 0;
   const initialQuery = new URLSearchParams(window.location.search);
   const calendarNudgeProperty = initialQuery.get("verifyCalendar") === "1" ? initialQuery.get("property") : null;
   let calendarNudgeApplied = false;
+  let selectedConversationId = null;
   let active = null, inbox = [], nextCursor = null, inboxBusy = false, pollBusy = false;
   let messages = new Map(), fetchedThrough = 0, readThrough = 0, readBusy = false;
   let sending = false, pending = null, authBusy = false, threadError = null;
@@ -18,9 +36,26 @@
   const registrationTabKey = "parrot669-registration-intent";
   const profileReturnKey = "parrot669-profile-return";
 
+  function setText(target, value) {
+    const text = String(value ?? "");
+    if (target.textContent !== text) target.textContent = text;
+  }
+  function setAttribute(target, name, value) {
+    if (target.getAttribute(name) !== value) target.setAttribute(name, value);
+  }
+  // Keyed siblings stay attached unless their order or membership really changes.
+  function reconcileNodes(parent, nodes) {
+    const focused = parent.contains(document.activeElement) ? document.activeElement : null;
+    const keep = new Set(nodes);
+    for (const child of [...parent.children]) if (!keep.has(child)) child.remove();
+    nodes.forEach((child,index) => {
+      if (parent.children[index] !== child) parent.insertBefore(child,parent.children[index] || null);
+    });
+    if (focused?.isConnected && document.activeElement !== focused) focused.focus({preventScroll:true});
+  }
   function status(text = "", error = false, target = $("msg-status")) {
-    target.textContent = text; target.classList.toggle("error", error);
-    target.setAttribute("role", error ? "alert" : "status");
+    setText(target,text); target.classList.toggle("error", error);
+    setAttribute(target,"role", error ? "alert" : "status");
   }
   function failed(error, target = $("msg-status")) {
     if (error.status === 401) { M.setUser(null); target = $("msg-status"); }
@@ -35,6 +70,49 @@
     if (!from && !to) return true;
     const valid = value => /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0,10) === value;
     return valid(from) && valid(to) && to > from;
+  }
+  function factualId(value) {
+    return isParrotId(value);
+  }
+  function participantFacts() {
+    const ownId = actor?.parrotId, hostId = active?.hostProfileId, guestId = active?.guestProfileId;
+    if (![ownId,hostId,guestId].every(factualId) || hostId === guestId) return null;
+    const ownHost = ownId === hostId, ownGuest = ownId === guestId;
+    return ownHost === ownGuest ? null : {ownId,hostId,guestId,otherId:ownHost ? guestId : hostId,ownRole:ownHost ? "host" : "guest"};
+  }
+  function pendingFitsActive(attempt) {
+    if (!isUuid(attempt?.payload?.clientMessageId)) return false;
+    return attempt.endpoint === "/conversations"
+      ? isUuid(active?.propertyId) && attempt.payload.propertyId === active.propertyId
+      : isUuid(active?.id) && attempt.endpoint === `/conversations/${active.id}/messages`;
+  }
+  function participantRole(profileId) {
+    const facts = participantFacts();
+    if (!facts || !profileId) return "unknown";
+    if (profileId === facts.hostId) return "host";
+    if (profileId === facts.guestId) return "guest";
+    return "unknown";
+  }
+  function roleLabel(role, self = false) {
+    if (self && role === "host") return t("messageYouHost");
+    if (self && role === "guest") return t("messageYouGuest");
+    if (self) return t("messageYou");
+    return t(role === "host" ? "messageHost" : role === "guest" ? "messageGuest" : "messageRoleUnknown");
+  }
+  function actorName() {
+    return actor?.displayName || actor?.username || t("messageYou");
+  }
+  function otherProfileId() {
+    return participantFacts()?.otherId || null;
+  }
+  function participantName(profileId) {
+    if (profileId && profileId === actor?.parrotId) return actorName();
+    if (profileId && profileId === otherProfileId() && active?.otherDisplayName) return active.otherDisplayName;
+    return t("messageParticipantUnknown");
+  }
+  function authorText(profileId) {
+    const self = Boolean(profileId) && profileId === actor?.parrotId;
+    return `${participantName(profileId)} · ${roleLabel(participantRole(profileId),self)}`;
   }
   function queryDates() {
     const query = new URLSearchParams(window.location.search);
@@ -51,42 +129,42 @@
     const draft = {body:form.elements.body.value,from:form.elements.from.value,
       to:form.elements.to.value,...(actor ? {pending} : {}),savedAt:Date.now()};
     try {
-      sessionStorage.setItem(key, JSON.stringify(draft));
+      window.ParrotCore.storage.session.setItem(key, JSON.stringify(draft));
     } catch {}
     if (!actor) try {
-      const handoff = JSON.parse(localStorage.getItem(registrationDraftKey) || "null");
-      if (handoff?.propertyId === active?.propertyId && handoff.nonce === sessionStorage.getItem(registrationTabKey) &&
+      const handoff = JSON.parse(window.ParrotCore.storage.local.getItem(registrationDraftKey) || "null");
+      if (handoff?.propertyId === active?.propertyId && handoff.nonce === window.ParrotCore.storage.session.getItem(registrationTabKey) &&
           handoff.savedAt > Date.now() - 86400000)
-        localStorage.setItem(registrationDraftKey,JSON.stringify({...handoff,draft,savedAt:Date.now()}));
+        window.ParrotCore.storage.local.setItem(registrationDraftKey,JSON.stringify({...handoff,draft,savedAt:Date.now()}));
     } catch {}
   }
-  function removeDraft(key) { try { if (key) sessionStorage.removeItem(key); } catch {} }
+  function removeDraft(key) { try { if (key) window.ParrotCore.storage.session.removeItem(key); } catch {} }
   function promoteGuestDraft(user) {
     const propertyId = new URLSearchParams(window.location.search).get("property");
     if (!uuid.test(propertyId || "")) return;
     try {
-      const marker = JSON.parse(localStorage.getItem(registrationDraftKey) || "null");
+      const marker = JSON.parse(window.ParrotCore.storage.local.getItem(registrationDraftKey) || "null");
       const fromRegistration = marker?.propertyId === propertyId && marker.savedAt > Date.now() - 86400000 &&
         marker.username?.toLowerCase() === user.username?.toLowerCase();
       // Once registration claims the guest draft, a different account must not inherit it via login.
       if (marker?.propertyId === propertyId && marker.savedAt > Date.now() - 86400000 && !fromRegistration) return;
       if (guestLoginAccount !== user.accountId && !fromRegistration) return;
       const key = guestDraftKey(propertyId);
-      const localDraft = JSON.parse(sessionStorage.getItem(key) || "null");
+      const localDraft = JSON.parse(window.ParrotCore.storage.session.getItem(key) || "null");
       const draft = localDraft?.savedAt > Date.now() - 86400000 ? localDraft : fromRegistration ? marker.draft : null;
       if (typeof draft?.body === "string" && draft.savedAt > Date.now() - 86400000) {
-        sessionStorage.setItem(`parrot669-draft:${user.accountId}:property:${propertyId}`,
+        window.ParrotCore.storage.session.setItem(`parrot669-draft:${user.accountId}:property:${propertyId}`,
           JSON.stringify({body:draft.body,from:draft.from || "",to:draft.to || "",pending:null,savedAt:Date.now()}));
-        sessionStorage.removeItem(key);
+        window.ParrotCore.storage.session.removeItem(key);
       }
-      localStorage.removeItem(registrationDraftKey);
-      sessionStorage.removeItem(registrationTabKey);
+      window.ParrotCore.storage.local.removeItem(registrationDraftKey);
+      window.ParrotCore.storage.session.removeItem(registrationTabKey);
     } catch {}
   }
   function restoreDraft(dates = {}) {
     let draft = null;
     try {
-      draft = JSON.parse(sessionStorage.getItem(draftKey()) || "null");
+      draft = JSON.parse(window.ParrotCore.storage.session.getItem(draftKey()) || "null");
       if (draft?.savedAt < Date.now() - 86400000 || typeof draft?.body !== "string") draft = null;
     } catch {}
     form.reset();
@@ -95,9 +173,7 @@
     form.elements.from.value = draft?.from || dates.from || "";
     form.elements.to.value = draft?.to || dates.to || "";
     pending = actor ? draft?.pending || null : null;
-    if (pending && !(uuid.test(pending.payload?.clientMessageId) &&
-      (pending.endpoint === "/conversations" && pending.payload.propertyId === active.propertyId ||
-       pending.endpoint === `/conversations/${active.id}/messages`))) pending = null;
+    if (pending && !pendingFitsActive(pending)) pending = null;
     if (prefill) { calendarNudgeApplied = true; saveDraft(); }
     $("msg-dates").open = Boolean(form.elements.from.value || form.elements.to.value);
     updateComposer();
@@ -105,7 +181,8 @@
   function setUrl(id) {
     const url = new URL(window.location.href); url.search = "";
     if (id) url.searchParams.set("conversation", id);
-    window.history.replaceState(null, "", url.pathname + url.search);
+    if (url.pathname + url.search !== window.location.pathname + window.location.search)
+      window.history.pushState(null, "", url.pathname + url.search);
   }
   function updateComposer() {
     form.hidden = !active?.canReply;
@@ -120,38 +197,72 @@
     status(threadError ? M.errorText(threadError) : notice ? t(notice) : "", Boolean(pending || threadError), $("msg-thread-notice"));
   }
   function renderContext() {
-    $("msg-property").textContent = active?.propertyTitle || t("newEnquiry");
-    $("msg-other").textContent = active?.otherDisplayName || "";
-    $("msg-own-profile").hidden = !actor?.accountId || !active?.id || active.hostProfileId !== actor.profile?.id;
+    const hasConversation = Boolean(active?.id);
+    $("msg-property").textContent = active?.propertyTitle || (hasConversation ? t("messagePropertyUnavailable") : t("newEnquiry"));
+    const ownRole = participantRole(actor?.parrotId);
+    const currentRole = $("msg-current-role");
+    currentRole.hidden = !active || !actor;
+    currentRole.textContent = currentRole.hidden ? "" : `${actorName()} · ${roleLabel(ownRole,true)}`;
+    const other = $("msg-other");
+    if (active) {
+      const otherId = otherProfileId();
+      other.replaceChildren(
+        node("span","messages-other-name",participantName(otherId)),
+        node("span","messages-context-separator"," · "),
+        node("span","messages-other-role",roleLabel(participantRole(otherId)))
+      );
+    } else other.replaceChildren();
+    const facts = participantFacts();
+    $("msg-own-profile").hidden = !actor?.accountId || !active?.id || facts?.ownRole !== "host";
     const propertyLink = $("msg-open-property");
-    const ownProperty = actor?.profile?.id && active?.hostProfileId === actor.profile.id &&
+    const ownProperty = facts?.ownRole === "host" &&
       uuid.test(active?.propertyId || "") && uuid.test(active?.id || "");
     propertyLink.hidden = !ownProperty;
     if (ownProperty) propertyLink.href = `/host.html?property=${active.propertyId}&conversation=${active.id}`;
     else propertyLink.removeAttribute("href");
     updateComposer();
+    if (messages.size) renderMessages();
   }
   function renderInbox() {
-    const list = $("msg-list"); list.replaceChildren();
+    const list = $("msg-list");
+    const existing = new Map([...list.children].map(button => [button.dataset.conversationId,button]));
+    const rows = [];
     for (const item of inbox) {
-      const button = node("button", "messages-conversation"); button.type = "button";
-      button.setAttribute("aria-current", String(item.id === active?.id));
+      let button = existing.get(item.id);
+      if (!button) {
+        button = node("button", "messages-conversation"); button.type = "button";
+        button.dataset.conversationId = item.id;
+        button.append(node("strong"),node("span"),node("small"));
+        button.addEventListener("click", () => void openConversation(item.id));
+      }
+      setAttribute(button,"aria-current", String(item.id === active?.id));
       const unread = Number(item.unreadCount) > 0;
       button.classList.toggle("unread",unread);
-      button.append(node("strong", "", item.propertyTitle), node("span", "", item.otherDisplayName), node("small", "", item.lastMessagePreview));
+      setText(button.children[0],item.propertyTitle);
+      setText(button.children[1],item.otherDisplayName);
+      setText(button.children[2],item.lastMessagePreview);
       if (unread) {
-        button.append(node("span", "messages-unread-label", t("unreadShort")),
-          node("span", "messaging-badge", item.unreadCount > 99 ? "99+" : item.unreadCount));
-        button.setAttribute("aria-label",`${item.propertyTitle}, ${item.otherDisplayName}, ${t("unreadCount")(item.unreadCount)}. ${item.lastMessagePreview}`);
+        if (!button.querySelector(".messaging-badge"))
+          button.append(node("span", "messages-unread-label"),node("span", "messaging-badge"));
+        setText(button.querySelector(".messages-unread-label"),t("unreadShort"));
+        setText(button.querySelector(".messaging-badge"),item.unreadCount > 99 ? "99+" : item.unreadCount);
+        setAttribute(button,"aria-label",`${item.propertyTitle}, ${item.otherDisplayName}, ${t("unreadCount")(item.unreadCount)}. ${item.lastMessagePreview}`);
+      } else {
+        button.querySelector(".messages-unread-label")?.remove();
+        button.querySelector(".messaging-badge")?.remove();
+        button.removeAttribute("aria-label");
       }
-      button.addEventListener("click", () => void openConversation(item.id)); list.append(button);
+      rows.push(button);
     }
+    reconcileNodes(list,rows);
     $("msg-more").hidden = !nextCursor;
-    status(inbox.length ? "" : t("emptyInbox"), false, $("msg-inbox-status"));
+    if ($("msg-inbox-retry").hidden) status(inbox.length ? "" : t(inboxBusy ? "loading" : "emptyInbox"), false, $("msg-inbox-status"));
   }
   async function loadInbox(more = false) {
     if (!actor || inboxBusy) return;
     inboxBusy = true; const version = accountVersion, request = ++inboxVersion;
+    $("msg-inbox-retry").hidden = true;
+    if (!inbox.length) status(t("loading"),false,$("msg-inbox-status"));
     $("msg-more").disabled = true;
     try {
       const cursor = more && nextCursor ? `&cursor=${encodeURIComponent(nextCursor)}` : "";
@@ -161,8 +272,8 @@
       page.items.forEach(item => merged.set(item.id,item));
       inbox = [...merged.values()].sort((a,b) => Date.parse(b.updatedAt)-Date.parse(a.updatedAt) || b.id.localeCompare(a.id));
       if (more || inbox.length <= 20) nextCursor = page.nextCursor;
-      renderInbox();
-    } catch (error) { if (version === accountVersion) failed(error,$("msg-inbox-status")); }
+      inboxBusy = false; renderInbox();
+    } catch (error) { if (version === accountVersion) { failed(error,$("msg-inbox-status")); $("msg-inbox-retry").hidden = !actor; } }
     finally { if (version === accountVersion) { inboxBusy = false; $("msg-more").disabled = false; } }
   }
   function atBottom() { return historyNode.scrollHeight - historyNode.scrollTop - historyNode.clientHeight < 45; }
@@ -170,15 +281,42 @@
   function renderMessages({bottom = false, older = false} = {}) {
     const previousHeight = historyNode.scrollHeight, previousTop = historyNode.scrollTop;
     const wasBottom = atBottom();
-    historyNode.replaceChildren();
+    const existing = new Map([...historyNode.children].map(bubble => [bubble.dataset.messageId,bubble]));
+    const bubbles = [];
+    let previousSender, groupLabelId = "", hasPrevious = false;
     for (const item of [...messages.values()].sort((a,b) => a.sequence-b.sequence)) {
-      const bubble = node("article", `message-bubble${item.senderProfileId === actor?.profile.id ? " mine" : ""}`);
-      if (item.from && item.to) bubble.append(node("p", "message-stay", `${t("savedDates")}: ${dateLabel(item.from)} → ${dateLabel(item.to)}`));
-      bubble.append(node("p", "", item.body));
-      const time = node("time", "", new Intl.DateTimeFormat(document.documentElement.lang,
+      let bubble = existing.get(item.id);
+      if (!bubble) {
+        bubble = node("article");
+        bubble.dataset.messageId = item.id;
+        bubble.append(node("p","message-body"),node("time"));
+      }
+      const className = `message-bubble${factualId(item.senderProfileId) && item.senderProfileId === actor?.parrotId ? " mine" : ""}`;
+      if (bubble.className !== className) bubble.className = className;
+      const senderChanged = !hasPrevious || item.senderProfileId !== previousSender;
+      let author = bubble.querySelector(".message-author");
+      if (senderChanged) {
+        groupLabelId = `msg-author-${item.sequence}`;
+        if (!author) { author = node("p","message-author"); bubble.prepend(author); }
+        author.id = groupLabelId; setText(author,authorText(item.senderProfileId));
+      } else author?.remove();
+      setAttribute(bubble,"role","group");
+      setAttribute(bubble,"aria-labelledby",groupLabelId);
+      bubble.dataset.senderRole = participantRole(item.senderProfileId);
+      previousSender = item.senderProfileId; hasPrevious = true;
+      let stay = bubble.querySelector(".message-stay");
+      if (item.from && item.to) {
+        if (!stay) { stay = node("p","message-stay"); bubble.insertBefore(stay,bubble.querySelector(".message-body")); }
+        setText(stay,`${t("savedDates")}: ${dateLabel(item.from)} → ${dateLabel(item.to)}`);
+      } else stay?.remove();
+      setText(bubble.querySelector(".message-body"),item.body);
+      const time = bubble.querySelector("time");
+      setText(time,new Intl.DateTimeFormat(document.documentElement.lang,
         {day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}).format(new Date(item.createdAt)));
-      time.dateTime = item.createdAt; bubble.append(time); historyNode.append(bubble);
+      setAttribute(time,"datetime",item.createdAt);
+      bubbles.push(bubble);
     }
+    reconcileNodes(historyNode,bubbles);
     $("msg-earlier").hidden = !messages.size || Math.min(...messages.keys()) <= 1;
     if (older) historyNode.scrollTop = previousTop + historyNode.scrollHeight - previousHeight;
     else if (bottom || wasBottom) historyNode.scrollTop = historyNode.scrollHeight;
@@ -208,7 +346,10 @@
     for (const item of page.items) { if (!messages.has(item.sequence)) changed = true; messages.set(item.sequence,item); }
     if (!older && page.items.length) fetchedThrough = Math.max(fetchedThrough,page.items.at(-1).sequence);
     // A previous send may have committed even when its response was lost.
-    if (pending && page.items.some(item => item.senderProfileId === actor.profile.id && item.clientMessageId === pending.payload.clientMessageId)) {
+    const ownSenderId = participantFacts()?.ownId;
+    if (pending && ownSenderId && pendingFitsActive(pending) && page.items.some(item =>
+      factualId(item.senderProfileId) && item.senderProfileId === ownSenderId &&
+      item.clientMessageId === pending.payload.clientMessageId)) {
       pending = null; threadError = null; form.reset(); removeDraft(draftKey()); updateComposer();
     }
     if (initial || changed) renderMessages({bottom:initial, older});
@@ -225,18 +366,23 @@
     status(t("loading"), false, $("msg-thread-notice"));
     return threadVersion;
   }
-  async function openConversation(id, dates = {}, known = null) {
+  async function openConversation(id, dates = {}, known = null, updateHistory = true) {
     if (!uuid.test(id)) return status(t("errorMissing"),true);
+    selectedConversationId = id;
     const version = prepareThread();
     try {
       const detail = known || await M.api(`/conversations/${id}`);
       if (version !== threadVersion) return;
       active = detail; readThrough = detail.readThroughSequence;
-      setUrl(id); restoreDraft(dates); renderContext(); renderInbox(); status();
+      if(updateHistory) setUrl(id);
+      restoreDraft(dates); renderContext(); renderInbox(); status();
+      if (window.matchMedia?.("(max-width:700px)").matches) {
+        $("msg-property").focus({preventScroll:true}); app.scrollIntoView?.({block:"start"});
+      }
       await fetchMessages(version,{initial:true});
     } catch (error) { if (version === threadVersion) failed(error,$("msg-thread-notice")); }
   }
-  async function openEnquiry(propertyId, dates) {
+  async function openEnquiry(propertyId, dates, updateHistory = true) {
     const version = prepareThread();
     try {
       const [options, existing] = await Promise.all([M.api(`/contact-options/${propertyId}`), M.api(`/conversations/for-property/${propertyId}`)]);
@@ -245,14 +391,16 @@
         // Move a pending first send to its server-created conversation without changing its idempotency key.
         try {
           const oldKey = `parrot669-draft:${actor.accountId}:property:${propertyId}`;
-          const draft = sessionStorage.getItem(oldKey);
-          if (draft) { sessionStorage.setItem(`parrot669-draft:${actor.accountId}:${existing.id}`,draft); sessionStorage.removeItem(oldKey); }
+          const draft = window.ParrotCore.storage.session.getItem(oldKey);
+          if (draft) { window.ParrotCore.storage.session.setItem(`parrot669-draft:${actor.accountId}:${existing.id}`,draft); window.ParrotCore.storage.session.removeItem(oldKey); }
         } catch {}
-        return await openConversation(existing.id,dates,existing);
+        return await openConversation(existing.id,dates,existing,updateHistory);
       }
+      const ownProfileId = actor?.parrotId;
+      const knownPair = factualId(ownProfileId) && factualId(options.hostProfileId);
+      const self = knownPair && options.hostProfileId === ownProfileId;
       active = {id:null,propertyId,propertyTitle:options.propertyTitle,otherDisplayName:options.hostDisplayName,
-        self:options.hostProfileId === actor.profile.id,
-        canReply:options.hostProfileId !== actor.profile.id};
+        self,canReply:knownPair && !self};
       restoreDraft(dates); renderContext(); status();
     } catch (error) { if (version === threadVersion) failed(error,$("msg-thread-notice")); }
   }
@@ -279,9 +427,16 @@
     finally { if (account === accountVersion) pollBusy = false; }
   }
   function activateSession(user) {
+    if(user && actor?.accountId === user.accountId && (actor.parrotId ?? null) === (user.parrotId ?? null)) {
+      actor=user; $("msg-account-name").textContent=user.username || t("account");
+      if(active) renderContext();
+      return;
+    }
     saveDraft();
+    if(actor?.accountId && user?.accountId && actor.accountId !== user.accountId)
+      window.ParrotCore.storage.clearPrivate(actor.accountId);
     if (actor?.accountId && actor.accountId !== user?.accountId) {
-      try { sessionStorage.removeItem(profileReturnKey); } catch {}
+      try { window.ParrotCore.storage.session.removeItem(profileReturnKey); } catch {}
     }
     if (user && !actor) promoteGuestDraft(user);
     guestLoginAccount = null; authRequested = false;
@@ -290,6 +445,7 @@
     active = null; inbox = []; nextCursor = null; messages = new Map(); pending = null; threadError = null;
     historyNode.replaceChildren(); $("msg-list").replaceChildren(); form.reset();
     $("msg-property").textContent = ""; $("msg-other").textContent = "";
+    $("msg-current-role").textContent = ""; $("msg-current-role").hidden = true; selectedConversationId = null;
     $("msg-own-profile").hidden = true;
     $("msg-open-property").hidden = true; $("msg-open-property").removeAttribute("href");
     const query = new URLSearchParams(window.location.search);
@@ -337,15 +493,16 @@
       const values = Object.fromEntries(new FormData(authForm));
       busyAuth(true); status(t("loading"));
       try {
-        const result = await M.auth(path,{method:"POST",body:JSON.stringify(values)});
+        const result = await M.auth(path,{method:"POST",body:JSON.stringify(values),
+          beforeSession:user => { if(path === "/login") guestLoginAccount=user.accountId; }});
         if (path === "/login") { guestLoginAccount = result.accountId; M.setUser(result); status(); }
         else {
-          try { localStorage.setItem("parrot669-message-return",JSON.stringify({path:window.location.pathname+window.location.search,expires:Date.now()+86400000})); } catch {}
+          try { window.ParrotCore.storage.local.setItem("parrot669-message-return",JSON.stringify({path:window.location.pathname+window.location.search,expires:Date.now()+86400000})); } catch {}
           if (active?.propertyId) try {
             saveDraft();
             const nonce=crypto.randomUUID();
-            sessionStorage.setItem(registrationTabKey,nonce);
-            localStorage.setItem(registrationDraftKey,JSON.stringify({username:values.username,propertyId:active.propertyId,nonce,
+            window.ParrotCore.storage.session.setItem(registrationTabKey,nonce);
+            window.ParrotCore.storage.local.setItem(registrationDraftKey,JSON.stringify({username:values.username,propertyId:active.propertyId,nonce,
               draft:{body:form.elements.body.value,from:form.elements.from.value,to:form.elements.to.value,savedAt:Date.now()},
               savedAt:Date.now()}));
           } catch {}
@@ -353,13 +510,13 @@
           busyAuth(false); switchAuth("login");
         }
       } catch (error) {
-        status(error.status === 401 && !error.message.includes("verification") ? t("authError") : M.errorText(error),true);
+        status(error.status === 401 && error.code !== "EMAIL_VERIFICATION_REQUIRED" ? t("authError") : M.errorText(error),true);
       } finally { authForm.elements.password.value = ""; busyAuth(false); }
     });
   }
   $("msg-logout").addEventListener("click", async () => {
     const account = actor?.accountId; $("msg-logout").disabled = true;
-    try { await M.auth("/logout",{method:"POST"}); M.setUser(null); M.clearDrafts(account); sessionStorage.removeItem(profileReturnKey); status(); }
+    try { await M.auth("/logout",{method:"POST"}); M.setUser(null); M.clearDrafts(account); window.ParrotCore.storage.session.removeItem(profileReturnKey); status(); }
     catch (error) { failed(error); }
     finally { $("msg-logout").disabled = false; }
   });
@@ -372,11 +529,11 @@
     showAuth("register");
   });
   $("msg-own-profile").addEventListener("click", event => {
-    if (!actor?.accountId || !active?.id || active.hostProfileId !== actor.profile?.id) {
+    if (!actor?.accountId || !active?.id || participantFacts()?.ownRole !== "host") {
       event.preventDefault(); return;
     }
     saveDraft();
-    try { sessionStorage.setItem(profileReturnKey,JSON.stringify({accountId:actor.accountId,conversationId:active.id,savedAt:Date.now()})); }
+    try { window.ParrotCore.storage.session.setItem(profileReturnKey,JSON.stringify({accountId:actor.accountId,conversationId:active.id,savedAt:Date.now()})); }
     catch { event.preventDefault(); status(t("errorNetwork"),true); }
   });
   document.querySelectorAll("[data-msg-auth]").forEach(button => button.addEventListener("click",() => switchAuth(button.dataset.msgAuth)));
@@ -405,22 +562,25 @@
       if (!active.id) payload.propertyId = active.propertyId;
       pending = {endpoint:active.id ? `/conversations/${active.id}/messages` : "/conversations",payload};
     }
-    const attempt = pending, version = threadVersion, key = draftKey();
+    const attempt = pending, version = threadVersion, key = draftKey(), senderProfileId = actor.parrotId;
     saveDraft(); sending = true; threadError = null; updateComposer();
     try {
-      const response = await M.api(attempt.endpoint,{method:"POST",body:JSON.stringify(attempt.payload)});
-      if (!(response?.id || response?.conversationId)) throw new Error("Invalid send response");
+      const response = await M.api(attempt.endpoint,{method:"POST",body:JSON.stringify(attempt.payload),
+        validate:value => sendAcknowledged(value, attempt, senderProfileId)});
       if (version !== threadVersion) return;
       removeDraft(key);
       pending = null; form.reset(); $("msg-dates").open = false; status();
-      if (response.conversationId && !active.id) await openConversation(response.conversationId);
+      if (attempt.endpoint === "/conversations") await openConversation(response.conversationId);
       else {
         // Fetch from the last contiguous server cursor, not from the returned send sequence.
         await fetchMessages(version); await loadInbox();
       }
     } catch (error) {
       if (version !== threadVersion) return;
-      if (error.status && error.status < 500) pending = null;
+      // A damaged successful response may follow a committed write. Keep the
+      // original endpoint/payload/key unless this attempt was definitively rejected.
+      if (error.kind === "http" && error.status >= 400 && error.status < 500 && error.status !== 408 && error.code)
+        pending = null;
       saveDraft(); failed(error,$("msg-thread-notice"));
       if (error.status === 409) void poll();
     } finally {
@@ -452,12 +612,30 @@
   $("msg-back").addEventListener("click", () => {
     saveDraft(); threadVersion++; active = null; pending = null; sending = false; messages.clear();
     $("msg-thread").hidden = true; $("msg-empty").hidden = false; app.classList.remove("has-thread"); setUrl(null); renderInbox();
+    [...$("msg-list").children].find(row => row.dataset.conversationId === selectedConversationId)?.focus({preventScroll:true});
+    app.scrollIntoView?.({block:"start"});
   });
   $("msg-jump").addEventListener("click", () => { historyNode.scrollTop = historyNode.scrollHeight; void acknowledgeRead(); });
   historyNode.addEventListener("scroll", () => { $("msg-jump").hidden = atBottom(); void acknowledgeRead(); });
   $("msg-more").addEventListener("click", () => void loadInbox(true));
+  $("msg-inbox-retry").addEventListener("click", () => void loadInbox());
   $("msg-session-retry").addEventListener("click", () => void boot());
   window.addEventListener("pagehide",saveDraft);
+  window.addEventListener("popstate", () => {
+    saveDraft();
+    const query=new URLSearchParams(window.location.search),id=query.get("conversation"),property=query.get("property");
+    if(actor && uuid.test(id || "")) void openConversation(id,{},null,false);
+    else if(uuid.test(property || "")) {
+      if(actor) void openEnquiry(property,queryDates(),false);
+      else void openGuestEnquiry(property,queryDates());
+    }
+    else {
+      threadVersion++; active=null; pending=null; sending=false; messages.clear();
+      $("msg-thread").hidden=true; $("msg-empty").hidden=false;
+      app.classList.remove("has-thread"); renderInbox();
+      [...$("msg-list").children].find(row => row.dataset.conversationId === selectedConversationId)?.focus({preventScroll:true});
+    }
+  });
   window.addEventListener("focus", () => void M.refreshSession().then(poll).catch(() => {}));
   document.addEventListener("visibilitychange", () => { if (!document.hidden) void poll(); });
   setInterval(() => void poll(),15000);
@@ -473,9 +651,14 @@
   }
   M.onLanguage(language);
   document.querySelectorAll("[data-msg-lang]").forEach(button => button.addEventListener("click",() => {
-    try { localStorage.setItem("parrot669-language",button.dataset.msgLang); } catch {}
+    try { window.ParrotCore.storage.local.setItem("parrot669-language",button.dataset.msgLang); } catch {}
     M.setLanguage(button.dataset.msgLang);
   }));
-  try { M.setLanguage(localStorage.getItem("parrot669-language") || navigator.language.slice(0,2)); } catch { M.setLanguage("en"); }
-  M.onSession(activateSession); void boot();
+  try { M.setLanguage(window.ParrotCore.storage.local.getItem("parrot669-language") || navigator.language.slice(0,2)); } catch { M.setLanguage("en"); }
+  M.onSession(activateSession);
+  // Markup keeps language controls inert while this module graph loads.
+  // Bindings and the stored initial locale are now applied synchronously.
+  document.querySelectorAll("[data-msg-lang]").forEach(button => { button.disabled = false; });
+  document.body.dataset.messagesLanguageReady = "true";
+  void boot();
 })();

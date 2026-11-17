@@ -1,4 +1,4 @@
-const {test, expect} = require('@playwright/test');
+const {test, expect} = require('./isolated-fixture.cjs');
 const {installPublicFixture, assertNoHorizontalOverflow} = require('./public-fixture.cjs');
 
 const priced = {
@@ -20,7 +20,7 @@ async function openResults(page, viewport) {
   await page.goto('/search.html');
   await page.locator('[name="country"]').selectOption('ES');
   await expect(page.locator('[name="city"]')).toBeEnabled();
-  await page.locator('[name="city"]').selectOption('Barcelona');
+  await page.locator('[name="city"]').selectOption('R347950');
   await page.locator('[name="from"]').fill('2026-11-10');
   await page.locator('[name="to"]').fill('2026-11-17');
   await page.locator('#availability-form button[type="submit"]').click();
