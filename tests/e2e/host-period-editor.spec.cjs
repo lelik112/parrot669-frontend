@@ -1,5 +1,7 @@
 // S4 browser/visual author matrix only. No screenshot or runtime PASS is implied.
 const {test,expect}=require('@playwright/test');
+const {installDomDiagnostic}=require('./pr12-dom-diagnostic.cjs');
+installDomDiagnostic(test);
 const {createPeriodFixture,propertyId,periodId,otherPropertyId}=require('./host-period-fixture.cjs');
 const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};};
 const row=page=>page.locator('[data-host-key="availability:'+periodId+'"]');

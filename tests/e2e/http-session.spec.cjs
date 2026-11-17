@@ -1,4 +1,6 @@
 const {test,expect}=require('./isolated-fixture.cjs');
+const {installDomDiagnostic}=require('./pr12-dom-diagnostic.cjs');
+installDomDiagnostic(test);
 const {installPublicFixture,installHostFixture}=require('./public-fixture.cjs');
 
 test('verification keeps inclusive UI nights across exclusive API submit and server reload',async({page})=>{

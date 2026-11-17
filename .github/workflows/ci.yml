@@ -1,73 +1,92 @@
-name: Frontend CI
+name: PR12 label candidate verification once
 
 on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - 'docs/**'
-      - '**/*.md'
-  pull_request:
-    paths-ignore:
-      - 'docs/**'
-      - '**/*.md'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: frontend-ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+  group: pr12-label-257d3b0c-once
+  cancel-in-progress: false
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          persist-credentials: false
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-      - run: npm ci --ignore-scripts
-      - run: npm test
-
-  browser-smoke:
+  diagnose:
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' &&
+          github.ref == 'refs/heads/diagnostic/pr12-label-257d3b0c-once' &&
+          github.run_attempt == 1 }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      PR12_DOM_DIAGNOSTIC: '1'
+      PR12_GREP: '(workspace disclosure/editor geometry 320/en|ordinary spinner uses no-preference and valid ACK plus GET before Saved|Host previews token-free source, keeps damaged save unknown, then resolves with GET only)$'
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 2
           persist-credentials: false
+      - name: Guard exact branch, first attempt and source boundary
+        env:
+          EXPECTED_BRANCH: refs/heads/diagnostic/pr12-label-257d3b0c-once
+        run: |
+          test "$GITHUB_REF" = "$EXPECTED_BRANCH"
+          test "$GITHUB_RUN_ATTEMPT" = 1
+          test "$(git rev-parse HEAD^)" = d7c0ccdfaf6bc9749bac312b494d54eebfb67a00
+          python3 - <<'PY'
+          import subprocess
+          expected={'.github/workflows/ci.yml','tests/e2e/pr12-dom-diagnostic.cjs','tests/e2e/host-period-editor.spec.cjs','tests/e2e/http-session.spec.cjs','public/assets/host.js','tests/host-period-editor.test.cjs'}
+          changed=set(subprocess.check_output(['git','diff','--name-only','HEAD^','HEAD'],text=True).splitlines())
+          if changed != expected:
+              raise SystemExit('Diagnostic commit must change exactly the six approved paths')
+          PY
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
       - run: npm ci --ignore-scripts
-      - run: npx --no-install playwright install --with-deps chromium webkit
-      - run: npm run test:e2e
+      - run: npx --no-install playwright install --with-deps webkit
+      - name: Verify exactly three approved selections without executing them
+        run: |
+          npx --no-install playwright test tests/e2e/host-period-editor.spec.cjs tests/e2e/http-session.spec.cjs --project=webkit-desktop --grep="$PR12_GREP" --workers=1 --retries=0 --list --reporter=json > "$RUNNER_TEMP/pr12-selection.json"
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          expected={'workspace disclosure/editor geometry 320/en','ordinary spinner uses no-preference and valid ACK plus GET before Saved','Host previews token-free source, keeps damaged save unknown, then resolves with GET only'}
+          report=json.loads((Path(os.environ['RUNNER_TEMP'])/'pr12-selection.json').read_text())
+          selected=[]
+          def visit(suite):
+              for spec in suite.get('specs',[]):
+                  selected.extend((spec['title'],test['projectName']) for test in spec.get('tests',[]))
+              for child in suite.get('suites',[]): visit(child)
+          for suite in report.get('suites',[]): visit(suite)
+          if len(selected)!=3 or set(selected)!={(title,'webkit-desktop') for title in expected}:
+              raise SystemExit('Expected exactly three approved WebKit tests')
+          PY
+      - name: Run the three cases once with unchanged assertions
+        run: npx --no-install playwright test tests/e2e/host-period-editor.spec.cjs tests/e2e/http-session.spec.cjs --project=webkit-desktop --grep="$PR12_GREP" --workers=1 --retries=0 --trace=on --update-snapshots=none --reporter=list
       - name: Bound evidence size
         if: always()
         run: |
-          python3 - <<'PYTHON'
-          import os
+          python3 - <<'PY'
+          import os,shutil
           from pathlib import Path
-          size=sum(p.stat().st_size for root in ('test-results',) for p in Path(root).rglob('*') if p.is_file())
-          allowed=size <= 64 * 1024 * 1024
+          root=Path('test-results')
+          selection=Path(os.environ['RUNNER_TEMP'])/'pr12-selection.json'
+          if selection.is_file():
+              root.mkdir(exist_ok=True)
+              shutil.copyfile(selection,root/'pr12-selection.json')
+          size=sum(p.stat().st_size for p in root.rglob('*') if p.is_file())
+          allowed=root.is_dir() and 0<size<=64*1024*1024
           with open(os.environ['GITHUB_ENV'],'a') as output:
-              output.write('HOME_EVIDENCE_ALLOWED='+str(allowed).lower()+'\n')
+              output.write('PR12_EVIDENCE_ALLOWED='+str(allowed).lower()+'\n')
           print('Evidence bytes:',size,'; limit:',64*1024*1024)
-          if not allowed: raise SystemExit('Evidence exceeds the bounded upload budget')
-          PYTHON
+          if not allowed: raise SystemExit('Missing evidence or evidence exceeds 64MiB')
+          PY
       - uses: actions/upload-artifact@v4
-        if: always() && env.HOME_EVIDENCE_ALLOWED == 'true'
+        if: always() && env.PR12_EVIDENCE_ALLOWED == 'true'
         with:
-          name: home-qa-${{ github.run_id }}
+          name: pr12-dom-${{ github.run_id }}-attempt1
           path: test-results/
           if-no-files-found: error
-          retention-days: 3
+          retention-days: 1
           compression-level: 9

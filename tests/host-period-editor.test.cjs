@@ -271,3 +271,75 @@ test('A empty ACK followed by a foreign/flat/invalid current-state row stays unc
   assert.equal(h.property().availability[0].nightlyPriceCents,8000);
   h.fixture.hooks.delete('GET '+readPath);h.submit(form);await tick();saved(h,form);assert.equal(h.writes().length,1);
 });
+
+test('button labels: period input/change and repeated refresh preserve equal text nodes',async t=>{
+  const h=await setup();t.after(h.close);const form=enter(h);
+  price(h,form,'81.25');
+  const labels=['h4','.host-period-edit','[data-host-key="save-label"]','.host-period-cancel']
+    .map(selector=>form.querySelector(selector));
+  const texts=labels.map(node=>node.firstChild),observer=new h.w.MutationObserver(()=>{});
+  t.after(()=>observer.disconnect());
+  for(const node of labels)observer.observe(node,{childList:true});
+  for(const type of ['input','change'])form.elements.nightlyPrice.dispatchEvent(new h.w.Event(type,{bubbles:true}));
+  form.hostRefresh();form.hostRefresh();
+  labels.forEach((node,index)=>assert.equal(node.firstChild,texts[index],node.className||node.tagName));
+  assert.equal(observer.takeRecords().length,0);
+  assert.equal(form.dataset.state,'editing');assert.equal(h.writes().length,0);
+});
+
+test('button labels: source input/change and repeated refresh preserve equal text nodes',async t=>{
+  const h=await setup();t.after(h.close);
+  const form=h.w.document.querySelector('[data-property-id="'+propertyId+'"] .host-source-form');
+  h.edit(form.elements.icalUrl,'https://www.airbnb.com/calendar/ical/123.ics?s=SyntheticOnly123');
+  const labels=[form.querySelector('[data-source-preview-button]'),form.querySelector('[data-source-save]')];
+  const texts=labels.map(node=>node.firstChild),observer=new h.w.MutationObserver(()=>{});
+  t.after(()=>observer.disconnect());
+  for(const node of labels)observer.observe(node,{childList:true});
+  for(const type of ['input','change'])form.elements.icalUrl.dispatchEvent(new h.w.Event(type,{bubbles:true}));
+  form.hostRefresh();form.hostRefresh();
+  labels.forEach((node,index)=>assert.equal(node.firstChild,texts[index],node.textContent));
+  assert.equal(observer.takeRecords().length,0);
+  assert.equal(labels[0].disabled,false);assert.equal(labels[1].disabled,true);
+  assert.equal(h.writes().length,0);
+});
+
+test('button labels: real saving state and language changes still update period labels',async t=>{
+  const h=await setup();t.after(h.close);const form=enter(h),pending=deferred();
+  const label=form.querySelector('[data-host-key="save-label"]');
+  assert.equal(label.textContent,'Save changes');const original=label.firstChild;
+  h.fixture.hooks.set('PUT '+putPath(periodId),()=>pending.promise);
+  price(h,form,'81.25');h.submit(form);await tick();
+  assert.equal(form.dataset.state,'saving');assert.equal(label.textContent,'Saving…');
+  assert.notEqual(label.firstChild,original);assert.equal(form.querySelector('.host-period-cancel').disabled,true);
+  Object.assign(h.fixture.periods[0],{nightlyPriceCents:8125});
+  pending.resolve(h.fixture.json(null,204));await tick();saved(h,form);
+  assert.equal(label.textContent,'Save changes');assert.equal(h.writes().length,1);
+  h.w.document.querySelector('[data-host-lang="ru"]').click();await tick();
+  assert.equal(h.row(),form);assert.equal(label.textContent,'Сохранить изменения');
+  assert.equal(form.querySelector('.host-period-edit').textContent,'Изменить');
+  assert.equal(form.querySelector('.host-period-cancel').textContent,'Отмена');
+  h.w.document.querySelector('[data-host-lang="en"]').click();await tick();
+  assert.equal(label.textContent,'Save changes');assert.equal(h.writes().length,1);
+});
+
+test('button labels: source relabel keeps preview lease and exact-value invalidation',async t=>{
+  const h=await setup();t.after(h.close);const pending=deferred();
+  const form=h.w.document.querySelector('[data-property-id="'+propertyId+'"] .host-source-form');
+  const preview=form.querySelector('[data-source-preview-button]'),save=form.querySelector('[data-source-save]');
+  const publicLinks='/api/host/properties/'+propertyId+'/public-links';
+  h.fixture.hooks.set('POST '+publicLinks,()=>pending.promise);
+  h.edit(form.elements.icalUrl,'https://www.airbnb.com/calendar/ical/123.ics?s=SyntheticOnly123');
+  preview.click();await tick();
+  assert.equal(preview.disabled,true);assert.equal(save.disabled,true);
+  preview.dispatchEvent(new h.w.MouseEvent('click',{bubbles:true}));await tick();
+  assert.equal(h.writes().length,1);assert.equal(h.writes()[0].method,'POST');
+  h.w.document.querySelector('[data-host-lang="ru"]').click();await tick();
+  assert.equal(preview.textContent,'Проверить ссылку');assert.equal(save.textContent,'Сохранить источник');
+  assert.equal(preview.disabled,true);
+  pending.resolve(h.fixture.json({listingId:'123',publicUrl:'https://www.airbnb.com/rooms/123'}));await tick();
+  assert.equal(form.querySelector('[data-source-preview]').getAttribute('href'),'https://www.airbnb.com/rooms/123');
+  assert.equal(save.disabled,false);assert.equal(h.writes().length,1);
+  h.edit(form.elements.icalUrl,'https://www.airbnb.com/calendar/ical/456.ics?s=SyntheticOnly456');
+  assert.equal(save.disabled,true);assert.equal(form.querySelector('[data-source-preview]').hidden,true);
+  assert.equal(h.writes().length,1);
+});

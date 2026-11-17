@@ -1535,6 +1535,10 @@ async function cancelHostEditor(property, form){
   focusHostEditorResult(owner);
 }
 
+function setHostText(node, text){
+  if (node.textContent!==text) node.textContent=text;
+}
+
 function attachHostEditor(property, form, kind, id){
   const editor=hostEditor(form,kind,id);
   const heading=form.querySelector("h4") || document.createElement("h4");
@@ -1562,19 +1566,19 @@ function attachHostEditor(property, form, kind, id){
     if (editor.phase==="saved" && dirty) editor.phase="editing";
     const expanded=kind==="conditions" || !["idle","saved"].includes(editor.phase);
     form.dataset.state=editor.phase; form.setAttribute("aria-busy",String(busy));
-    heading.textContent=tr(kind==="conditions" ? "conditionsGroup" : expanded ? "periodEditing" : "savedPeriod")
-      + (dirty || editor.verifyOnly ? ` · ${tr("unsavedLabel")}` : "");
+    setHostText(heading,tr(kind==="conditions" ? "conditionsGroup" : expanded ? "periodEditing" : "savedPeriod")
+      + (dirty || editor.verifyOnly ? ` · ${tr("unsavedLabel")}` : ""));
     for (const label of form.querySelectorAll("label")) label.hidden=!expanded;
     for (const input of form.querySelectorAll("input")) input.readOnly=busy || editor.verifyOnly;
     for (const button of form.querySelectorAll("button")) button.disabled=busy;
     edit.hidden=kind==="conditions" || expanded;
-    edit.textContent=tr("periodEdit");
+    setHostText(edit,tr("periodEdit"));
     save.hidden=kind==="period" && !expanded;
     save.disabled=busy || !editor.verifyOnly && !dirty;
     spinner.hidden=!busy;
-    saveText.textContent=tr(busy ? "periodSavingAction" : editor.verifyOnly ? "periodCheck" : editor.phase==="error" ? "periodRetry" : kind==="conditions" ? "saveStaySettings" : "periodSave");
+    setHostText(saveText,tr(busy ? "periodSavingAction" : editor.verifyOnly ? "periodCheck" : editor.phase==="error" ? "periodRetry" : kind==="conditions" ? "saveStaySettings" : "periodSave"));
     cancel.hidden=!expanded || kind==="conditions" && !dirty && !editor.verifyOnly && !busy;
-    cancel.textContent=tr("periodCancel");
+    setHostText(cancel,tr("periodCancel"));
     status.textContent=tr(busy ? "periodSaving" : editor.phase==="saved" ? "periodSaved" : editor.verifyOnly ? (kind==="conditions" ? "conditionsUnknown" : "periodUnknown") : editor.phase==="error" ? "periodDraftKept" : kind==="conditions" ? "conditionsHelp" : "");
     status.hidden=!status.textContent;
     const server=draft.server;
@@ -2111,7 +2115,7 @@ function calendarSourceForm(property,calendar){
     const draft=captureHostDraft(form),valid=sourcePreviewMatches(property,draft);
     const unavailable=!sourceFormCurrent(property,form),busy=!!draft.operation || unavailable;
     input.disabled=busy;preview.disabled=busy || !String(draft.values.icalUrl || "").trim();save.disabled=busy || !valid;
-    preview.textContent=tr("previewSource");save.textContent=tr(property.calendars?.length ? "replaceSource" : "saveSource");
+    setHostText(preview,tr("previewSource"));setHostText(save,tr(property.calendars?.length ? "replaceSource" : "saveSource"));
     link.hidden=!valid;
     if(valid){link.href=draft.sourcePreview.publicUrl;link.textContent=draft.sourcePreview.publicUrl;}
     else{link.removeAttribute("href");link.textContent="";}
