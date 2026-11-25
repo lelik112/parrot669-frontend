@@ -1,0 +1,46 @@
+name: PR12 Host 320-en first assertion
+on:
+  push:
+    branches: ['diagnostic/pr12-host-320en-5ae95d7c-once']
+    paths: ['.github/workflows/pr12-host-320en-once.yml']
+permissions:
+  contents: read
+concurrency:
+  group: pr12-host-320en-5ae95d7c-once
+  cancel-in-progress: false
+jobs:
+  first-assertions:
+    if: github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Verify exact parent and workflow-only delta
+        run: |
+          set -euo pipefail
+          parent=5ae95d7cdadd92cc7cb47986e020718246884204
+          test "$(git rev-parse HEAD^)" = "$parent"
+          test "$(git diff --name-only "$parent" HEAD)" = .github/workflows/pr12-host-320en-once.yml
+          test "$GITHUB_RUN_ATTEMPT" = 1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npx --no-install playwright install --with-deps chromium webkit
+      - name: Verify exactly three cases, then run once
+        env:
+          CI: '1'
+        run: |
+          set -euo pipefail
+          spec=tests/e2e/host-period-editor.spec.cjs
+          needle='workspace disclosure/editor geometry 320/en$'
+          list="$(npm run test:e2e -- "$spec" --grep "$needle" --list --reporter=list)"
+          printf '%s\n' "$list"
+          test "$(printf '%s\n' "$list" | grep -Ec 'workspace disclosure/editor geometry 320/en$')" = 3
+          for p in chromium-desktop webkit-desktop mobile-emulation; do
+            test "$(printf '%s\n' "$list" | grep -Fc "[$p]")" = 1
+          done
+          npm run test:e2e -- "$spec" --grep "$needle" --workers=1 --retries=0 --reporter=list --trace off --update-snapshots=none
