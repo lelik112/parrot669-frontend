@@ -1,0 +1,81 @@
+name: PR12 Host candidate snapshots only
+on:
+  push:
+    branches: ['diagnostic/pr12-host-goldens-5ae95d7c-r2']
+    paths: ['.github/workflows/pr12-host-goldens-r2.yml']
+permissions:
+  contents: read
+concurrency:
+  group: pr12-host-goldens-5ae95d7c-r2
+  cancel-in-progress: false
+jobs:
+  candidates:
+    if: github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Verify exact parent and workflow-only delta
+        run: |
+          set -euo pipefail
+          parent=5ae95d7cdadd92cc7cb47986e020718246884204
+          test "$(git rev-parse HEAD^)" = "$parent"
+          test "$(git diff --name-only "$parent" HEAD)" = .github/workflows/pr12-host-goldens-r2.yml
+          test "$GITHUB_RUN_ATTEMPT" = 1
+          test ! -e tests/e2e/host-period-editor.spec.cjs-snapshots
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: test "$(node -p 'require("@playwright/test/package.json").version')" = 1.63.0
+      - run: npx --no-install playwright install --with-deps chromium webkit
+      - name: List and run the exact candidate matrix once
+        env:
+          CI: '1'
+        run: |
+          set -euo pipefail
+          spec=tests/e2e/host-period-editor.spec.cjs
+          needle='workspace disclosure/editor geometry (320|390|1280)/(en|ru)$'
+          list="$(npm run test:e2e -- "$spec" --grep "$needle" --list --reporter=list)"
+          printf '%s\n' "$list"
+          test "$(printf '%s\n' "$list" | grep -Ec "$needle")" = 18
+          for p in chromium-desktop webkit-desktop mobile-emulation; do
+            for w in 320 390 1280; do
+              for l in en ru; do
+                test "$(printf '%s\n' "$list" | grep -F "[$p]" | grep -Ec "workspace disclosure/editor geometry $w/$l$")" = 1
+              done
+            done
+          done
+          npm run test:e2e -- "$spec" --grep "$needle" --workers=1 --retries=0 --reporter=list --trace off --update-snapshots=changed
+      - name: Verify exactly 18 candidate PNGs and bound the artifact
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          d = Path('tests/e2e/host-period-editor.spec.cjs-snapshots')
+          expected = {
+              f'host-s4-{w}-{l}-{p}-linux.png'
+              for w in (320, 390, 1280) for l in ('en', 'ru')
+              for p in ('chromium-desktop', 'webkit-desktop', 'mobile-emulation')
+          }
+          entries = list(d.iterdir())
+          assert {p.name for p in entries} == expected
+          assert all(p.is_file() and not p.is_symlink() for p in entries)
+          assert sum(p.stat().st_size for p in entries) <= 64 * 1024 * 1024 - 4096
+          manifest = []
+          for p in sorted(entries):
+              data = p.read_bytes()
+              assert data.startswith(b'\x89PNG\r\n\x1a\n')
+              manifest.append(f'{hashlib.sha256(data).hexdigest()}  {p.name}')
+          (d / 'SHA256SUMS').write_text('\n'.join(manifest) + '\n', encoding='ascii')
+          assert sum(p.stat().st_size for p in d.iterdir()) <= 64 * 1024 * 1024
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pr12-host-unapproved-candidates
+          path: tests/e2e/host-period-editor.spec.cjs-snapshots/
+          if-no-files-found: error
+          retention-days: 3
