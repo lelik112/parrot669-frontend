@@ -52,7 +52,7 @@ const PROFILE_KEYS = new Set(["parrotId", "displayName", "about", "instagram"]);
 const PROPERTY_KEYS = new Set([
   "id", "title", "city", "cityNative", "accommodationType", "bedrooms", "sleeps", "minStayDays", "listings",
 ]);
-const LISTING_KEYS = new Set(["platform", "url", "calendarControlStatus"]);
+const LISTING_KEYS = new Set(["provider", "url", "calendarControlStatus"]);
 const exactKeys = (value, allowed, required = []) =>
   value && typeof value === "object" && !Array.isArray(value)
   && Object.keys(value).every((key) => allowed.has(key))
@@ -88,7 +88,7 @@ const validPublicProfilePayload = (payload, expectedParrotId, expectedPropertyId
       || !Array.isArray(property.listings) || property.listings.length > 20) return false;
   return property.listings.every((listing) =>
     exactKeys(listing, LISTING_KEYS, [...LISTING_KEYS])
-    && boundedText(listing.platform, 80)
+    && boundedText(listing.provider, 80)
     && boundedText(listing.url, 2048)
     && boundedText(listing.calendarControlStatus, 80));
 };
@@ -204,7 +204,7 @@ const validPublicProfilePayload = (payload, expectedParrotId, expectedPropertyId
         link.href = href;
         link.target = "_blank";
         link.rel = "noopener noreferrer";
-        link.textContent = `${listing.platform || text("external")} ↗`;
+        link.textContent = `${listing.provider || text("external")} ↗`;
         const status = document.createElement("small");
         status.className = "profile-listing-status";
         const statusKey = {verified:"calendarVerified",pending:"calendarPending",recheck_required:"calendarRecheck"}[listing.calendarControlStatus]

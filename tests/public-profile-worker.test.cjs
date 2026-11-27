@@ -2,7 +2,7 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const source=fs.readFileSync(path.join(__dirname,'../src/index.js'),'utf8').replace('export default {','globalThis.worker = {');
 const parrotId='P669-AAAA-AAAA-AAAA-AAAA',propertyId='11111111-1111-4111-8111-111111111111';
-const validPayload={profile:{parrotId,displayName:'Anna',about:'Clear agreements.'},property:{id:propertyId,title:'Casa',city:'Barcelona',cityNative:null,accommodationType:'entire_place',bedrooms:2,sleeps:4,minStayDays:3,listings:[{platform:'Airbnb',url:'https://www.airbnb.com/rooms/123',calendarControlStatus:'verified'}]}};
+const validPayload={profile:{parrotId,displayName:'Anna',about:'Clear agreements.'},property:{id:propertyId,title:'Casa',city:'Barcelona',cityNative:null,accommodationType:'entire_place',bedrooms:2,sleeps:4,minStayDays:3,listings:[{provider:'Airbnb',url:'https://www.airbnb.com/rooms/123',calendarControlStatus:'verified'}]}};
 const clone=value=>JSON.parse(JSON.stringify(value));
 function harness({payload=validPayload,status=200,rawBody=null,headers={}}={}){
   const upstream=[],assets=[];
@@ -37,6 +37,7 @@ const mutations=[
  p=>({...p,profile:{...p.profile,parrotId:'OTHER'}}),p=>({...p,property:{...p.property,id:'foreign'}}),
  p=>({...p,property:[p.property]}),p=>({...p,property:{...p.property,profileId:'private'}}),
  p=>({...p,property:{...p.property,listings:[{...p.property.listings[0],source:'private'}]}}),
+ p=>({...p,property:{...p.property,listings:[{platform:'Airbnb',url:'https://www.airbnb.com/rooms/123',calendarControlStatus:'verified'}]}}),
  p=>({...p,profile:{...p.profile,about:'x'.repeat(501)}}),p=>({...p,profile:{...p.profile,displayName:''}}),
  p=>({...p,property:{...p.property,bedrooms:-1}}),p=>({...p,property:null}),()=>null
 ];

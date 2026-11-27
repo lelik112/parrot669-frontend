@@ -88,13 +88,13 @@ test('selected property keeps dates and safe published links with honest calenda
   const payload=profile({property:{
     id:propertyId,title:'Casa <Lumen>',city:'Barcelona',cityNative:null,accommodationType:'entire_place',
     bedrooms:2,sleeps:4,minStayDays:3,listings:[
-      {platform:'Airbnb',url:'https://www.airbnb.com/rooms/123',calendarControlStatus:'verified'},
-      {platform:'Pending',url:'https://example.com/pending',calendarControlStatus:'pending'},
-      {platform:'Unverified',url:'https://example.com/unverified',calendarControlStatus:'unverified'},
-      {platform:'Recheck',url:'https://example.com/recheck',calendarControlStatus:'recheck_required'},
-      {platform:'Failed',url:'https://example.com/failed',calendarControlStatus:'failed'},
-      {platform:'Lost',url:'https://example.com/lost',calendarControlStatus:'lost'},
-      {platform:'Unsafe',url:'javascript:alert(1)',calendarControlStatus:'verified'},
+      {provider:'Airbnb',url:'https://www.airbnb.com/rooms/123',calendarControlStatus:'verified'},
+      {provider:'Airbnb',url:'https://www.airbnb.com/rooms/124',calendarControlStatus:'pending'},
+      {provider:'Airbnb',url:'https://www.airbnb.com/rooms/125',calendarControlStatus:'unverified'},
+      {provider:'Airbnb',url:'https://www.airbnb.com/rooms/126',calendarControlStatus:'recheck_required'},
+      {provider:'Airbnb',url:'https://www.airbnb.com/rooms/127',calendarControlStatus:'failed'},
+      {provider:'Airbnb',url:'https://www.airbnb.com/rooms/128',calendarControlStatus:'lost'},
+      {provider:'Airbnb',url:'javascript:alert(1)',calendarControlStatus:'verified'},
     ],
   }});
   const h=await page({url:`https://parrot669.com/p/${parrotId}?property=${propertyId}&from=2027-05-01&to=2027-05-05`,
@@ -104,7 +104,8 @@ test('selected property keeps dates and safe published links with honest calenda
   const links=Array.from(h.document.querySelectorAll('.profile-listing'));
   assert.equal(links.length,6);
   assert.equal(links[0].getAttribute('href'),'https://www.airbnb.com/rooms/123');
-  assert.equal(links.some(link=>link.textContent.includes('Unsafe')),false);
+  assert.equal(links[0].textContent,'Airbnb ↗');
+  assert.equal(links.some(link=>link.getAttribute('href').startsWith('javascript:')),false);
   assert.deepEqual(Array.from(h.document.querySelectorAll('.profile-listing-status'),node=>node.textContent),[
     'Calendar control confirmed ✓',
     'The host has not finished calendar verification',

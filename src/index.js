@@ -112,7 +112,7 @@ const PROFILE_KEYS = new Set(["parrotId", "displayName", "about", "instagram"]);
 const PROPERTY_KEYS = new Set([
   "id", "title", "city", "cityNative", "accommodationType", "bedrooms", "sleeps", "minStayDays", "listings",
 ]);
-const LISTING_KEYS = new Set(["platform", "url", "calendarControlStatus"]);
+const LISTING_KEYS = new Set(["provider", "url", "calendarControlStatus"]);
 // The public proxy validates the same wire grammar as the browser and backend.
 const isParrotId = value => typeof value === "string"
   && /^P669-[0-9A-F]{4}(?:-[0-9A-F]{4}){3}$/.test(value) && value.length === 24;
@@ -151,7 +151,7 @@ const validPublicProfilePayload = (payload, expectedParrotId, expectedPropertyId
       || !Array.isArray(property.listings) || property.listings.length > 20) return false;
   return property.listings.every((listing) =>
     exactKeys(listing, LISTING_KEYS, [...LISTING_KEYS])
-    && boundedText(listing.platform, 80)
+    && boundedText(listing.provider, 80)
     && boundedText(listing.url, 2048)
     && boundedText(listing.calendarControlStatus, 80));
 };
