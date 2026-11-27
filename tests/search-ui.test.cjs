@@ -480,7 +480,7 @@ test('PM-024: every search card has a working contact link when legacy opt-in is
   const h=await harness(t,{messaging:true,handler:url=>{
     if(url.pathname==='/api/search') return [
       {...property('Barcelona'),propertyId:'11111111-1111-4111-8111-111111111111',availableFrom:'2026-10-01',availableTo:'2026-10-08'},
-      {...property('Barcelona'),propertyId:'22222222-2222-4222-8222-222222222222',availableFrom:'2026-10-01',availableTo:'2026-10-08',links:[{url:'https://www.airbnb.com/rooms/42',externalId:'42',calendarControlStatus:'unverified'}]}
+      {...property('Barcelona'),propertyId:'22222222-2222-4222-8222-222222222222',availableFrom:'2026-10-01',availableTo:'2026-10-08',links:[{url:'https://www.airbnb.com/rooms/42',provider:'Airbnb',calendarControlStatus:'unverified'}]}
     ];
   }});
   await h.barcelona();
@@ -644,8 +644,8 @@ test('PM-002: Airbnb stays clickable while calendar status is honest; invalid li
   const id='910841261983250037';
   const h=await harness(t,{handler:url=>url.pathname==='/api/search' ? [{
     ...property('Barcelona'),propertyId:'11111111-1111-4111-8111-111111111111',
-    links:[{platform:'Airbnb',externalId:id,url:`https://www.airbnb.com/rooms/${id}`,calendarControlStatus:'pending'},
-      {platform:'Airbnb',externalId:'123',url:'https://evil.example/rooms/123',calendarControlStatus:'verified'}]
+    links:[{provider:'Airbnb',url:`https://www.airbnb.com/rooms/${id}`,calendarControlStatus:'pending'},
+      {provider:'Airbnb',url:'https://evil.example/rooms/123',calendarControlStatus:'verified'}]
   }] : undefined});
   await h.barcelona();
   assert.equal(h.results.querySelectorAll('.availability-link-group').length,1);
@@ -747,8 +747,8 @@ for(const rows of [[{name:'Barcelona'}],[{countryCode:'BY',municipalityKey:'R100
 test('A canonical public IDs preserve all 64 digits including zeroes and reject query/fragment/65-digit variants',async t=>{
   const id='0'+'7'.repeat(63),url=`https://www.airbnb.com/rooms/${id}`;
   const h=await harness(t,{handler:u=>u.pathname==='/api/search'?[{...property('Barcelona'),city:null,cityNative:'Barcelona native',
-    links:[{url,externalId:id},{url:url+'?secret=private',externalId:id},{url:url+'#private',externalId:id},
-      {url:url+'7',externalId:id+'7'}]}]:undefined});await h.barcelona();
+    links:[{url,provider:'Airbnb'},{url:url+'?secret=private',provider:'Airbnb'},{url:url+'#private',provider:'Airbnb'},
+      {url:url+'7',provider:'Airbnb'}]}]:undefined});await h.barcelona();
   assert.equal(h.results.querySelectorAll('.availability-link').length,1);assert.equal(h.results.querySelector('.availability-link').href,url);
   assert.equal(h.results.querySelector('.availability-card-city').textContent,'Barcelona native');
   assert.equal(h.results.textContent.includes('null'),false);

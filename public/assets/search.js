@@ -349,14 +349,13 @@ function render(items){
     links.className="availability-links";
     (item.links||[]).forEach(link=>{
       try{
-        const u=new URL(link.url);
-        if(u.protocol!=="https:" || u.hostname!=="www.airbnb.com" ||
-          typeof link.externalId!=="string" || link.url!==`https://www.airbnb.com/rooms/${link.externalId}` || !/^[0-9]{1,64}$/.test(link.externalId||"")) return;
+        if (link?.provider !== "Airbnb" || typeof link.url !== "string"
+            || !/^https:\/\/www\.airbnb\.com\/rooms\/[0-9]{1,64}$/.test(link.url)) return;
         const group=document.createElement("div");
         group.className="availability-link-group";
         const a=document.createElement("a");
         a.className="availability-link";
-        a.href=u.toString();
+        a.href=link.url;
         a.target="_blank";
         a.rel="noopener noreferrer";
         a.textContent=t("view");

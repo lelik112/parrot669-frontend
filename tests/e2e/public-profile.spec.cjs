@@ -13,8 +13,8 @@ const payload={
   property:{id:propertyId,title:'Casa Lumen',city:'Barcelona',cityNative:null,accommodationType:'entire_place',
     bedrooms:2,sleeps:4,minStayDays:3,
     listings:[
-      {platform:'Airbnb',url:'https://www.airbnb.com/rooms/123',calendarControlStatus:'verified'},
-      {platform:'Pending',url:'https://example.com/pending',calendarControlStatus:'pending'},
+      {provider:'Airbnb',url:'https://www.airbnb.com/rooms/123',calendarControlStatus:'verified'},
+      {provider:'Airbnb',url:'https://www.airbnb.com/rooms/124',calendarControlStatus:'pending'},
     ]},
 };
 
